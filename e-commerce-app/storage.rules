@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow read access to all users for product images
+    match /product_images/{productId}/{filename} {
+      // Anyone can read product images
+      allow read: if true;
+      
+      // Only authenticated users can upload/update product images
+      allow create, update: if request.auth != null;
+      
+      // Only the user who created the image can delete it
+      allow delete: if request.auth != null;
+    }
+    
+    // Allow access to seller documents (government IDs)
+    match /seller_documents/{sellerId}/{filename} {
+      // Only authenticated users can read/write seller documents
+      allow read, write: if request.auth != null;
+    }
+    
+    // Default rule - deny access to all other storage paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
