@@ -45,10 +45,13 @@ service cloud.firestore {
       // Only admins can update seller status
       allow update: if request.auth != null && isAdmin();
     }
-
+    // Also allow reading approved products in lists/queries (for guests and users)
+      allow list: if resource.data.status == 'approved';
+      
     // Products collection
     match /products/{productId} {
-      // Anyone can read products that are approved
+      // Anyone (including guests) can read approved products
+      // This covers both individual document reads and collection queries
       allow read: if resource.data.status == 'approved';
       
       // Sellers can create products and read/update/delete their own

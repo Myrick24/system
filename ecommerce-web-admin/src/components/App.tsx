@@ -9,7 +9,8 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined
+  BellOutlined,
+  ToolOutlined
 } from '@ant-design/icons';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,6 +22,7 @@ import { AnnouncementManagement } from './AnnouncementManagement';
 import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
+import { SellerStatusFixer } from './SellerStatusFixer';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -60,6 +62,11 @@ const AdminLayout: React.FC = () => {
       key: '/transactions',
       icon: <TransactionOutlined />,
       label: 'Transactions',
+    },
+    {
+      key: '/seller-fixer',
+      icon: <ToolOutlined />,
+      label: 'Seller Status Fixer',
     },
     {
       key: '/announcements',
@@ -168,6 +175,7 @@ const AdminLayout: React.FC = () => {
             <Route path="/users" element={<UserManagement />} />
             <Route path="/products" element={<ProductManagement />} />
             <Route path="/transactions" element={<TransactionMonitoring />} />
+            <Route path="/seller-fixer" element={<SellerStatusFixer />} />
             <Route path="/announcements" element={<AnnouncementManagement />} />
             <Route path="/settings" element={<AdminSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

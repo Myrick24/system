@@ -400,7 +400,7 @@ class _ProductScreenState extends State<ProductScreen> {
       appBar: AppBar(
         title: const Text('Product Details'),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: const Color.fromARGB(255, 0, 0, 0),
         actions: [
           IconButton(
             icon: const Icon(Icons.share_outlined),

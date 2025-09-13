@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
 import 'cart_screen.dart';
+import 'login_screen.dart';
 
 class BuyNowScreen extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -45,9 +46,7 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
 
   void _addToCart() async {
     if (_auth.currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login to add items to cart')),
-      );
+      _showLoginPrompt();
       return;
     }
 
@@ -113,11 +112,45 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     }
   }
 
+  void _showLoginPrompt() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Login Required'),
+          content: const Text('Please sign in to add items to your cart.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Sign In'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _buyNow() async {
     if (_auth.currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login to continue with purchase')),
-      );
+      _showLoginPrompt();
       return;
     }
 

@@ -24,10 +24,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
   final _quantityController = TextEditingController();
+  final _unitController = TextEditingController();
   final _pickupLocationController = TextEditingController();
   final _estimatedDateController = TextEditingController();
 
   String _selectedOrderType = 'Available Now';
+  String _selectedUnit = 'kg';
   File? _selectedImage;
   DateTime? _harvestDate;
   DateTime? _estimatedAvailabilityDate;
@@ -45,12 +47,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   final List<String> _orderTypes = ['Available Now', 'Pre Order'];
 
+  final List<String> _units = [
+    'kg',
+    'g', 
+    'lbs',
+    'pieces',
+    'bunches',
+    'liters',
+    'dozens'
+  ];
+
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
     _quantityController.dispose();
+    _unitController.dispose();
     _pickupLocationController.dispose();
     _estimatedDateController.dispose();
     super.dispose();
@@ -223,6 +236,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'price': double.parse(_priceController.text.trim()),
         'quantity': int.parse(_quantityController.text.trim()),
         'currentStock': int.parse(_quantityController.text.trim()),
+        'unit': _selectedUnit,
         'pickupLocation': _pickupLocationController.text.trim(),
         'deliveryOptions': _selectedDeliveryOptions.entries
             .where((entry) => entry.value)
@@ -520,6 +534,40 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             return 'Please enter valid quantity';
                           }
                           return null;
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Unit Selection
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedUnit,
+                        decoration: InputDecoration(
+                          labelText: 'Unit*',
+                          prefixIcon: Icon(Icons.straighten,
+                              color: Colors.grey.shade600),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          labelStyle: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        items: _units.map((unit) {
+                          return DropdownMenuItem<String>(
+                            value: unit,
+                            child: Text(unit),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedUnit = value!;
+                          });
                         },
                       ),
                     ),

@@ -3,8 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../services/cart_service.dart';
-import '../buy_now_screen.dart';
+import 'product_details_screen.dart';
 import '../cart_screen.dart';
+import '../login_screen.dart';
 
 class BuyerProductBrowse extends StatefulWidget {
   const BuyerProductBrowse({Key? key}) : super(key: key);
@@ -122,9 +123,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
   Future<void> _addToCart(
       Map<String, dynamic> product, String productId) async {
     if (_auth.currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to add items to cart')),
-      );
+      _showLoginPrompt();
       return;
     }
 
@@ -164,6 +163,42 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
         SnackBar(content: Text('Failed to add to cart: $e')),
       );
     }
+  }
+
+  void _showLoginPrompt() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Login Required'),
+          content: const Text('Please sign in to add items to your cart.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Sign In'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _formatPrice(dynamic price) {
@@ -322,7 +357,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
-                            childAspectRatio: 0.75,
+                            childAspectRatio: 0.6, // Increased from 0.75 to give more height
                             crossAxisSpacing: 16,
                             mainAxisSpacing: 16,
                           ),
@@ -354,7 +389,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => BuyNowScreen(
+              builder: (context) => ProductDetailsScreen(
                 product: product,
                 productId: productId,
               ),
@@ -404,72 +439,83 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
             Expanded(
               flex: 2,
               child: Padding(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(6), // Reduced from 8
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min, // Added to prevent overflow
                   children: [
                     // Product Name
-                    Text(
-                      product['productName'] ?? 'Unknown Product',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                    Flexible(
+                      child: Text(
+                        product['productName'] ?? 'Unknown Product',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13, // Reduced from 14
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2), // Reduced from 4
 
                     // Price and Unit
                     Row(
                       children: [
-                        Text(
-                          _formatPrice(product['price']),
-                          style: const TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        Flexible(
+                          child: Text(
+                            _formatPrice(product['price']),
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14, // Reduced from 16
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Text(
                           '/${product['unit'] ?? 'pc'}',
                           style: const TextStyle(
                             color: Colors.grey,
-                            fontSize: 12,
+                            fontSize: 11, // Reduced from 12
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2), // Reduced from 4
 
                     // Available Date
-                    Text(
-                      _formatAvailableDate(product['availableDate']),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
+                    Flexible(
+                      child: Text(
+                        _formatAvailableDate(product['availableDate']),
+                        style: TextStyle(
+                          fontSize: 11, // Reduced from 12
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
 
-                    const Spacer(),
+                    const SizedBox(height: 4), // Small fixed spacing instead of Spacer
 
                     // Add to Cart Button
                     SizedBox(
                       width: double.infinity,
-                      height: 32,
+                      height: 28, // Reduced from 32
                       child: ElevatedButton.icon(
                         onPressed: () => _addToCart(product, productId),
-                        icon: const Icon(Icons.add_shopping_cart, size: 16),
+                        icon: const Icon(Icons.add_shopping_cart, size: 14), // Reduced from 16
                         label: const Text(
                           'Add to Cart',
-                          style: TextStyle(fontSize: 12),
+                          style: TextStyle(fontSize: 11), // Reduced from 12
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6), // Reduced from 8
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),

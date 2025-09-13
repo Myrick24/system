@@ -11,7 +11,8 @@ import {
   addDoc,
   serverTimestamp,
   writeBatch,
-  getCountFromServer
+  getCountFromServer,
+  limit
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { User } from '../types';
@@ -97,9 +98,38 @@ export class UserService {
   // Approve seller
   async approveSeller(userId: string): Promise<boolean> {
     try {
+      // Update the user document
       await updateDoc(doc(db, 'users', userId), {
         status: 'approved'
       });
+
+      // Get user data to find associated seller document
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const userEmail = userData.email;
+        
+        if (userEmail) {
+          // Find and update the associated seller document
+          const sellersQuery = query(
+            collection(db, 'sellers'),
+            where('email', '==', userEmail),
+            limit(1)
+          );
+          
+          const sellerSnapshot = await getDocs(sellersQuery);
+          
+          if (!sellerSnapshot.empty) {
+            const sellerDoc = sellerSnapshot.docs[0];
+            await updateDoc(sellerDoc.ref, {
+              status: 'approved'
+            });
+            console.log('Updated seller document status to approved for:', userEmail);
+          } else {
+            console.log('No seller document found for email:', userEmail);
+          }
+        }
+      }
 
       // TODO: Send notification to seller about approval
       
@@ -113,9 +143,38 @@ export class UserService {
   // Reject seller
   async rejectSeller(userId: string): Promise<boolean> {
     try {
+      // Update the user document
       await updateDoc(doc(db, 'users', userId), {
         status: 'rejected'
       });
+
+      // Get user data to find associated seller document
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const userEmail = userData.email;
+        
+        if (userEmail) {
+          // Find and update the associated seller document
+          const sellersQuery = query(
+            collection(db, 'sellers'),
+            where('email', '==', userEmail),
+            limit(1)
+          );
+          
+          const sellerSnapshot = await getDocs(sellersQuery);
+          
+          if (!sellerSnapshot.empty) {
+            const sellerDoc = sellerSnapshot.docs[0];
+            await updateDoc(sellerDoc.ref, {
+              status: 'rejected'
+            });
+            console.log('Updated seller document status to rejected for:', userEmail);
+          } else {
+            console.log('No seller document found for email:', userEmail);
+          }
+        }
+      }
 
       // TODO: Send notification to seller about rejection
       

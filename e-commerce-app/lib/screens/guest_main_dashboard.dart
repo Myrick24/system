@@ -1,45 +1,259 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import '../../services/cart_service.dart';
-import '../login_screen.dart';
-import 'buyer_product_browse.dart';
-import 'product_details_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'buyer/buyer_home_content.dart';
+import 'buyer/product_details_screen.dart';
+import 'login_screen.dart';
+import 'unified_main_dashboard.dart';
 
-class BuyerHomeContent extends StatefulWidget {
-  const BuyerHomeContent({Key? key}) : super(key: key);
+class GuestMainDashboard extends StatefulWidget {
+  const GuestMainDashboard({Key? key}) : super(key: key);
 
   @override
-  State<BuyerHomeContent> createState() => _BuyerHomeContentState();
+  State<GuestMainDashboard> createState() => _GuestMainDashboardState();
 }
 
-class _BuyerHomeContentState extends State<BuyerHomeContent> {
-  final _firestore = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
-  bool _isLoading = true;
-  String? _selectedCategory; // Track currently selected category filter
+class _GuestMainDashboardState extends State<GuestMainDashboard> {
+  int _selectedIndex = 0;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Check if user is authenticated
+  bool get _isAuthenticated => _auth.currentUser != null;
+
+  final List<Widget> _pages = [
+    const BuyerHomeContent(), // Home page accessible to guests
+    const _GuestBrowseScreen(), // Guest browsing with database access
+    const _PlaceholderScreen(title: 'Cart'),
+    const _PlaceholderScreen(title: 'Messages'),
+    const _PlaceholderScreen(title: 'Account'),
+  ];
+
+  void _onItemTapped(int index) {
+    if (index == 0 || index == 1) {
+      // Home and Browse are accessible to guests
+      setState(() {
+        _selectedIndex = index;
+      });
+    } else {
+      // For other tabs, check authentication
+      if (_isAuthenticated) {
+        // If authenticated, navigate to the full dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UnifiedMainDashboard(),
+          ),
+        );
+      } else {
+        // Show login prompt
+        _showLoginPrompt(index);
+      }
+    }
+  }
+
+  void _showLoginPrompt(int targetIndex) {
+    String feature = '';
+    switch (targetIndex) {
+      case 1:
+        // This shouldn't happen since Browse is now accessible to guests
+        feature = 'browse products';
+        break;
+      case 2:
+        feature = 'access your cart';
+        break;
+      case 3:
+        feature = 'view messages';
+        break;
+      case 4:
+        feature = 'access your account';
+        break;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Login Required'),
+          content: Text('Please sign in to $feature.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
+                ).then((result) {
+                  // If login was successful, check auth state and navigate
+                  if (_auth.currentUser != null) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const UnifiedMainDashboard(),
+                      ),
+                    );
+                  }
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Sign In'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.green,
+        title: const Text(
+          'Harvest',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          if (!_isAuthenticated)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
+                ).then((result) {
+                  // If login was successful, navigate to full dashboard
+                  if (_auth.currentUser != null) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const UnifiedMainDashboard(),
+                      ),
+                    );
+                  }
+                });
+              },
+              icon: const Icon(Icons.login, color: Colors.white),
+              label: const Text(
+                'Sign In',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+        ],
+      ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.green,
+        unselectedItemColor: Colors.grey,
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'Browse',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart),
+            label: 'Cart',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Account',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Placeholder screen for restricted content
+class _PlaceholderScreen extends StatelessWidget {
+  final String title;
+
+  const _PlaceholderScreen({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Sign in required',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please sign in to access $title',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Guest browse screen with database access - shows same products as buyer home
+class _GuestBrowseScreen extends StatefulWidget {
+  const _GuestBrowseScreen();
+
+  @override
+  State<_GuestBrowseScreen> createState() => _GuestBrowseScreenState();
+}
+
+class _GuestBrowseScreenState extends State<_GuestBrowseScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String? _selectedCategory;
 
   // Check if user is authenticated
   bool get _isAuthenticated => _auth.currentUser != null;
 
   @override
-  void initState() {
-    super.initState();
-    _getCurrentUser();
-  }
-
-  Future<void> _getCurrentUser() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Simple initialization delay
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    setState(() {
-      _isLoading = false;
-    });
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _showLoginPrompt() {
@@ -78,12 +292,82 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+  Stream<QuerySnapshot> _getProductsStream() {
+    Query query = _firestore.collection('products')
+        .where('status', isEqualTo: 'approved');
+
+    // Apply category filter
+    if (_selectedCategory != null) {
+      query = query.where('category', isEqualTo: _selectedCategory);
     }
 
+    return query.orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots();
+  }
+
+  List<DocumentSnapshot> _filterBySearch(List<DocumentSnapshot> docs) {
+    if (_searchQuery.isEmpty) return docs;
+    
+    return docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final name = (data['name'] ?? '').toString().toLowerCase();
+      final description = (data['description'] ?? '').toString().toLowerCase();
+      final category = (data['category'] ?? '').toString().toLowerCase();
+      final searchLower = _searchQuery.toLowerCase();
+      
+      return name.contains(searchLower) || 
+             description.contains(searchLower) || 
+             category.contains(searchLower);
+    }).toList();
+  }
+
+  Widget _buildCategoryItem(IconData icon, String label, Color color) {
+    // Check if this is the currently selected category
+    final isSelected = _selectedCategory == label;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          // If tapping the already selected category, clear the filter
+          if (_selectedCategory == label) {
+            _selectedCategory = null;
+          } else {
+            _selectedCategory = label;
+          }
+        });
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: isSelected ? color : color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+              border: isSelected ? Border.all(color: color, width: 2) : null,
+            ),
+            child: Icon(
+              icon,
+              color: isSelected ? Colors.white : color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? color : Colors.black,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return SafeArea(
       child: CustomScrollView(
         slivers: [
@@ -98,67 +382,18 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                     color: Colors.grey[200],
                     borderRadius: BorderRadius.circular(25),
                   ),
-                  child: const TextField(
-                    decoration: InputDecoration(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
                       icon: Icon(Icons.search),
                       hintText: 'Search for farm products',
                       border: InputBorder.none,
                     ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Banner
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Fresh Farm Products',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Direct from local farmers',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ElevatedButton(
-                              onPressed: () {
-                                // Scroll to products section
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.green,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('Shop Now'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(
-                        Icons.agriculture,
-                        color: Colors.white,
-                        size: 60,
-                      ),
-                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -179,14 +414,14 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 ),
                 const SizedBox(height: 16),
 
-                // Featured Products Section
+                // Products Section Header
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
                         const Text(
-                          'Featured Products',
+                          'All Products',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -231,17 +466,6 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                           ),
                       ],
                     ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const BuyerProductBrowse(),
-                          ),
-                        );
-                      },
-                      child: const Text('See All >'),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -252,22 +476,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             sliver: StreamBuilder<QuerySnapshot>(
-              stream: _selectedCategory != null
-                  ? _firestore
-                      .collection('products')
-                      .where('category', isEqualTo: _selectedCategory)
-                      .where('status',
-                          isEqualTo: 'approved') // Only show approved products
-                      .orderBy('createdAt', descending: true)
-                      .limit(20)
-                      .snapshots()
-                  : _firestore
-                      .collection('products')
-                      .where('status',
-                          isEqualTo: 'approved') // Only show approved products
-                      .orderBy('createdAt', descending: true)
-                      .limit(20)
-                      .snapshots(),
+              stream: _getProductsStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const SliverToBoxAdapter(
@@ -317,30 +526,42 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                   );
                 }
 
-                List<QueryDocumentSnapshot> products = snapshot.data!.docs;
+                // Filter products by search query
+                final filteredDocs = _filterBySearch(snapshot.data!.docs);
+                
+                if (filteredDocs.isEmpty) {
+                  return SliverToBoxAdapter(
+                    child: Container(
+                      height: 200,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          Text('No products match your search', 
+                               style: TextStyle(color: Colors.grey[600], fontSize: 18)),
+                          const SizedBox(height: 8),
+                          Text('Try different keywords or browse all products',
+                               style: TextStyle(color: Colors.grey[500])),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
                 return SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    childAspectRatio:
-                        0.85, // Increased from 0.8 to give more height
+                    childAspectRatio: 0.85,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      var product =
-                          products[index].data() as Map<String, dynamic>;
-                      String productId = products[index].id;
+                      var product = filteredDocs[index].data() as Map<String, dynamic>;
+                      String productId = filteredDocs[index].id;
 
-                      // Debug: Print stock information
-                      print('Product: ${product['name']}');
-                      print('currentStock: ${product['currentStock']}');
-                      print('quantity: ${product['quantity']}');
-                      print('inventory: ${product['inventory']}');
-                      
                       double stockValue = (product['currentStock'] ?? product['quantity'] ?? 0).toDouble();
-                      print('Final stock value: $stockValue');
 
                       return _buildProductCard(
                         product['name'] ?? 'Unknown Product',
@@ -355,54 +576,10 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         productId: productId,
                       );
                     },
-                    childCount: products.length,
+                    childCount: filteredDocs.length,
                   ),
                 );
               },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryItem(IconData icon, String label, Color color) {
-    // Check if this is the currently selected category
-    final isSelected = _selectedCategory == label;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          // If tapping the already selected category, clear the filter
-          if (_selectedCategory == label) {
-            _selectedCategory = null;
-          } else {
-            _selectedCategory = label;
-          }
-        });
-      },
-      child: Column(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isSelected ? color : color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
-              border: isSelected ? Border.all(color: color, width: 2) : null,
-            ),
-            child: Icon(
-              icon,
-              color: isSelected ? Colors.white : color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? color : Colors.black,
             ),
           ),
         ],
@@ -422,6 +599,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
       elevation: 2,
       child: GestureDetector(
         onTap: () {
+          // Allow guests to view product details without requiring login
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -439,7 +617,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
           Stack(
             children: [
               Container(
-                height: 100, // Reduced from 120 to give more space for content
+                height: 100,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.3),
@@ -512,7 +690,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
           // Product Info
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(4.0), // Further reduced padding
+              padding: const EdgeInsets.all(4.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -522,35 +700,35 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 12, // Reduced font size
+                        fontSize: 12,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(height: 1), // Minimal spacing
+                  const SizedBox(height: 1),
                   Text(
                     price,
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.bold,
-                      fontSize: 13, // Reduced font size
+                      fontSize: 13,
                     ),
                   ),
                   if (hasStock) ...[
-                    const SizedBox(height: 1), // Minimal spacing
+                    const SizedBox(height: 1),
                     Text(
                       'Stock: ${currentStock.toInt()}',
                       style: const TextStyle(
                         color: Colors.grey,
-                        fontSize: 10, // Smaller font
+                        fontSize: 10,
                       ),
                     ),
                   ],
-                  const SizedBox(height: 4), // Small fixed spacing instead of Spacer
+                  const SizedBox(height: 4),
                   // Action Buttons
                   SizedBox(
-                    height: 26, // Fixed height for buttons
+                    height: 26,
                     child: Row(
                       children: [
                         Expanded(
@@ -590,46 +768,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                       _showLoginPrompt();
                                       return;
                                     }
-
-                                    final cartService = Provider.of<CartService>(
-                                        context,
-                                        listen: false);
-
-                                    final cartItem = CartItem(
-                                      id: DateTime.now()
-                                          .millisecondsSinceEpoch
-                                          .toString(),
-                                      productId: productId,
-                                      sellerId: product['sellerId'] ?? '',
-                                      productName:
-                                          product['name'] ?? 'Unknown Product',
-                                      price: (product['price'] ?? 0.0).toDouble(),
-                                      quantity: 1,
-                                      unit: product['unit'] ?? 'piece',
-                                      isReservation: false,
-                                      imageUrl: product['imageUrl'],
-                                    );
-
-                                    bool success =
-                                        await cartService.addItem(cartItem);
-
-                                    if (success) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              '${product['name']} added to cart'),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              'Failed to add ${product['name']} to cart'),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
+                                    // Cart functionality would go here for authenticated users
                                   }
                                 : null,
                             style: ElevatedButton.styleFrom(
@@ -639,7 +778,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               padding: EdgeInsets.zero,
                             ),
                             child: const Icon(Icons.add_shopping_cart,
-                                size: 12), // Smaller icon
+                                size: 12),
                           ),
                         ),
                       ],

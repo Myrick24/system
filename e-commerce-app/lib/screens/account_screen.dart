@@ -56,6 +56,13 @@ class _AccountScreenState extends State<AccountScreen> {
 
     if (_currentUser != null) {
       try {
+        // Force refresh the Firebase Auth token to ensure we have latest permissions
+        await _currentUser!.getIdToken(true);
+        
+        print('=== DEBUG: Current User Info ===');
+        print('User ID: ${_currentUser!.uid}');
+        print('User Email: ${_currentUser!.email}');
+        
         // Try to get user data from Firestore
         final userDocRef =
             _firestore.collection('users').doc(_currentUser!.uid);
@@ -74,19 +81,89 @@ class _AccountScreenState extends State<AccountScreen> {
 
           // Check if user is already registered as a seller
           try {
+            print('=== DEBUG: Searching for seller ===');
             final sellerQuery = await _firestore
                 .collection('sellers')
                 .where('email', isEqualTo: _currentUser!.email)
                 .limit(1)
                 .get();
 
+            print('Seller query result count: ${sellerQuery.docs.length}');
+
             if (sellerQuery.docs.isNotEmpty) {
-              bool isApproved = true; // Auto-approve all sellers
+              final sellerDoc = sellerQuery.docs.first;
+              final sellerData = sellerDoc.data();
+              String status = sellerData['status'] ?? 'pending';
+              bool isApproved = status == 'approved';
+
+              print('Seller found - Email: ${_currentUser!.email}');
+              print('Seller ID: ${sellerDoc.id}');
+              print('Seller Status: $status');
+              print('Is Approved: $isApproved');
+              print('Full seller data: $sellerData');
 
               setState(() {
                 _isRegisteredSeller = true;
                 _isSellerApproved = isApproved;
               });
+
+              // Show status update message
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Seller status: ${status.toUpperCase()}'),
+                    backgroundColor: isApproved ? Colors.green : Colors.orange,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            } else {
+              print('No seller found for email: ${_currentUser!.email}');
+              
+              // Let's also try to search by user ID as a fallback
+              print('=== DEBUG: Trying search by user ID ===');
+              final sellerByUidQuery = await _firestore
+                  .collection('sellers')
+                  .where('userId', isEqualTo: _currentUser!.uid)
+                  .limit(1)
+                  .get();
+                  
+              print('Seller by UID query result count: ${sellerByUidQuery.docs.length}');
+              
+              if (sellerByUidQuery.docs.isNotEmpty) {
+                final sellerDoc = sellerByUidQuery.docs.first;
+                final sellerData = sellerDoc.data();
+                String status = sellerData['status'] ?? 'pending';
+                bool isApproved = status == 'approved';
+
+                print('Seller found by UID - User ID: ${_currentUser!.uid}');
+                print('Seller ID: ${sellerDoc.id}');
+                print('Seller Status: $status');
+                print('Is Approved: $isApproved');
+                print('Full seller data: $sellerData');
+
+                setState(() {
+                  _isRegisteredSeller = true;
+                  _isSellerApproved = isApproved;
+                });
+
+                // Show status update message
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Seller status: ${status.toUpperCase()}'),
+                      backgroundColor: isApproved ? Colors.green : Colors.orange,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } else {
+                print('No seller found by email OR user ID');
+                setState(() {
+                  _isRegisteredSeller = false;
+                  _isSellerApproved = false;
+                });
+              }
             }
           } catch (sellerQueryError) {
             print('Firestore seller query error: $sellerQueryError');
@@ -351,10 +428,8 @@ class _AccountScreenState extends State<AccountScreen> {
                                   if (result != null &&
                                       result is Map<String, dynamic> &&
                                       result['success'] == true) {
-                                    setState(() {
-                                      _isRegisteredSeller = true;
-                                      _isSellerApproved = true;
-                                    });
+                                    // Refresh user data to get the actual status
+                                    _getCurrentUser();
                                   }
                                 });
                               },
@@ -408,6 +483,171 @@ class _AccountScreenState extends State<AccountScreen> {
                             ),
                           ),
                         ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Seller Pending Approval section (for registered but not approved sellers)
+            if (_isRegisteredSeller && !_isSellerApproved)
+              Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.orange.shade300,
+                      Colors.orange.shade500,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orange.withOpacity(0.3),
+                      spreadRadius: 2,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.pending_actions,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Seller Application Pending',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.yellow.shade700,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'PENDING',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Your seller application is under review by our admin team.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Status information
+                      _buildStatusItem('📄', 'Application submitted successfully'),
+                      const SizedBox(height: 8),
+                      _buildStatusItem('🔍', 'Documents under verification'),
+                      const SizedBox(height: 8),
+                      _buildStatusItem('⏳', 'Waiting for admin approval'),
+                      const SizedBox(height: 8),
+                      _buildStatusItem('📧', 'We\'ll notify you once approved'),
+                      const SizedBox(height: 20),
+                      // Info container
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Approval typically takes 1-3 business days. You can continue shopping while waiting.',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Action button for refreshing status
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            // Refresh the seller status
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Checking application status...'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                            
+                            // Clear current status first
+                            setState(() {
+                              _isLoading = true;
+                            });
+                            
+                            await _getCurrentUser();
+                            
+                            // Show completion message
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Status check completed'),
+                                  duration: Duration(seconds: 1),
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Check Status'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.orange.shade600,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -742,7 +982,7 @@ class _AccountScreenState extends State<AccountScreen> {
             if (_isRegisteredSeller)
               _buildSettingsItem(
                 icon: Icons.update,
-                title: 'Check for Status Updates',
+                title: _isSellerApproved ? 'Seller Status: Approved' : 'Seller Status: Pending',
                 onTap: () async {
                   // Reset notification flags to force check
                   await NotificationService.resetNotificationState();
@@ -758,16 +998,29 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                   );
 
+                  // Clear current status first to force refresh
+                  setState(() {
+                    _isLoading = true;
+                    _isRegisteredSeller = false;
+                    _isSellerApproved = false;
+                  });
+
                   // Re-fetch user data which will trigger notification checks
                   await _getCurrentUser();
 
-                  // Notify user
+                  // Notify user with current status
                   if (mounted) {
+                    String statusMessage = _isRegisteredSeller 
+                        ? (_isSellerApproved 
+                            ? 'Status: APPROVED - You can now access the seller dashboard!' 
+                            : 'Status: PENDING - Still waiting for admin approval')
+                        : 'No seller application found';
+                        
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                            'Status updated. Check notifications for any changes.'),
-                        duration: Duration(seconds: 2),
+                      SnackBar(
+                        content: Text(statusMessage),
+                        duration: const Duration(seconds: 3),
+                        backgroundColor: _isSellerApproved ? Colors.green : Colors.orange,
                       ),
                     );
                   }
@@ -824,6 +1077,28 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Widget _buildBenefitItem(String emoji, String text) {
+    return Row(
+      children: [
+        Text(
+          emoji,
+          style: const TextStyle(fontSize: 16),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusItem(String emoji, String text) {
     return Row(
       children: [
         Text(
@@ -948,10 +1223,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   if (result != null &&
                       result is Map<String, dynamic> &&
                       result['success'] == true) {
-                    setState(() {
-                      _isRegisteredSeller = true;
-                      _isSellerApproved = true;
-                    });
+                    // Refresh user data to get the actual status
+                    _getCurrentUser();
                   }
                 });
               },
