@@ -219,11 +219,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       });
 
       // Update the user's role to seller in the users collection
-      await _firestore.collection('users').doc(currentUser.uid).update({
+      // Use set with merge to handle case where user document might not exist
+      await _firestore.collection('users').doc(currentUser.uid).set({
+        'name': _fullNameController.text.trim(), // Use the name from the form instead of displayName
+        'email': currentUser.email ?? '',
         'role': 'seller',
         'status': 'pending', // Set to pending until verification
         'sellerApplicationDate': FieldValue.serverTimestamp(),
-      });
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       // Send notification to admin about new seller application
       await _firestore.collection('admin_notifications').add({
@@ -242,8 +246,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Application submitted successfully! Please wait for admin verification.'),
-            duration: Duration(seconds: 3),
+                'Application submitted successfully! Please wait for admin verification. Check your account screen for status updates.'),
+            duration: Duration(seconds: 4),
+            backgroundColor: Colors.green,
           ),
         );
         // Return to previous screen with a result

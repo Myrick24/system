@@ -48,7 +48,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (_currentUser != null) {
       try {
-        // Check if user is already registered as a seller
+        // First check if user is registered as seller from users collection
+        final userDoc = await _firestore.collection('users').doc(_currentUser!.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          if (userData != null && userData['role'] == 'seller') {
+            setState(() {
+              _isRegisteredSeller = true;
+              _sellerId = _currentUser!.uid; // Use the user ID as seller ID for now
+            });
+            
+            // If user is a seller, check for unread notifications
+            _checkForUnreadNotifications(_sellerId!);
+            _checkForUnreadMessages(_sellerId!);
+            return; // Exit early if found in users collection
+          }
+        }
+        
+        // Fallback: Check if user is already registered as a seller in sellers collection
         final sellerQuery = await _firestore
             .collection('sellers')
             .where('email', isEqualTo: _currentUser!.email)

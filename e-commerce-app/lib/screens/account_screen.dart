@@ -72,14 +72,45 @@ class _AccountScreenState extends State<AccountScreen> {
           if (userDoc.exists) {
             // Get the user name from Firestore
             final userData = userDoc.data();
-            if (userData != null && userData.containsKey('name')) {
+            if (userData != null && userData.containsKey('name') && userData['name'] != null) {
               setState(() {
                 _userName = userData['name'];
               });
+              print('User name set from users collection: ${userData['name']}');
+            } else {
+              print('No name found in users collection');
+            }
+            
+            // Check if user is registered as seller from users collection first
+            if (userData != null && userData['role'] == 'seller') {
+              String userStatus = userData['status'] ?? 'pending';
+              bool isApproved = userStatus == 'approved';
+              
+              print('User is registered as seller from users collection');
+              print('User Status: $userStatus');
+              
+              setState(() {
+                _isRegisteredSeller = true;
+                _isSellerApproved = isApproved;
+              });
+
+              // Show status update message
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Seller status: ${userStatus.toUpperCase()}'),
+                    backgroundColor: isApproved ? Colors.green : Colors.orange,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+              
+              // No need to check sellers collection if we found the status in users collection
+              return;
             }
           }
 
-          // Check if user is already registered as a seller
+          // Check if user is already registered as a seller (fallback to sellers collection)
           try {
             print('=== DEBUG: Searching for seller ===');
             final sellerQuery = await _firestore
@@ -101,6 +132,14 @@ class _AccountScreenState extends State<AccountScreen> {
               print('Seller Status: $status');
               print('Is Approved: $isApproved');
               print('Full seller data: $sellerData');
+
+              // Set user name from seller data if not already set
+              if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                setState(() {
+                  _userName = sellerData['name'];
+                });
+                print('User name set from sellers collection: ${sellerData['name']}');
+              }
 
               setState(() {
                 _isRegisteredSeller = true;
@@ -142,6 +181,14 @@ class _AccountScreenState extends State<AccountScreen> {
                 print('Is Approved: $isApproved');
                 print('Full seller data: $sellerData');
 
+                // Set user name from seller data if not already set
+                if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                  setState(() {
+                    _userName = sellerData['name'];
+                  });
+                  print('User name set from sellers collection (by UID): ${sellerData['name']}');
+                }
+
                 setState(() {
                   _isRegisteredSeller = true;
                   _isSellerApproved = isApproved;
@@ -171,6 +218,14 @@ class _AccountScreenState extends State<AccountScreen> {
         } catch (error) {
           print('Firestore error: $error');
           // Handle the Firestore permission error based on the memory
+        }
+        
+        // Final fallback: if no name was found anywhere, try to use Firebase Auth displayName
+        if (_userName == null && _currentUser?.displayName != null) {
+          setState(() {
+            _userName = _currentUser!.displayName;
+          });
+          print('User name set from Firebase Auth displayName: ${_currentUser!.displayName}');
         }
       } catch (e) {
         print('Error fetching user data: $e');
@@ -998,15 +1053,24 @@ class _AccountScreenState extends State<AccountScreen> {
                     ),
                   );
 
-                  // Clear current status first to force refresh
+                  // Clear current status first to force refresh, but preserve username
+                  String? currentUserName = _userName; // Preserve current username
                   setState(() {
                     _isLoading = true;
                     _isRegisteredSeller = false;
                     _isSellerApproved = false;
+                    // Don't clear _userName here to preserve it
                   });
 
                   // Re-fetch user data which will trigger notification checks
                   await _getCurrentUser();
+                  
+                  // Restore username if it was cleared during refresh
+                  if (_userName == null && currentUserName != null) {
+                    setState(() {
+                      _userName = currentUserName;
+                    });
+                  }
 
                   // Notify user with current status
                   if (mounted) {

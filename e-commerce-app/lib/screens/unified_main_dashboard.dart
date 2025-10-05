@@ -66,7 +66,7 @@ class _UnifiedMainDashboardState extends State<UnifiedMainDashboard> {
 
   void _setupPages() {
     _pages = [
-      const BuyerHomeContent(), // Home for everyone
+      const BuyerHomeContent(), // Home for everyone  
       const BuyerOrdersScreen(), // Orders for everyone
       const CartScreen(), // Cart for everyone
       const MessagesScreen(), // Messages for everyone

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/location_service.dart';
 
 class PhilippineAddressForm extends StatefulWidget {
   final Function(Map<String, String>) onAddressSelected;
@@ -18,155 +17,55 @@ class PhilippineAddressForm extends StatefulWidget {
 }
 
 class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
-  String? selectedRegion;
-  String? selectedProvince;
-  String? selectedCity;
+  // Hardcoded values for Mabini, Pangasinan
+  final String _region = "REGION I";
+  final String _province = "PANGASINAN";
+  final String _municipality = "MABINI";
+  
   String? selectedBarangay;
 
-  List<String> regions = [];
-  List<String> provinces = [];
-  List<String> cities = [];
-  List<String> barangays = [];
-
-  bool isLoadingRegions = true;
-  bool isLoadingProvinces = false;
-  bool isLoadingCities = false;
-  bool isLoadingBarangays = false;
+  // Barangays in Mabini, Pangasinan
+  final List<String> barangays = [
+    "BACNIT",
+    "BARLO", 
+    "CAABIANGAAN",
+    "CABANAETAN",
+    "CABINUANGAN",
+    "CALZADA",
+    "CARANGLAAN",
+    "DE GUZMAN",
+    "LUNA",
+    "MAGALONG",
+    "NIBALIW",
+    "PATAR",
+    "POBLACION",
+    "SAN PEDRO",
+    "TAGUDIN",
+    "VILLACORTA"
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadRegions();
     _initializeFromInitialAddress();
   }
 
   void _initializeFromInitialAddress() {
     if (widget.initialAddress != null) {
-      selectedRegion = widget.initialAddress!['region'];
-      selectedProvince = widget.initialAddress!['province'];
-      selectedCity = widget.initialAddress!['city'];
       selectedBarangay = widget.initialAddress!['barangay'];
     }
   }
 
-  Future<void> _loadRegions() async {
-    setState(() => isLoadingRegions = true);
-    try {
-      final loadedRegions = await LocationService.getRegions();
-      setState(() {
-        regions = loadedRegions;
-        isLoadingRegions = false;
-      });
-
-      // If we have an initial region, load its provinces
-      if (selectedRegion != null && regions.contains(selectedRegion)) {
-        await _loadProvinces(selectedRegion!);
-      }
-    } catch (e) {
-      setState(() => isLoadingRegions = false);
-      _showError('Failed to load regions: $e');
-    }
-  }
-
-  Future<void> _loadProvinces(String region) async {
-    setState(() {
-      isLoadingProvinces = true;
-      selectedProvince = null;
-      selectedCity = null;
-      selectedBarangay = null;
-      provinces.clear();
-      cities.clear();
-      barangays.clear();
-    });
-
-    try {
-      final loadedProvinces = await LocationService.getProvinces(region);
-      setState(() {
-        provinces = loadedProvinces;
-        isLoadingProvinces = false;
-      });
-
-      // If we have an initial province, load its cities
-      if (selectedProvince != null && provinces.contains(selectedProvince)) {
-        await _loadCities(region, selectedProvince!);
-      }
-    } catch (e) {
-      setState(() => isLoadingProvinces = false);
-      _showError('Failed to load provinces: $e');
-    }
-  }
-
-  Future<void> _loadCities(String region, String province) async {
-    setState(() {
-      isLoadingCities = true;
-      selectedCity = null;
-      selectedBarangay = null;
-      cities.clear();
-      barangays.clear();
-    });
-
-    try {
-      final loadedCities =
-          await LocationService.getCitiesMunicipalities(region, province);
-      setState(() {
-        cities = loadedCities;
-        isLoadingCities = false;
-      });
-
-      // If we have an initial city, load its barangays
-      if (selectedCity != null && cities.contains(selectedCity)) {
-        await _loadBarangays(region, province, selectedCity!);
-      }
-    } catch (e) {
-      setState(() => isLoadingCities = false);
-      _showError('Failed to load cities/municipalities: $e');
-    }
-  }
-
-  Future<void> _loadBarangays(
-      String region, String province, String city) async {
-    setState(() {
-      isLoadingBarangays = true;
-      selectedBarangay = null;
-      barangays.clear();
-    });
-
-    try {
-      final loadedBarangays =
-          await LocationService.getBarangays(region, province, city);
-      setState(() {
-        barangays = loadedBarangays;
-        isLoadingBarangays = false;
-      });
-    } catch (e) {
-      setState(() => isLoadingBarangays = false);
-      _showError('Failed to load barangays: $e');
-    }
-  }
-
   void _onAddressChange() {
-    if (selectedRegion != null &&
-        selectedProvince != null &&
-        selectedCity != null &&
-        selectedBarangay != null) {
+    if (selectedBarangay != null) {
       widget.onAddressSelected({
-        'region': selectedRegion!,
-        'province': selectedProvince!,
-        'city': selectedCity!,
+        'region': _region,
+        'province': _province,
+        'city': _municipality,
         'barangay': selectedBarangay!,
-        'full_address':
-            '$selectedBarangay, $selectedCity, $selectedProvince, $selectedRegion',
+        'full_address': '$selectedBarangay, $_municipality, $_province, $_region',
       });
     }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
   }
 
   Widget _buildDropdown<T>({
@@ -174,7 +73,6 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
     required T? value,
     required List<T> items,
     required Function(T?) onChanged,
-    bool isLoading = false,
     bool enabled = true,
   }) {
     return Container(
@@ -201,23 +99,10 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
           ),
           filled: true,
           fillColor: Colors.white,
-          suffixIcon: isLoading
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.green.shade600),
-                    ),
-                  ),
-                )
-              : Icon(
-                  Icons.arrow_drop_down,
-                  color: enabled ? Colors.green.shade600 : Colors.grey.shade400,
-                ),
+          suffixIcon: Icon(
+            Icons.arrow_drop_down,
+            color: enabled ? Colors.green.shade600 : Colors.grey.shade400,
+          ),
         ),
         items: enabled
             ? items.map((T item) {
@@ -234,9 +119,9 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
                 );
               }).toList()
             : [],
-        onChanged: enabled && !isLoading ? onChanged : null,
+        onChanged: enabled ? onChanged : null,
         validator: widget.isRequired
-            ? (value) => value == null ? 'This field is required' : null
+            ? (value) => value == null ? 'Please select a barangay' : null
             : null,
         style: TextStyle(color: Colors.green.shade800),
       ),
@@ -248,59 +133,60 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Region Dropdown
-        _buildDropdown<String>(
-          hint: 'Select Region',
-          value: selectedRegion,
-          items: regions,
-          isLoading: isLoadingRegions,
-          onChanged: (String? newValue) {
-            setState(() => selectedRegion = newValue);
-            if (newValue != null) {
-              _loadProvinces(newValue);
-            }
-          },
-        ),
-
-        // Province Dropdown
-        _buildDropdown<String>(
-          hint: 'Select Province',
-          value: selectedProvince,
-          items: provinces,
-          isLoading: isLoadingProvinces,
-          enabled: selectedRegion != null,
-          onChanged: (String? newValue) {
-            setState(() => selectedProvince = newValue);
-            if (newValue != null && selectedRegion != null) {
-              _loadCities(selectedRegion!, newValue);
-            }
-          },
-        ),
-
-        // City/Municipality Dropdown
-        _buildDropdown<String>(
-          hint: 'Select City/Municipality',
-          value: selectedCity,
-          items: cities,
-          isLoading: isLoadingCities,
-          enabled: selectedProvince != null,
-          onChanged: (String? newValue) {
-            setState(() => selectedCity = newValue);
-            if (newValue != null &&
-                selectedRegion != null &&
-                selectedProvince != null) {
-              _loadBarangays(selectedRegion!, selectedProvince!, newValue);
-            }
-          },
+        // Fixed Municipality Information
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.green.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_city, color: Colors.green.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Municipality Information',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.green.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Province: $_province',
+                style: TextStyle(fontSize: 13, color: Colors.green.shade700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Municipality: $_municipality',
+                style: TextStyle(fontSize: 13, color: Colors.green.shade700, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
         ),
 
         // Barangay Dropdown
+        Text(
+          'Select Barangay*',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Colors.green.shade800,
+          ),
+        ),
+        const SizedBox(height: 8),
         _buildDropdown<String>(
-          hint: 'Select Barangay',
+          hint: 'Choose your barangay',
           value: selectedBarangay,
           items: barangays,
-          isLoading: isLoadingBarangays,
-          enabled: selectedCity != null,
           onChanged: (String? newValue) {
             setState(() => selectedBarangay = newValue);
             _onAddressChange();

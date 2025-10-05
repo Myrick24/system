@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import '../../services/cart_service.dart';
-import '../login_screen.dart';
 import 'buyer_product_browse.dart';
 import 'product_details_screen.dart';
 
@@ -16,77 +12,13 @@ class BuyerHomeContent extends StatefulWidget {
 
 class _BuyerHomeContentState extends State<BuyerHomeContent> {
   final _firestore = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
-  bool _isLoading = true;
   String? _selectedCategory; // Track currently selected category filter
-
-  // Check if user is authenticated
-  bool get _isAuthenticated => _auth.currentUser != null;
-
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentUser();
-  }
-
-  Future<void> _getCurrentUser() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Simple initialization delay
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  void _showLoginPrompt() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Login Required'),
-          content: const Text('Please sign in to add items to your cart.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LoginScreen(),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Sign In'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return SafeArea(
       child: CustomScrollView(
-        slivers: [
+          slivers: [
           SliverPadding(
             padding: const EdgeInsets.all(16.0),
             sliver: SliverList(
@@ -322,8 +254,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 return SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    childAspectRatio:
-                        0.85, // Increased from 0.8 to give more height
+                    childAspectRatio: 0.71, // Adjusted to prevent overflow
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
                   ),
@@ -353,6 +284,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         currentStock: stockValue,
                         product: product,
                         productId: productId,
+                        unit: product['unit'] ?? 'pcs',
                       );
                     },
                     childCount: products.length,
@@ -415,11 +347,16 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
       {bool? allowsReservation,
       double? currentStock,
       required Map<String, dynamic> product,
-      required String productId}) {
+      required String productId,
+      String? unit}) {
     bool hasStock = currentStock != null && currentStock > 0;
 
     return Card(
-      elevation: 2,
+      elevation: 4,
+      shadowColor: Colors.black26,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: GestureDetector(
         onTap: () {
           Navigator.push(
@@ -432,224 +369,198 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
             ),
           );
         },
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Product Image with Stock Indicator
-          Stack(
-            children: [
-              Container(
-                height: 100, // Reduced from 120 to give more space for content
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.3),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    topRight: Radius.circular(4),
-                  ),
-                ),
-                child: product['imageUrl'] != null &&
-                        product['imageUrl'].toString().isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(4),
-                          topRight: Radius.circular(4),
-                        ),
-                        child: Image.network(
-                          product['imageUrl'],
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes !=
-                                        null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(color),
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return Center(
-                              child: Icon(icon, color: color, size: 40),
-                            );
-                          },
-                        ),
-                      )
-                    : Center(
-                        child: Icon(icon, color: color, size: 40),
-                      ),
-              ),
-              if (!hasStock)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(4),
-                        topRight: Radius.circular(4),
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'OUT OF STOCK',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
           ),
-          // Product Info
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(4.0), // Further reduced padding
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image with Stock Indicator
+              Stack(
                 children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12, // Reduced font size
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(height: 1), // Minimal spacing
-                  Text(
-                    price,
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13, // Reduced font size
-                    ),
-                  ),
-                  if (hasStock) ...[
-                    const SizedBox(height: 1), // Minimal spacing
-                    Text(
-                      'Stock: ${currentStock.toInt()}',
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 10, // Smaller font
+                  Container(
+                    height: 100, // Further reduced to match seller cards
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 4), // Small fixed spacing instead of Spacer
-                  // Action Buttons
-                  SizedBox(
-                    height: 26, // Fixed height for buttons
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: hasStock
-                                ? () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => ProductDetailsScreen(
-                                          product: product,
-                                          productId: productId,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: hasStock ? color : Colors.grey,
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 26),
+                    child: product['imageUrl'] != null &&
+                            product['imageUrl'].toString().isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              topRight: Radius.circular(16),
                             ),
-                            child: const Text('View',
-                                style: TextStyle(fontSize: 10)),
-                          ),
-                        ),
-                        const SizedBox(width: 3),
-                        SizedBox(
-                          width: 26,
-                          height: 26,
-                          child: ElevatedButton(
-                            onPressed: hasStock
-                                ? () async {
-                                    // Check if user is authenticated
-                                    if (!_isAuthenticated) {
-                                      _showLoginPrompt();
-                                      return;
-                                    }
-
-                                    final cartService = Provider.of<CartService>(
-                                        context,
-                                        listen: false);
-
-                                    final cartItem = CartItem(
-                                      id: DateTime.now()
-                                          .millisecondsSinceEpoch
-                                          .toString(),
-                                      productId: productId,
-                                      sellerId: product['sellerId'] ?? '',
-                                      productName:
-                                          product['name'] ?? 'Unknown Product',
-                                      price: (product['price'] ?? 0.0).toDouble(),
-                                      quantity: 1,
-                                      unit: product['unit'] ?? 'piece',
-                                      isReservation: false,
-                                      imageUrl: product['imageUrl'],
-                                    );
-
-                                    bool success =
-                                        await cartService.addItem(cartItem);
-
-                                    if (success) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              '${product['name']} added to cart'),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              'Failed to add ${product['name']} to cart'),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  hasStock ? Colors.orange : Colors.grey,
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.zero,
+                            child: Image.network(
+                              product['imageUrl'],
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes !=
+                                            null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    valueColor:
+                                        AlwaysStoppedAnimation<Color>(color),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Icon(icon, color: Colors.grey[400], size: 40),
+                                );
+                              },
                             ),
-                            child: const Icon(Icons.add_shopping_cart,
-                                size: 12), // Smaller icon
+                          )
+                        : Center(
+                            child: Icon(icon, color: Colors.grey[400], size: 40),
                           ),
-                        ),
-                      ],
-                    ),
                   ),
+                  if (!hasStock)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                                'OUT OF STOCK',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            ),
+              // Product Info with better spacing and styling
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(6.0), // Further reduced from 8.0
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Product Title
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15, // Further reduced from 12
+                          color: Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2), // Further reduced from 3
+                      // Price with unit
+                      Row(
+                        children: [
+                          Text(
+                            price,
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15, // Further reduced from 14
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '/${unit ?? 'pcs'}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1), // Further reduced from 2
+                      // Seller info with rating
+                      if (product['sellerName'] != null)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                product['sellerName'],
+                                style: TextStyle(
+                                  color: const Color.fromARGB(255, 0, 0, 0),
+                                  fontSize: 10, // Further reduced from 10
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (hasStock) ...[
+                              const SizedBox(width: 2),
+                              Icon(Icons.star, color: Colors.amber, size: 10),
+                              const SizedBox(width: 1),
+                              Text(
+                                rating.isNotEmpty ? rating : '4.5',
+                                style: TextStyle(
+                                  color: const Color.fromARGB(255, 0, 0, 0),
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      const Spacer(),
+                      // View Button - full width and bold
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: hasStock
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ProductDetailsScreen(
+                                        product: product,
+                                        productId: productId,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: hasStock ? Colors.green : Colors.grey,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                          ),
+                          child: const Text(
+                            'View',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
         ),
       ),
     );

@@ -119,10 +119,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         });
 
         // Update the user's role to seller in the users collection
-        await _firestore.collection('users').doc(currentUser.uid).update({
+        // Use set with merge to handle case where user document might not exist
+        await _firestore.collection('users').doc(currentUser.uid).set({
+          'name': currentUser.displayName ?? _fullNameController.text.trim(),
+          'email': currentUser.email ?? '',
           'role': 'seller',
           'status': 'approved',
-        });
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
         // Send welcome notification to new seller
         await NotificationManager.sendWelcomeNotification(

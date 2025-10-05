@@ -306,9 +306,15 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Products'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: const Text(
+          'Harvest',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
         elevation: 0,
         actions: [
           // Browse Products Button
@@ -391,7 +397,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
         padding: const EdgeInsets.all(8.0),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.7,
+          childAspectRatio: 0.71, // Updated to match buyer cards
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
         ),
@@ -423,141 +429,170 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
     return GestureDetector(
       onTap: () => _showProductDetailsModal(product),
       child: Card(
-        elevation: 2,
+        elevation: 4,
+        shadowColor: Colors.black26,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Product Image
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              child: Stack(
-                children: [
-                  SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: product['imageUrl'] != null
-                        ? Image.network(
-                            product['imageUrl'],
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: Colors.grey.shade200,
-                                child: const Icon(
-                                  Icons.image_not_supported,
-                                  color: Colors.grey,
-                                  size: 40,
-                                ),
-                              );
-                            },
-                          )
-                        : Container(
-                            color: Colors.grey.shade200,
-                            child: const Icon(
-                              Icons.image,
-                              color: Colors.grey,
-                              size: 40,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image with Status Badge
+              ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Stack(
+                  children: [
+                    SizedBox(
+                      height: 100, // Further reduced from 100 to save more space
+                      width: double.infinity,
+                      child: product['imageUrl'] != null
+                          ? Image.network(
+                              product['imageUrl'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey.shade100,
+                                  child: const Icon(
+                                    Icons.image_not_supported,
+                                    color: Colors.grey,
+                                    size: 40,
+                                  ),
+                                );
+                              },
+                            )
+                          : Container(
+                              color: Colors.grey.shade100,
+                              child: const Icon(
+                                Icons.image,
+                                color: Colors.grey,
+                                size: 40,
+                              ),
+                            ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Product Info with better styling
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(6.0), // Further reduced from 8.0
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Product Name
+                      Text(
+                        product['name'] ?? 'Unnamed Product',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11, // Further reduced from 12
+                          color: Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2), // Further reduced from 3
+                      // Price with unit
+                      Row(
+                        children: [
+                          Text(
+                            '₱${product['price']?.toString() ?? '0.00'}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13, // Further reduced from 14
+                              color: Colors.green,
                             ),
                           ),
-                  ),
-                  Positioned(
-                    top: 5,
-                    right: 5,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        status.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Product Info
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product['name'] ?? 'Unnamed Product',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₱${product['price']?.toString() ?? '0.00'}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.green,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    product['category'] ?? 'Uncategorized',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(),
-
-            // Status-specific messages
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: status == 'pending'
-                  ? const Text(
-                      'Awaiting approval',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    )
-                  : status == 'rejected'
-                      ? const Text(
-                          'Tap to view rejection reason',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red,
-                            fontStyle: FontStyle.italic,
+                          const SizedBox(width: 4),
+                          Text(
+                            '/${product['unit'] ?? 'pcs'}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
                           ),
-                        )
-                      : const Text(
-                          'Available to buyers',
+                        ],
+                      ),
+                      const SizedBox(height: 1), // Further reduced from 2
+                      // Category and seller info layout similar to buyer cards
+                      Text(
+                        product['category'] ?? 'Uncategorized',
+                        style: TextStyle(
+                          fontSize: 9, // Further reduced from 10
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      // Stock info (only if available and space permits)
+                      if (product['stock'] != null) 
+                        Text(
+                          'Stock: ${product['stock']}',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green,
-                            fontStyle: FontStyle.italic,
+                            fontSize: 9, // Further reduced from 10
+                            color: Colors.grey[600],
                           ),
                         ),
-            ),
-          ],
+                      const Spacer(),
+                      // View Button - full width and bold like buyer cards
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => _showProductDetailsModal(product),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: statusColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                          ),
+                          child: Text(
+                            status == 'pending'
+                                ? 'PENDING'
+                                : status == 'rejected'
+                                    ? 'VIEW DETAILS'
+                                    : 'VIEW',
+                            style: const TextStyle(
+                              fontSize: 10, 
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
