@@ -569,7 +569,7 @@ class _GuestBrowseScreenState extends State<_GuestBrowseScreen> {
                         Icons.eco,
                         Colors.green,
                         '4.5',
-                        product['category'] ?? 'Other',
+                        product['category'] ?? 'Others',
                         allowsReservation: true,
                         currentStock: stockValue,
                         product: product,

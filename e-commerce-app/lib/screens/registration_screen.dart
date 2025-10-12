@@ -90,7 +90,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
+        SnackBar(
+          content: Text('Error picking image: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
@@ -123,7 +126,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     if (_selectedAddress['region'] == null ||
         _selectedAddress['region']!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your complete address')),
+        const SnackBar(
+          content: Text('Please select your complete address'),
+          duration: Duration(seconds: 5),
+        ),
       );
       return;
     }
@@ -261,7 +267,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       print('Error during registration: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An error occurred: ${e.toString()}')),
+          SnackBar(
+            content: Text('An error occurred: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

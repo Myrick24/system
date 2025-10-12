@@ -9,6 +9,8 @@ class ChatDetailScreen extends StatefulWidget {
   final String sellerId;
   final String customerId;
   final bool isSeller;
+  final Map<String, dynamic>? product;
+  final String? productId;
 
   const ChatDetailScreen({
     Key? key,
@@ -17,6 +19,8 @@ class ChatDetailScreen extends StatefulWidget {
     required this.sellerId,
     required this.customerId,
     required this.isSeller,
+    this.product,
+    this.productId,
   }) : super(key: key);
 
   @override
@@ -158,7 +162,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending message: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error sending message: ${e.toString()}'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     } finally {
       setState(() {
@@ -167,22 +174,145 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
+  Widget _buildProductBanner() {
+    if (widget.product == null) return const SizedBox();
+    
+    final product = widget.product!;
+    final productName = product['name'] ?? product['title'] ?? 'Product';
+    final productPrice = product['price']?.toString() ?? 'Price not available';
+    final productImage = product['imageUrl'] ?? product['image'];
+    
+    return Container(
+      margin: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(12.0),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade200),
+      ),
+      child: Row(
+        children: [
+          // Product Image
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey[200],
+            ),
+            child: productImage != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      productImage,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.image_not_supported,
+                          color: Colors.grey[400],
+                          size: 30,
+                        );
+                      },
+                    ),
+                  )
+                : Icon(
+                    Icons.shopping_bag,
+                    color: Colors.grey[400],
+                    size: 30,
+                  ),
+          ),
+          const SizedBox(width: 12),
+          
+          // Product Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  productName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '₱$productPrice',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Discussion about this product',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Action Button
+          Icon(
+            Icons.chat_bubble,
+            color: Colors.green.shade400,
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.green,
-        title: Text(
-          widget.otherPartyName,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.otherPartyName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            if (widget.product != null)
+              Text(
+                'Product Discussion',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.8),
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            // Simply pop back to the previous screen (messages screen)
+            Navigator.of(context).pop();
+          },
+        ),
+        titleSpacing: 0,
       ),
       body: Column(
         children: [
+          // Product Banner (if product is provided)
+          if (widget.product != null) _buildProductBanner(),
+          
           // Messages list
           Expanded(
             child: StreamBuilder<QuerySnapshot>(

@@ -44,17 +44,58 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
 
     if (_currentUser != null) {
       try {
-        // Check if user is already registered as a seller
+        print('DEBUG: Checking user role for UID: ${_currentUser!.uid}');
+        
+        // First check the users collection for seller role
+        final userDoc = await _firestore
+            .collection('users')
+            .doc(_currentUser!.uid)
+            .get();
+            
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          print('DEBUG: User data found: ${userData['role']}');
+          if (userData['role'] == 'seller') {
+            setState(() {
+              _isSeller = true;
+              _sellerId = _currentUser!.uid;
+            });
+            print('DEBUG: User is seller (from users collection)');
+            setState(() {
+              _isLoading = false;
+            });
+            return;
+          }
+        } else {
+          print('DEBUG: No user document found in users collection');
+        }
+
+        // Fallback: Check if user is registered as a seller by email
+        print('DEBUG: Checking sellers collection by email: ${_currentUser!.email}');
         final sellerQuery = await _firestore
             .collection('sellers')
             .where('email', isEqualTo: _currentUser!.email)
             .limit(1)
-            .get();        if (sellerQuery.docs.isNotEmpty) {
+            .get();
+            
+        if (sellerQuery.docs.isNotEmpty) {
           final sellerData = sellerQuery.docs.first.data();
-          setState(() {
-            _isSeller = true;
-            _sellerId = sellerData['id'];
-          });
+          final sellerStatus = sellerData['status'] as String?;
+          
+          print('DEBUG: Found seller document with status: $sellerStatus');
+          
+          // Only mark as seller if they are approved
+          if (sellerStatus == 'approved') {
+            setState(() {
+              _isSeller = true;
+              _sellerId = _currentUser!.uid; // Use Firebase Auth user ID
+            });
+            print('DEBUG: User is approved seller (from sellers collection)');
+          } else {
+            print('DEBUG: User is not an approved seller (status: $sellerStatus)');
+          }
+        } else {
+          print('DEBUG: User is not a seller');
         }
       } catch (e) {
         print('Error checking seller status: $e');
@@ -78,23 +119,56 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
         
-        // Check for fullName first, then other fields
-        final name = userData['fullName'] ?? 
-                    userData['name'] ?? 
-                    userData['displayName'] ?? 
-                    userData['firstName'] ?? 
-                    userData['email']?.toString().split('@').first ?? 
-                    'User';
-                    
+        // Try to get the best available name
+        String? name = userData['fullName'];
+        
+        if (name == null || name.isEmpty) {
+          name = userData['name'];
+        }
+        
+        if (name == null || name.isEmpty) {
+          name = userData['displayName'];
+        }
+        
+        if (name == null || name.isEmpty) {
+          // Try to combine first and last name
+          final firstName = userData['firstName'];
+          final lastName = userData['lastName'];
+          if (firstName != null && firstName.isNotEmpty) {
+            name = firstName;
+            if (lastName != null && lastName.isNotEmpty) {
+              name = name! + ' $lastName';
+            }
+          }
+        }
+        
+        if (name == null || name.isEmpty) {
+          // Fallback to email username
+          final email = userData['email'];
+          if (email != null && email.isNotEmpty) {
+            name = email.toString().split('@').first;
+            // Capitalize first letter
+            if (name.isNotEmpty) {
+              name = name[0].toUpperCase() + name.substring(1);
+            }
+          }
+        }
+        
+        // Final fallback
+        name ??= 'Customer';
+        
         // Store in cache for future use
         _userNames[userId] = name;
+        print('DEBUG: Retrieved user name for $userId: $name');
         return name;
+      } else {
+        print('DEBUG: No user document found for userId: $userId');
       }
     } catch (e) {
-      print('Error fetching user name: $e');
+      print('Error fetching user name for userId: $userId, error: $e');
     }
     
-    return 'User';
+    return 'Customer';
   }
   
   // Function to get seller name from Firestore
@@ -105,40 +179,138 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
     }
     
     try {
-      final sellerDoc = await _firestore.collection('sellers').doc(sellerId).get();
+      String? name;
+      
+      // First try to get seller info from users collection (if they have seller role)
+      final userDoc = await _firestore.collection('users').doc(sellerId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        if (userData['role'] == 'seller') {
+          // Get personal name from user profile
+          name = userData['fullName'];
+          
+          if (name == null || name.isEmpty) {
+            name = userData['name'];
+          }
+          
+          if (name == null || name.isEmpty) {
+            name = userData['displayName'];
+          }
+          
+          if (name == null || name.isEmpty) {
+            // Try to combine first and last name
+            final firstName = userData['firstName'];
+            final lastName = userData['lastName'];
+            if (firstName != null && firstName.isNotEmpty) {
+              name = firstName;
+              if (lastName != null && lastName.isNotEmpty) {
+                name = name! + ' $lastName';
+              }
+            }
+          }
+          
+          if (name != null && name.isNotEmpty) {
+            _sellerNames[sellerId] = name;
+            print('DEBUG: Retrieved seller name from users collection for $sellerId: $name');
+            return name;
+          }
+        }
+      }
+      
+      // Fallback: Try to get seller by direct document ID in sellers collection
+      DocumentSnapshot sellerDoc = await _firestore.collection('sellers').doc(sellerId).get();
+      
+      // If not found by direct ID, try searching by userId field
+      if (!sellerDoc.exists) {
+        final sellerQuery = await _firestore
+            .collection('sellers')
+            .where('userId', isEqualTo: sellerId)
+            .limit(1)
+            .get();
+            
+        if (sellerQuery.docs.isNotEmpty) {
+          sellerDoc = sellerQuery.docs.first;
+        }
+      }
+      
       if (sellerDoc.exists) {
         final sellerData = sellerDoc.data() as Map<String, dynamic>;
         
-        // Prioritize personal name fields (fullName)
-        String? name = sellerData['fullName'];
+        // Prioritize personal name fields first
+        name = sellerData['fullName'];
         
-        // If fullName is not available, try these fields in order
         if (name == null || name.isEmpty) {
-          name = sellerData['name'] ?? 
-                sellerData['displayName'] ?? 
-                sellerData['firstName'];
-                
-          // Only if no personal name is found, use business name
-          if (name == null || name.isEmpty) {
-            name = sellerData['businessName'] ?? 
-                  sellerData['companyName'] ?? 
-                  sellerData['storeName'];
+          name = sellerData['name'];
+        }
+        
+        if (name == null || name.isEmpty) {
+          name = sellerData['displayName'];
+        }
+        
+        if (name == null || name.isEmpty) {
+          // Try to combine first and last name
+          final firstName = sellerData['firstName'];
+          final lastName = sellerData['lastName'];
+          if (firstName != null && firstName.isNotEmpty) {
+            name = firstName;
+            if (lastName != null && lastName.isNotEmpty) {
+              name = name! + ' $lastName';
+            }
           }
         }
         
-        // If still no name, try email or default to 'Seller'
-        name ??= sellerData['email']?.toString().split('@').first ?? 
-                'Seller';
+        // Only if no personal name is found, use business name
+        if (name == null || name.isEmpty) {
+          name = sellerData['businessName'] ?? 
+                sellerData['companyName'] ?? 
+                sellerData['storeName'];
+        }
+        
+        // If still no name, try email
+        if (name == null || name.isEmpty) {
+          final email = sellerData['email'];
+          if (email != null && email.isNotEmpty) {
+            name = email.toString().split('@').first;
+            // Capitalize first letter
+            if (name.isNotEmpty) {
+              name = name[0].toUpperCase() + name.substring(1);
+            }
+          }
+        }
+        
+        // Final fallback
+        name ??= 'Seller';
                      
         // Store in cache for future use
         _sellerNames[sellerId] = name;
+        print('DEBUG: Retrieved seller name from sellers collection for $sellerId: $name');
         return name;
+      } else {
+        print('DEBUG: No seller document found for sellerId: $sellerId');
       }
     } catch (e) {
-      print('Error fetching seller name: $e');
+      print('Error fetching seller name for sellerId: $sellerId, error: $e');
     }
     
     return 'Seller';
+  }
+
+  // Helper function to determine who sent the last message
+  String _getLastMessageSender(Map<String, dynamic> chatData) {
+    final lastSenderId = chatData['lastSenderId'] as String?;
+    
+    if (lastSenderId == null) return '';
+    
+    if (lastSenderId == _currentUser!.uid) {
+      return 'You: ';
+    } else {
+      // The other party sent it
+      if (_isSeller) {
+        return 'Customer: ';
+      } else {
+        return 'Seller: ';
+      }
+    }
   }
 
   @override
@@ -264,48 +436,125 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
     
     if (_isSeller) {
       // Seller view - show chats where they are the seller
+      print('DEBUG: Building seller chats query with sellerId: $_sellerId');
+      
+      // Use simple query without timestamp filter to avoid index issues
       chatsQuery = _firestore.collection('chats')
-          .where('sellerId', isEqualTo: _sellerId)
-          .orderBy('lastMessageTimestamp', descending: true);
-          
-      if (recentOnly) {
-        // For recent chats, add a time filter (e.g., last 30 days)
-        final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-        chatsQuery = chatsQuery.where(
-          'lastMessageTimestamp',
-          isGreaterThan: Timestamp.fromDate(thirtyDaysAgo)
-        );
-      }
+          .where('sellerId', isEqualTo: _sellerId);
     } else {
       // Customer view - show chats where they are the customer
+      print('DEBUG: Building customer chats query with customerId: ${_currentUser!.uid}');
+      print('DEBUG: Current user is NOT a seller, querying as customer');
+      
+      // Use simple query without timestamp filter to avoid index issues
       chatsQuery = _firestore.collection('chats')
-          .where('customerId', isEqualTo: _currentUser!.uid)
-          .orderBy('lastMessageTimestamp', descending: true);
-          
-      if (recentOnly) {
-        // For recent chats, add a time filter (e.g., last 30 days)
-        final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
-        chatsQuery = chatsQuery.where(
-          'lastMessageTimestamp',
-          isGreaterThan: Timestamp.fromDate(thirtyDaysAgo)
-        );
-      }
+          .where('customerId', isEqualTo: _currentUser!.uid);
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: chatsQuery.snapshots(),
+      stream: chatsQuery.snapshots().timeout(
+        const Duration(seconds: 10),
+        onTimeout: (sink) {
+          print('DEBUG: Query timeout after 10 seconds');
+          sink.addError('Query timeout. Please check your internet connection.');
+        },
+      ),
       builder: (context, snapshot) {
+        print('DEBUG: StreamBuilder state: ${snapshot.connectionState}');
+        if (snapshot.hasError) {
+          print('DEBUG: StreamBuilder error: ${snapshot.error}');
+          print('DEBUG: Error details: ${snapshot.error.runtimeType}');
+        }
+        if (snapshot.hasData) {
+          print('DEBUG: StreamBuilder data: ${snapshot.data?.docs.length} documents');
+          final docs = snapshot.data?.docs ?? [];
+          for (int i = 0; i < docs.length; i++) {
+            final chatData = docs[i].data() as Map<String, dynamic>;
+            print('Chat $i: isSeller=$_isSeller, customerId=${chatData['customerId']}, sellerId=${chatData['sellerId']}, currentUserId=${_currentUser!.uid}');
+          }
+        }
+        
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                _isSeller ? 'Loading seller messages...' : 'Loading customer messages...',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
+          );
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 60,
+                  color: Colors.red[300],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Error loading messages',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${snapshot.error}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      // Trigger rebuild to retry
+                    });
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
         }
 
         final chats = snapshot.data?.docs ?? [];
+        
+        // Filter for recent chats on client side if needed
+        List<QueryDocumentSnapshot> filteredChats = chats;
+        if (recentOnly) {
+          final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+          filteredChats = chats.where((chat) {
+            final chatData = chat.data() as Map<String, dynamic>;
+            final timestamp = chatData['lastMessageTimestamp'] as Timestamp?;
+            if (timestamp == null) return false;
+            return timestamp.toDate().isAfter(thirtyDaysAgo);
+          }).toList();
+        }
+        
+        // Sort the chats by lastMessageTimestamp manually
+        filteredChats.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          
+          final aTime = (aData['lastMessageTimestamp'] as Timestamp?)?.toDate() ?? DateTime(1970);
+          final bTime = (bData['lastMessageTimestamp'] as Timestamp?)?.toDate() ?? DateTime(1970);
+          
+          return bTime.compareTo(aTime); // Descending order (newest first)
+        });
 
-        if (chats.isEmpty) {
+        if (filteredChats.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -330,15 +579,18 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
         }
 
         return ListView.builder(
-          itemCount: chats.length,
+          itemCount: filteredChats.length,
           itemBuilder: (context, index) {
-            final chatData = chats[index].data() as Map<String, dynamic>;
-            final chatId = chats[index].id;
+            final chatData = filteredChats[index].data() as Map<String, dynamic>;
+            final chatId = filteredChats[index].id;
             
             // Determine if we need to fetch customer or seller info
             final otherPartyId = _isSeller 
                 ? chatData['customerId'] as String 
                 : chatData['sellerId'] as String;
+            
+            // Debug logging
+            print('Chat $index: isSeller=$_isSeller, otherPartyId=$otherPartyId, chatData keys: ${chatData.keys.toList()}');
             
             final Future<String> otherPartyNameFuture = _isSeller
                 ? _getUserName(otherPartyId)
@@ -352,6 +604,11 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
             final unreadCount = _isSeller 
                 ? chatData['unreadSellerCount'] as int? ?? 0 
                 : chatData['unreadCustomerCount'] as int? ?? 0;
+            
+            // Get product information if available
+            final productData = chatData['product'] as Map<String, dynamic>?;
+            final productName = productData?['name'] ?? productData?['title'];
+            final productId = chatData['productId'] as String?;
             
             return FutureBuilder<String>(
               future: otherPartyNameFuture,
@@ -369,23 +626,36 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
                   );
                 }
 
-                final userName = nameSnapshot.data ?? (_isSeller ? 'User' : 'Seller');
+                final userName = nameSnapshot.data ?? (_isSeller ? 'Customer' : 'Seller');
+                
+                // Add role indicator for clarity
+                final roleIndicator = _isSeller 
+                    ? '👤 ' // Customer icon for sellers viewing customers
+                    : '🏪 '; // Store icon for customers viewing sellers
                 
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: Colors.green,
+                    backgroundColor: _isSeller ? Colors.blue : Colors.green,
                     child: Text(
                       userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   title: Row(
                     children: [
+                      Text(
+                        roleIndicator,
+                        style: const TextStyle(fontSize: 14),
+                      ),
                       Expanded(
                         child: Text(
                           userName,
                           style: TextStyle(
                             fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 16,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -395,39 +665,77 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
                         style: TextStyle(
                           fontSize: 12,
                           color: unreadCount > 0 ? Colors.green : Colors.grey,
+                          fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ],
                   ),
-                  subtitle: Row(
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          lastMessage,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                            color: unreadCount > 0 ? Colors.black : Colors.grey,
+                      // Show product name if available
+                      if (productName != null && productName.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            'Re: $productName',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.blue,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
-                      if (unreadCount > 0)
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text(
-                            '$unreadCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                      // Last message with sender indicator
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RichText(
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              text: TextSpan(
+                                children: [
+                                  // Show who sent the last message
+                                  TextSpan(
+                                    text: _getLastMessageSender(chatData),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: unreadCount > 0 ? Colors.black87 : Colors.grey[600],
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: lastMessage,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                      color: unreadCount > 0 ? Colors.black : Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                          if (unreadCount > 0)
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Colors.green,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$unreadCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                   onTap: () {
@@ -440,6 +748,8 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
                           sellerId: chatData['sellerId'] as String,
                           customerId: chatData['customerId'] as String,
                           isSeller: _isSeller,
+                          product: productData,
+                          productId: productId,
                         ),
                       ),
                     );

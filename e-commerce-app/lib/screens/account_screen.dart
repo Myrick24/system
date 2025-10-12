@@ -104,116 +104,113 @@ class _AccountScreenState extends State<AccountScreen> {
                   ),
                 );
               }
-              
-              // No need to check sellers collection if we found the status in users collection
-              return;
-            }
-          }
-
-          // Check if user is already registered as a seller (fallback to sellers collection)
-          try {
-            print('=== DEBUG: Searching for seller ===');
-            final sellerQuery = await _firestore
-                .collection('sellers')
-                .where('email', isEqualTo: _currentUser!.email)
-                .limit(1)
-                .get();
-
-            print('Seller query result count: ${sellerQuery.docs.length}');
-
-            if (sellerQuery.docs.isNotEmpty) {
-              final sellerDoc = sellerQuery.docs.first;
-              final sellerData = sellerDoc.data();
-              String status = sellerData['status'] ?? 'pending';
-              bool isApproved = status == 'approved';
-
-              print('Seller found - Email: ${_currentUser!.email}');
-              print('Seller ID: ${sellerDoc.id}');
-              print('Seller Status: $status');
-              print('Is Approved: $isApproved');
-              print('Full seller data: $sellerData');
-
-              // Set user name from seller data if not already set
-              if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
-                setState(() {
-                  _userName = sellerData['name'];
-                });
-                print('User name set from sellers collection: ${sellerData['name']}');
-              }
-
-              setState(() {
-                _isRegisteredSeller = true;
-                _isSellerApproved = isApproved;
-              });
-
-              // Show status update message
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Seller status: ${status.toUpperCase()}'),
-                    backgroundColor: isApproved ? Colors.green : Colors.orange,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
             } else {
-              print('No seller found for email: ${_currentUser!.email}');
-              
-              // Let's also try to search by user ID as a fallback
-              print('=== DEBUG: Trying search by user ID ===');
-              final sellerByUidQuery = await _firestore
-                  .collection('sellers')
-                  .where('userId', isEqualTo: _currentUser!.uid)
-                  .limit(1)
-                  .get();
-                  
-              print('Seller by UID query result count: ${sellerByUidQuery.docs.length}');
-              
-              if (sellerByUidQuery.docs.isNotEmpty) {
-                final sellerDoc = sellerByUidQuery.docs.first;
-                final sellerData = sellerDoc.data();
-                String status = sellerData['status'] ?? 'pending';
-                bool isApproved = status == 'approved';
+              // Check if user is already registered as a seller (fallback to sellers collection)
+              try {
+                print('=== DEBUG: Searching for seller ===');
+                final sellerQuery = await _firestore
+                    .collection('sellers')
+                    .where('email', isEqualTo: _currentUser!.email)
+                    .limit(1)
+                    .get();
 
-                print('Seller found by UID - User ID: ${_currentUser!.uid}');
-                print('Seller ID: ${sellerDoc.id}');
-                print('Seller Status: $status');
-                print('Is Approved: $isApproved');
-                print('Full seller data: $sellerData');
+                print('Seller query result count: ${sellerQuery.docs.length}');
 
-                // Set user name from seller data if not already set
-                if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                if (sellerQuery.docs.isNotEmpty) {
+                  final sellerDoc = sellerQuery.docs.first;
+                  final sellerData = sellerDoc.data();
+                  String status = sellerData['status'] ?? 'pending';
+                  bool isApproved = status == 'approved';
+
+                  print('Seller found - Email: ${_currentUser!.email}');
+                  print('Seller ID: ${sellerDoc.id}');
+                  print('Seller Status: $status');
+                  print('Is Approved: $isApproved');
+                  print('Full seller data: $sellerData');
+
+                  // Set user name from seller data if not already set
+                  if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                    setState(() {
+                      _userName = sellerData['name'];
+                    });
+                    print('User name set from sellers collection: ${sellerData['name']}');
+                  }
+
                   setState(() {
-                    _userName = sellerData['name'];
+                    _isRegisteredSeller = true;
+                    _isSellerApproved = isApproved;
                   });
-                  print('User name set from sellers collection (by UID): ${sellerData['name']}');
-                }
 
-                setState(() {
-                  _isRegisteredSeller = true;
-                  _isSellerApproved = isApproved;
-                });
+                  // Show status update message
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Seller status: ${status.toUpperCase()}'),
+                        backgroundColor: isApproved ? Colors.green : Colors.orange,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } else {
+                  print('No seller found for email: ${_currentUser!.email}');
+                  
+                  // Let's also try to search by user ID as a fallback
+                  print('=== DEBUG: Trying search by user ID ===');
+                  final sellerByUidQuery = await _firestore
+                      .collection('sellers')
+                      .where('userId', isEqualTo: _currentUser!.uid)
+                      .limit(1)
+                      .get();
+                      
+                  print('Seller by UID query result count: ${sellerByUidQuery.docs.length}');
+                  
+                  if (sellerByUidQuery.docs.isNotEmpty) {
+                    final sellerDoc = sellerByUidQuery.docs.first;
+                    final sellerData = sellerDoc.data();
+                    String status = sellerData['status'] ?? 'pending';
+                    bool isApproved = status == 'approved';
 
-                // Show status update message
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Seller status: ${status.toUpperCase()}'),
-                      backgroundColor: isApproved ? Colors.green : Colors.orange,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
+                    print('Seller found by UID - User ID: ${_currentUser!.uid}');
+                    print('Seller ID: ${sellerDoc.id}');
+                    print('Seller Status: $status');
+                    print('Is Approved: $isApproved');
+                    print('Full seller data: $sellerData');
+
+                    // Set user name from seller data if not already set
+                    if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                      setState(() {
+                        _userName = sellerData['name'];
+                      });
+                      print('User name set from sellers collection (by UID): ${sellerData['name']}');
+                    }
+
+                    setState(() {
+                      _isRegisteredSeller = true;
+                      _isSellerApproved = isApproved;
+                    });
+
+                    // Show status update message
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Seller status: ${status.toUpperCase()}'),
+                          backgroundColor: isApproved ? Colors.green : Colors.orange,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } else {
+                    print('No seller found by email OR user ID');
+                    setState(() {
+                      _isRegisteredSeller = false;
+                      _isSellerApproved = false;
+                    });
+                  }
                 }
-              } else {
-                print('No seller found by email OR user ID');
-                setState(() {
-                  _isRegisteredSeller = false;
-                  _isSellerApproved = false;
-                });
+              } catch (sellerQueryError) {
+                print('Firestore seller query error: $sellerQueryError');
               }
             }
-          } catch (sellerQueryError) {
-            print('Firestore seller query error: $sellerQueryError');
           }
         } catch (error) {
           print('Firestore error: $error');

@@ -264,7 +264,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order approved successfully')),
+        const SnackBar(
+          content: Text('Order approved successfully'),
+          duration: Duration(seconds: 5),
+        ),
       );
 
       // Navigate to order status screen after successful approval
@@ -281,7 +284,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to approve order: $e')),
+        SnackBar(
+          content: Text('Failed to approve order: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     } finally {
       if (mounted) {
@@ -398,7 +404,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       await batch.commit();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order declined and product returned to inventory')),
+        const SnackBar(
+          content: Text('Order declined and product returned to inventory'),
+          duration: Duration(seconds: 5),
+        ),
       );
 
       // Navigate to order status screen after successful decline
@@ -415,7 +424,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       });
       
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to decline order: $e')),
+        SnackBar(
+          content: Text('Failed to decline order: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     } finally {
       if (mounted) {

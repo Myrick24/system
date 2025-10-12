@@ -6,6 +6,7 @@ import '../../services/cart_service.dart';
 import 'product_details_screen.dart';
 import '../cart_screen.dart';
 import '../login_screen.dart';
+import '../chat_detail_screen.dart';
 
 class BuyerProductBrowse extends StatefulWidget {
   const BuyerProductBrowse({Key? key}) : super(key: key);
@@ -120,6 +121,95 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
     _filterProducts();
   }
 
+  Future<void> _startChatWithSeller(String sellerId, String sellerName, {Map<String, dynamic>? product, String? productId}) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      _showLoginPrompt();
+      return;
+    }
+
+    try {
+      // Check if there's an existing chat between this customer and seller
+      final chatQuery = await _firestore.collection('chats')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('customerId', isEqualTo: currentUser.uid)
+          .limit(1)
+          .get();
+
+      String chatId;
+      
+      if (chatQuery.docs.isEmpty) {
+        // Create a new chat if none exists
+        final chatRef = _firestore.collection('chats').doc();
+        chatId = chatRef.id;
+        
+        Map<String, dynamic> chatData = {
+          'sellerId': sellerId,
+          'customerId': currentUser.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastMessage': '',
+          'lastMessageTimestamp': FieldValue.serverTimestamp(),
+          'lastSenderId': '',
+          'unreadCustomerCount': 0,
+          'unreadSellerCount': 0,
+        };
+        
+        // Add product information if provided
+        if (product != null) {
+          chatData['product'] = {
+            'id': productId,
+            'name': product['name'] ?? 'Product',
+            'price': product['price'] ?? 0,
+            'imageUrl': product['imageUrl'],
+            'unit': product['unit'] ?? 'piece',
+          };
+          chatData['productId'] = productId;
+        }
+        
+        await chatRef.set(chatData);
+      } else {
+        // Use existing chat but update product info if provided
+        chatId = chatQuery.docs.first.id;
+        
+        if (product != null) {
+          await _firestore.collection('chats').doc(chatId).update({
+            'product': {
+              'id': productId,
+              'name': product['name'] ?? 'Product',
+              'price': product['price'] ?? 0,
+              'imageUrl': product['imageUrl'],
+              'unit': product['unit'] ?? 'piece',
+            },
+            'productId': productId,
+          });
+        }
+      }
+
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatDetailScreen(
+            chatId: chatId,
+            otherPartyName: sellerName,
+            sellerId: sellerId,
+            customerId: currentUser.uid,
+            isSeller: false,
+            product: product,
+            productId: productId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error starting chat: $e'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _addToCart(
       Map<String, dynamic> product, String productId) async {
     if (_auth.currentUser == null) {
@@ -133,7 +223,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
       final cartItem = CartItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         productId: productId,
-        productName: product['productName'] ?? 'Unknown Product',
+        productName: product['productName'] ?? product['name'] ?? 'Unknown Product',
         price: (product['price'] ?? 0).toDouble(),
         imageUrl: product['imageUrl'],
         sellerId: product['sellerId'] ?? '',
@@ -142,22 +232,36 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
         isReservation: false,
       );
 
-      await cartService.addItem(cartItem);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${product['productName']} added to cart'),
-          action: SnackBarAction(
-            label: 'View Cart',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CartScreen()),
-              );
-            },
+      print('DEBUG: Adding item to cart from browse - ProductID: $productId');
+      
+      bool success = await cartService.addItem(cartItem);
+      
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${product['productName'] ?? product['name']} added to cart'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'View Cart',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CartScreen()),
+                );
+              },
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to add to cart - insufficient stock or other error'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to add to cart: $e')),
@@ -400,38 +504,75 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Product Image
+            // Product Image with Message Icon
             Expanded(
               flex: 3,
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
-                child: Container(
-                  width: double.infinity,
-                  child: product['imageUrl'] != null
-                      ? Image.network(
-                          product['imageUrl'],
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(12)),
+                    child: Container(
+                      width: double.infinity,
+                      child: product['imageUrl'] != null
+                          ? Image.network(
+                              product['imageUrl'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(
+                                    Icons.image_not_supported,
+                                    color: Colors.grey,
+                                    size: 40,
+                                  ),
+                                );
+                              },
+                            )
+                          : Container(
                               color: Colors.grey.shade200,
                               child: const Icon(
-                                Icons.image_not_supported,
+                                Icons.image,
                                 color: Colors.grey,
                                 size: 40,
                               ),
-                            );
-                          },
-                        )
-                      : Container(
-                          color: Colors.grey.shade200,
+                            ),
+                    ),
+                  ),
+                  // Message Icon
+                  if (product['sellerId'] != null)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () {
+                          final sellerId = product['sellerId'];
+                          final sellerName = product['sellerName'] ?? 'Seller';
+                          _startChatWithSeller(sellerId, sellerName, product: product, productId: productId);
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
                           child: const Icon(
-                            Icons.image,
-                            color: Colors.grey,
-                            size: 40,
+                            Icons.message,
+                            color: Colors.white,
+                            size: 18,
                           ),
                         ),
-                ),
+                      ),
+                    ),
+                ],
               ),
             ),
 

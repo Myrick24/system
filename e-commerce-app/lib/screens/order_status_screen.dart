@@ -634,11 +634,17 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   _loadOrderData();
                                   
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Order cancelled successfully')),
+                                    const SnackBar(
+                                      content: Text('Order cancelled successfully'),
+                                      duration: Duration(seconds: 5),
+                                    ),
                                   );
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Failed to cancel order: $e')),
+                                    SnackBar(
+                                      content: Text('Failed to cancel order: $e'),
+                                      duration: const Duration(seconds: 5),
+                                    ),
                                   );
                                 }
                               }
@@ -664,7 +670,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                             onPressed: () {
                               // Implement chat functionality
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Chat feature coming soon')),
+                                const SnackBar(
+                                  content: Text('Chat feature coming soon'),
+                                  duration: Duration(seconds: 5),
+                                ),
                               );
                             },
                             style: OutlinedButton.styleFrom(
@@ -722,7 +731,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                               _loadOrderData();
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to update status: $e')),
+                                SnackBar(
+                                  content: Text('Failed to update status: $e'),
+                                  duration: const Duration(seconds: 5),
+                                ),
                               );
                             }
                           },
@@ -759,7 +771,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                               _loadOrderData();
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to update status: $e')),
+                                SnackBar(
+                                  content: Text('Failed to update status: $e'),
+                                  duration: const Duration(seconds: 5),
+                                ),
                               );
                             }
                           },

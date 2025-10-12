@@ -35,7 +35,7 @@ class SystemNotificationTestButton extends StatelessWidget {
             content:
                 Text('System notification sent! Check your notification tray.'),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 5),
           ),
         );
       }

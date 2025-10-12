@@ -53,7 +53,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login successful!')),
+          const SnackBar(
+            content: Text('Login successful!'),
+            duration: Duration(seconds: 5),
+          ),
         );
 
         // Send welcome notification for returning users
@@ -132,7 +135,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

@@ -620,7 +620,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
                           } catch (e) {
                             print('Error navigating to order details screen: $e');
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error viewing order details: $e')),
+                              SnackBar(
+                                content: Text('Error viewing order details: $e'),
+                                duration: const Duration(seconds: 5),
+                              ),
                             );
                           }
                         } else {

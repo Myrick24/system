@@ -11,8 +11,12 @@ service cloud.firestore {
       // User can read and update their own profile
       allow read, update: if request.auth != null && request.auth.uid == userId;
       
-      // Only admins can read all user documents and delete users
-      allow read, delete: if request.auth != null && isAdmin();
+      // Allow any authenticated user to read basic profile info (for chat display)
+      // This allows displaying names in chat lists
+      allow read: if request.auth != null;
+      
+      // Only admins can delete users
+      allow delete: if request.auth != null && isAdmin();
       
       // Any authenticated user can create a user document with their own UID
       allow create: if request.auth != null && request.auth.uid == userId;
@@ -47,17 +51,22 @@ service cloud.firestore {
       allow read: if request.auth != null && 
                  (resource.data.userId == request.auth.uid || isAdmin());
       
+      // Allow any authenticated user to read seller profiles (for chat display)
+      allow read: if request.auth != null;
+      
       // Only admins can update seller status
       allow update: if request.auth != null && isAdmin();
     }
-    // Also allow reading approved products in lists/queries (for guests and users)
-      allow list: if resource.data.status == 'approved';
       
     // Products collection
     match /products/{productId} {
       // Anyone (including guests) can read approved products
       // This covers both individual document reads and collection queries
       allow read: if resource.data.status == 'approved';
+      
+      // Allow authenticated users to list/query products with filtering
+      // This is needed for collection queries from buyers
+      allow list: if request.auth != null;
       
       // Sellers can create products and read/update/delete their own
       // But only if they are approved sellers
@@ -68,6 +77,10 @@ service cloud.firestore {
       
       allow read, update, delete: if request.auth != null && 
                                  resource.data.sellerId == request.auth.uid;
+      
+      // Allow authenticated users to update only stock-related fields (for cart operations)
+      allow update: if request.auth != null && 
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock']);
         
       // Admins can read, update and delete any product
       allow read, update, delete: if request.auth != null && isAdmin();
@@ -123,6 +136,99 @@ service cloud.firestore {
          
       // Admins can read and manage all notifications
       allow read, write: if request.auth != null && isAdmin();
+    }
+    
+    // Chats collection
+    match /chats/{chatId} {
+      // Users can read and write chats where they are either the seller or customer
+      allow read, write: if request.auth != null && 
+        (resource.data.sellerId == request.auth.uid || 
+         resource.data.customerId == request.auth.uid);
+         
+      // Allow creating new chats
+      allow create: if request.auth != null && 
+        (request.resource.data.sellerId == request.auth.uid || 
+         request.resource.data.customerId == request.auth.uid);
+         
+      // Allow listing chats for authenticated users (needed for collection queries)
+      allow list: if request.auth != null;
+         
+      // Admins can read and manage all chats
+      allow read, write: if request.auth != null && isAdmin();
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Users can read and create messages in chats where they are participants
+        allow read, create: if request.auth != null && 
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid || 
+           get(/databases/$(database)/documents/chats/$(chatId)).data.customerId == request.auth.uid);
+           
+        // Users can update messages they sent (for read status)
+        allow update: if request.auth != null && 
+          resource.data.senderId == request.auth.uid;
+          
+        // Admins can read and manage all messages
+        allow read, write: if request.auth != null && isAdmin();
+      }
+    }
+
+    // Seller Ratings collection
+    match /seller_ratings/{ratingId} {
+      // Anyone can read ratings (to display on seller profiles)
+      allow read: if true;
+      
+      // Only authenticated users can create ratings
+      allow create: if request.auth != null && 
+        request.resource.data.buyerId == request.auth.uid;
+      
+      // Users can update/delete their own ratings
+      allow update, delete: if request.auth != null && 
+        resource.data.buyerId == request.auth.uid;
+        
+      // Admins can manage all ratings
+      allow read, write: if request.auth != null && isAdmin();
+    }
+
+    // Review Reports collection
+    match /review_reports/{reportId} {
+      // Users can create reports
+      allow create: if request.auth != null && 
+        request.resource.data.reportedBy == request.auth.uid;
+        
+      // Only admins can read and manage reports
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    
+    // User carts collection
+    match /user_carts/{userId} {
+      // Users can only access their own cart
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Cart items subcollection
+      match /cart_items/{cartItemId} {
+        // Users can only access their own cart items
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Orders collection
+    match /orders/{orderId} {
+      // Users can read and create orders where they are buyer or seller
+      allow read, create: if request.auth != null && 
+        (request.resource.data.buyerId == request.auth.uid || 
+         request.resource.data.sellerId == request.auth.uid ||
+         resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+         
+      // Users can update their own orders with specific fields
+      allow update: if request.auth != null && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes']);
+          
+      // Admins can read and update any order
+      allow read, update: if request.auth != null && isAdmin();
     }
     
     // Default deny

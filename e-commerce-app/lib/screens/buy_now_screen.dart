@@ -4,8 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
+import '../services/rating_service.dart';
+import '../models/rating_model.dart';
+import '../widgets/rating_widgets.dart';
 import 'cart_screen.dart';
 import 'login_screen.dart';
+import 'buyer/seller_details_screen.dart';
 
 class BuyNowScreen extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -24,7 +28,12 @@ class BuyNowScreen extends StatefulWidget {
 class _BuyNowScreenState extends State<BuyNowScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
+  final RatingService _ratingService = RatingService();
 
+  Map<String, dynamic>? _sellerInfo;
+  SellerRatingStats? _ratingStats;
+  bool _isLoadingSeller = true;
+  bool _isLoadingRating = true;
   int _quantity = 1;
   bool _isLoading = false;
   String? _selectedDeliveryOption = 'Pick Up';
@@ -37,79 +46,110 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     'GCash'
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSellerInfo();
+  }
+
+  Future<void> _loadSellerInfo() async {
+    try {
+      final sellerId = widget.product['sellerId'];
+      if (sellerId != null) {
+        // Load seller info and rating stats in parallel
+        final futures = await Future.wait([
+          _firestore.collection('users').doc(sellerId).get(),
+          _ratingService.getSellerRatingStats(sellerId),
+        ]);
+        
+        final sellerDoc = futures[0] as DocumentSnapshot;
+        final ratingStats = futures[1] as SellerRatingStats;
+        
+        if (sellerDoc.exists) {
+          setState(() {
+            _sellerInfo = sellerDoc.data() as Map<String, dynamic>?;
+            _ratingStats = ratingStats;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading seller info: $e');
+    } finally {
+      setState(() {
+        _isLoadingSeller = false;
+        _isLoadingRating = false;
+      });
+    }
+  }
+
+  String _getSellerName() {
+    if (_sellerInfo == null) return 'Seller';
+    
+    // Try multiple name fields in order of preference
+    final firstName = _sellerInfo!['firstName'];
+    final lastName = _sellerInfo!['lastName'];
+    final fullName = _sellerInfo!['fullName'];
+    final name = _sellerInfo!['name'];
+    final displayName = _sellerInfo!['displayName'];
+    
+    if (firstName != null && firstName.isNotEmpty) {
+      if (lastName != null && lastName.isNotEmpty) {
+        return '$firstName $lastName';
+      } else {
+        return firstName;
+      }
+    } else if (fullName != null && fullName.isNotEmpty) {
+      return fullName;
+    } else if (name != null && name.isNotEmpty) {
+      return name;
+    } else if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    } else {
+      // Fallback to email username
+      final email = _sellerInfo!['email'];
+      if (email != null && email.isNotEmpty) {
+        final emailName = email.toString().split('@').first;
+        return emailName[0].toUpperCase() + emailName.substring(1);
+      }
+    }
+    
+    return 'Seller';
+  }
+
+  String _getSellerLocation() {
+    if (_sellerInfo == null) return '';
+    
+    // Try multiple location fields
+    final address = _sellerInfo!['address'];
+    final location = _sellerInfo!['location'];
+    final city = _sellerInfo!['city'];
+    final province = _sellerInfo!['province'];
+    final region = _sellerInfo!['region'];
+    
+    if (address != null && address.isNotEmpty) {
+      return address;
+    } else if (location != null && location.isNotEmpty) {
+      return location;
+    } else if (city != null && city.isNotEmpty) {
+      if (province != null && province.isNotEmpty) {
+        return '$city, $province';
+      } else {
+        return city;
+      }
+    } else if (province != null && province.isNotEmpty) {
+      return province;
+    } else if (region != null && region.isNotEmpty) {
+      return region;
+    }
+    
+    return '';
+  }
+
   double _calculateTotal() {
     double price = widget.product['price'] is int
         ? (widget.product['price'] as int).toDouble()
         : widget.product['price'] as double;
     return price * _quantity;
-  }
-
-  void _addToCart() async {
-    if (_auth.currentUser == null) {
-      _showLoginPrompt();
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    final cartService = Provider.of<CartService>(context, listen: false);
-
-    try {
-      // Create cart item
-      final cartItem = CartItem(
-        id: 'item_${DateTime.now().millisecondsSinceEpoch}',
-        productId: widget.productId,
-        sellerId: widget.product['sellerId'],
-        productName: widget.product['name'],
-        price: widget.product['price'] is int
-            ? (widget.product['price'] as int).toDouble()
-            : widget.product['price'] as double,
-        quantity: _quantity,
-        unit: widget.product['unit'] ?? 'piece',
-        isReservation: false,
-        imageUrl: widget.product['imageUrl'],
-      );
-
-      // Add to cart - this will update the database stock
-      final success = await cartService.addItem(cartItem);
-
-      if (success) {
-        // Save to database if user is logged in
-        if (_auth.currentUser != null) {
-          await cartService.saveCartToDatabase(_auth.currentUser!.uid);
-        }
-
-        // Show confirmation
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Added $_quantity ${widget.product['unit']} to cart'),
-            action: SnackBarAction(
-              label: 'VIEW CART',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const CartScreen()),
-                );
-              },
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Not enough stock available')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   void _showLoginPrompt() {
@@ -195,13 +235,19 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Not enough stock available')),
+          const SnackBar(
+            content: Text('Not enough stock available'),
+            duration: Duration(seconds: 5),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -216,7 +262,6 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
   @override
   Widget build(BuildContext context) {
     // Extract product data
-    final isOrganic = widget.product['isOrganic'] ?? false;
     final productName = widget.product['name'] ?? 'Product Name';
     final description =
         widget.product['description'] ?? 'No description available';
@@ -247,8 +292,8 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Product Details'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
         actions: [
           Stack(
             children: [
@@ -320,24 +365,23 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                                 ? loadingProgress.cumulativeBytesLoaded /
                                     loadingProgress.expectedTotalBytes!
                                 : null,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                isOrganic ? Colors.green : Colors.orange),
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
                           ),
                         );
                       },
-                      errorBuilder: (context, error, stackTrace) => Center(
+                      errorBuilder: (context, error, stackTrace) => const Center(
                         child: Icon(
                           Icons.shopping_basket,
                           size: 80,
-                          color: isOrganic ? Colors.green : Colors.orange,
+                          color: Colors.green,
                         ),
                       ),
                     )
-                  : Center(
+                  : const Center(
                       child: Icon(
                         Icons.shopping_basket,
                         size: 80,
-                        color: isOrganic ? Colors.green : Colors.orange,
+                        color: Colors.green,
                       ),
                     ),
             ),
@@ -347,35 +391,13 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Product Name and Organic Label
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          productName,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text(
-                          'ORGANIC',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
+                  // Product Name
+                  Text(
+                    productName,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
 
                   const SizedBox(height: 8),
@@ -481,76 +503,129 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                   const SizedBox(height: 24),
 
                   // Seller Information
-                  Row(
-                    children: [
-                      const CircleAvatar(
-                        backgroundColor: Colors.green,
-                        radius: 16,
-                        child: Icon(
-                          Icons.person,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FutureBuilder<DocumentSnapshot>(
-                            future: _firestore
-                                .collection('sellers')
-                                .doc(widget.product['sellerId'])
-                                .get(),
-                            builder: (context, snapshot) {
-                              String sellerName = 'Seller';
-                              String location = 'Location';
-
-                              if (snapshot.hasData && snapshot.data!.exists) {
-                                final data = snapshot.data!.data()
-                                    as Map<String, dynamic>?;
-                                if (data != null) {
-                                  sellerName = data['fullName'] ?? 'Seller';
-                                  location = data['location'] ?? 'Location';
-                                }
-                              }
-
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    sellerName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    location,
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star,
-                            size: 16,
-                            color: Colors.amber,
-                          ),
-                          const SizedBox(width: 2),
-                          const Text(
-                            '4.8',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                  GestureDetector(
+                    onTap: () {
+                      if (widget.product['sellerId'] != null && _sellerInfo != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SellerDetailsScreen(
+                              sellerId: widget.product['sellerId'],
+                              sellerInfo: _sellerInfo,
                             ),
                           ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.green.shade300, width: 2),
+                            ),
+                            child: CircleAvatar(
+                              backgroundColor: Colors.green,
+                              radius: 20,
+                              child: Text(
+                                !_isLoadingSeller && _sellerInfo != null
+                                    ? _getSellerName()[0].toUpperCase()
+                                    : 'S',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  !_isLoadingSeller ? _getSellerName() : 'Loading...',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                if (!_isLoadingSeller && _getSellerLocation().isNotEmpty)
+                                  Text(
+                                    _getSellerLocation(),
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                const SizedBox(height: 4),
+                                // Rating Section
+                                if (!_isLoadingRating && _ratingStats != null) ...[
+                                  RatingWidget(
+                                    rating: _ratingStats!.averageRating,
+                                    showText: true,
+                                    size: 14,
+                                    customText: '${_ratingStats!.averageRating.toStringAsFixed(1)} (${_ratingStats!.totalReviews})',
+                                  ),
+                                ] else if (!_isLoadingRating) ...[
+                                  Row(
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: List.generate(5, (index) {
+                                          return Icon(
+                                            Icons.star_border,
+                                            color: Colors.grey.shade400,
+                                            size: 14,
+                                          );
+                                        }),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'No rating (0)',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ] else ...[
+                                  Row(
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: List.generate(5, (index) {
+                                          return Icon(
+                                            Icons.star_border,
+                                            color: Colors.grey.shade300,
+                                            size: 14,
+                                          );
+                                        }),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Loading...',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade500,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.grey.shade400,
+                            size: 16,
+                          ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
 
                   const Divider(height: 32),
@@ -718,28 +793,6 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                   ),
 
                   const SizedBox(height: 32),
-
-                  // Add to Cart Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: _isLoading ? null : _addToCart,
-                      child: const Text(
-                        'Add to Cart',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
 
                   // Buy Now Button
                   SizedBox(

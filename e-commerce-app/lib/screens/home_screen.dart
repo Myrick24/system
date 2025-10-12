@@ -72,11 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
             .limit(1)
             .get();
         if (sellerQuery.docs.isNotEmpty) {
-          final sellerData = sellerQuery.docs.first.data();
           setState(() {
             _isRegisteredSeller = true;
-            _sellerId =
-                sellerData['id']; // Use the 'id' field from the seller document
+            _sellerId = _currentUser!.uid; // Use Firebase Auth user ID
           });
 
           // If user is a seller, check for unread notifications
@@ -226,6 +224,46 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
+          // Messages icon with badge counter
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.message, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MessagesScreen()),
+                  );
+                },
+                tooltip: 'Messages',
+              ),
+              // Show badge if there are unread messages
+              if (_unreadMessagesCount > 0)
+                Positioned(
+                  right: 5,
+                  top: 5,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _unreadMessagesCount > 9 ? '9+' : '$_unreadMessagesCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           // Notification test button (for development/testing)
           IconButton(
             icon: const Icon(Icons.bug_report, color: Colors.orange),

@@ -163,7 +163,10 @@ class _ProductScreenState extends State<ProductScreen> {
     } catch (e) {
       print('Error picking image: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error selecting image: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error selecting image: ${e.toString()}'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
@@ -382,7 +385,10 @@ class _ProductScreenState extends State<ProductScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add product: ${e.toString()}')),
+          SnackBar(
+            content: Text('Failed to add product: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

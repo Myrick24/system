@@ -178,13 +178,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order cancelled successfully')),
+        const SnackBar(
+          content: Text('Order cancelled successfully'),
+          duration: Duration(seconds: 5),
+        ),
       );
 
       _loadOrders(); // Refresh the orders
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to cancel order: $e')),
+        SnackBar(
+          content: Text('Failed to cancel order: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }

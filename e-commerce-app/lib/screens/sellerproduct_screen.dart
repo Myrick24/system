@@ -282,7 +282,7 @@ class _SellerProductScreenState extends State<SellerProductScreen> {
                                             borderRadius: BorderRadius.circular(12),
                                           ),
                                           child: Text(
-                                            product['category'] ?? 'Other',
+                                            product['category'] ?? 'Others',
                                             style: const TextStyle(
                                               fontSize: 12,
                                               color: Colors.green,

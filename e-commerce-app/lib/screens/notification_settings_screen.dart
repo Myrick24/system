@@ -376,6 +376,7 @@ class _NotificationSettingsScreenState
           const SnackBar(
             content: Text('All notifications cleared'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
           ),
         );
       }

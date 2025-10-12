@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
 import 'checkout_screen.dart';
 
@@ -12,7 +13,6 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  final CartService _cartService = CartService();
   final _auth = FirebaseAuth.instance;
   bool _isLoading = false;
   String? _selectedPaymentOption = 'Cash on Pick-up';
@@ -45,7 +45,8 @@ class _CartScreenState extends State<CartScreen> {
         _isLoading = true;
       });
 
-      await _cartService.loadCartFromDatabase(_auth.currentUser!.uid);
+      final cartService = Provider.of<CartService>(context, listen: false);
+      await cartService.loadCartFromDatabase(_auth.currentUser!.uid);
 
       setState(() {
         _isLoading = false;
@@ -61,13 +62,22 @@ class _CartScreenState extends State<CartScreen> {
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _cartService.cartItems.isEmpty
-              ? _buildEmptyCart()
-              : _buildCartWithItems(),
-      bottomNavigationBar:
-          _cartService.cartItems.isEmpty ? null : _buildCheckoutBar(),
+      body: Consumer<CartService>(
+        builder: (context, cartService, child) {
+          return _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : cartService.cartItems.isEmpty
+                  ? _buildEmptyCart()
+                  : _buildCartWithItems(cartService);
+        },
+      ),
+      bottomNavigationBar: Consumer<CartService>(
+        builder: (context, cartService, child) {
+          return cartService.cartItems.isEmpty 
+              ? const SizedBox.shrink() 
+              : _buildCheckoutBar();
+        },
+      ),
     );
   }
 
@@ -115,11 +125,11 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartWithItems() {
+  Widget _buildCartWithItems(CartService cartService) {
     final regularItems =
-        _cartService.cartItems.where((item) => !item.isReservation).toList();
+        cartService.cartItems.where((item) => !item.isReservation).toList();
     final reservationItems =
-        _cartService.cartItems.where((item) => item.isReservation).toList();
+        cartService.cartItems.where((item) => item.isReservation).toList();
 
     return SingleChildScrollView(
       child: Column(
@@ -136,7 +146,7 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ),
             ),
-            ...regularItems.map((item) => _buildCartItemTile(item)),
+            ...regularItems.map((item) => _buildCartItemTile(item, cartService)),
           ],
 
           if (reservationItems.isNotEmpty) ...[
@@ -150,7 +160,7 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ),
             ),
-            ...reservationItems.map((item) => _buildCartItemTile(item)),
+            ...reservationItems.map((item) => _buildCartItemTile(item, cartService)),
           ],
 
           const Divider(thickness: 1),
@@ -251,7 +261,7 @@ class _CartScreenState extends State<CartScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Subtotal:'),
-                    Text('₱${_cartService.totalPrice.toStringAsFixed(2)}'),
+                    Text('₱${cartService.totalPrice.toStringAsFixed(2)}'),
                   ],
                 ),
                 const Divider(),
@@ -266,7 +276,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ),
                     Text(
-                      '₱${_cartService.totalPrice.toStringAsFixed(2)}',
+                      '₱${cartService.totalPrice.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -285,7 +295,7 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartItemTile(CartItem item) {
+  Widget _buildCartItemTile(CartItem item, CartService cartService) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Padding(
@@ -368,7 +378,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => _showRemoveItemDialog(item),
+                        onPressed: () => _showRemoveItemDialog(item, cartService),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -407,7 +417,7 @@ class _CartScreenState extends State<CartScreen> {
                             InkWell(
                               onTap: () {
                                 if (item.quantity > 1) {
-                                  _cartService.updateQuantity(
+                                  cartService.updateQuantity(
                                       item.id, item.quantity - 1);
                                   setState(() {});
                                 }
@@ -428,7 +438,7 @@ class _CartScreenState extends State<CartScreen> {
                             ),
                             InkWell(
                               onTap: () {
-                                _cartService.updateQuantity(
+                                cartService.updateQuantity(
                                     item.id, item.quantity + 1);
                                 setState(() {});
                               },
@@ -459,7 +469,7 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   // Show a confirmation dialog when removing an item from cart
-  Future<void> _showRemoveItemDialog(CartItem item) async {
+  Future<void> _showRemoveItemDialog(CartItem item, CartService cartService) async {
     return showDialog<void>(
       context: context,
       barrierDismissible: false, // User must tap a button to close dialog
@@ -489,7 +499,7 @@ class _CartScreenState extends State<CartScreen> {
             TextButton(
               child: const Text('Remove'),
               onPressed: () async {
-                await _cartService.removeItem(item.id);
+                await cartService.removeItem(item.id);
                 Navigator.of(context).pop();
                 setState(() {}); // Refresh UI
 
@@ -515,68 +525,75 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _buildCheckoutBar() {
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-                Text(
-                  '₱${_cartService.totalPrice.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: _processCheckout,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-            ),
-            child: const Text(
-              'Checkout',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+    return Consumer<CartService>(
+      builder: (context, cartService, child) {
+        return Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.3),
+                spreadRadius: 1,
+                blurRadius: 5,
+                offset: const Offset(0, -2),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    Text(
+                      '₱${cartService.totalPrice.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => _processCheckout(cartService),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+                child: const Text(
+                  'Checkout',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Future<void> _processCheckout() async {
+  Future<void> _processCheckout(CartService cartService) async {
     if (_auth.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login to continue with checkout')),
+        const SnackBar(
+          content: Text('Please login to continue with checkout'),
+          duration: Duration(seconds: 5),
+        ),
       );
       return;
     }
@@ -585,7 +602,10 @@ class _CartScreenState extends State<CartScreen> {
     if (_selectedDeliveryOption == 'Meet-up' &&
         _meetupLocation.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a meet-up location')),
+        const SnackBar(
+          content: Text('Please enter a meet-up location'),
+          duration: Duration(seconds: 5),
+        ),
       );
       return;
     }
@@ -595,7 +615,7 @@ class _CartScreenState extends State<CartScreen> {
     });
 
     try {
-      final success = await _cartService.processCart(
+      final success = await cartService.processCart(
         _auth.currentUser!.uid,
         paymentMethod: _selectedPaymentOption ?? 'Cash on Delivery',
         deliveryMethod: _selectedDeliveryOption ?? 'Delivery',
@@ -606,7 +626,10 @@ class _CartScreenState extends State<CartScreen> {
       if (success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Order placed successfully!')),
+            const SnackBar(
+              content: Text('Order placed successfully!'),
+              duration: Duration(seconds: 5),
+            ),
           );
 
           // Navigate to checkout screen instead of just popping back
@@ -628,7 +651,10 @@ class _CartScreenState extends State<CartScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

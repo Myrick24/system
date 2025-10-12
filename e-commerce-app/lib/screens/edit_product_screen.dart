@@ -126,7 +126,10 @@ class _EditProductScreenState extends State<EditProductScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading product: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error loading product: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -192,7 +195,10 @@ class _EditProductScreenState extends State<EditProductScreen> {
     } catch (e) {
       print('Error picking image: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error selecting image: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error selecting image: ${e.toString()}'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
@@ -352,14 +358,20 @@ class _EditProductScreenState extends State<EditProductScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product updated successfully!')),
+          const SnackBar(
+            content: Text('Product updated successfully!'),
+            duration: Duration(seconds: 5),
+          ),
         );
         Navigator.pop(context); // Return to previous screen
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update product: ${e.toString()}')),
+          SnackBar(
+            content: Text('Failed to update product: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

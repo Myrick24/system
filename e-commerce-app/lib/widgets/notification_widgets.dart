@@ -232,7 +232,7 @@ class NotificationSnackBarHelper {
           ],
         ),
         backgroundColor: Colors.orange.shade700,
-        duration: const Duration(seconds: 6),
+        duration: const Duration(seconds: 5),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         margin: const EdgeInsets.all(16),

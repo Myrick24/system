@@ -139,7 +139,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
                 content: Text(
-                    'Registration successful! You can now start selling your products.')),
+                    'Registration successful! You can now start selling your products.'),
+                duration: Duration(seconds: 5)),
           );
           // Return to previous screen with a result to indicate seller registration
           Navigator.pop(context,
@@ -152,7 +153,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content:
-                    Text('Registration failed: ${firestoreError.toString()}')),
+                    Text('Registration failed: ${firestoreError.toString()}'),
+                duration: const Duration(seconds: 5)),
           );
         }
       }
@@ -160,7 +162,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       print('Error during registration: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('An error occurred: ${e.toString()}')),
+          SnackBar(
+            content: Text('An error occurred: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {

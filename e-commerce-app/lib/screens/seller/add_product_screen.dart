@@ -30,6 +30,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   String _selectedOrderType = 'Available Now';
   String _selectedUnit = 'kg';
+  String _selectedCategory = 'Vegetables';
   File? _selectedImage;
   DateTime? _harvestDate;
   DateTime? _estimatedAvailabilityDate;
@@ -55,6 +56,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
     'bunches',
     'liters',
     'dozens'
+  ];
+
+  final List<String> _categories = [
+    'Vegetables',
+    'Fruits', 
+    'Grains',
+    'Others'
   ];
 
   @override
@@ -86,7 +94,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
+        SnackBar(
+          content: Text('Error picking image: $e'),
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
@@ -140,6 +151,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         const SnackBar(
           content: Text('Please select at least one delivery method'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
         ),
       );
       return;
@@ -153,6 +165,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           content: Text(
               'Please select an estimated availability date for pre-order products'),
           backgroundColor: Colors.orange,
+          duration: Duration(seconds: 5),
         ),
       );
       return;
@@ -161,7 +174,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in to add products')),
+        const SnackBar(
+          content: Text('You must be logged in to add products'),
+          duration: Duration(seconds: 5),
+        ),
       );
       return;
     }
@@ -207,7 +223,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   Text('Uploading product image...'),
                 ],
               ),
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 5),
             ),
           );
         }
@@ -222,7 +238,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               const SnackBar(
                 content: Text('Image uploaded successfully! ✅'),
                 backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
+                duration: const Duration(seconds: 5),
               ),
             );
           }
@@ -237,6 +253,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'quantity': int.parse(_quantityController.text.trim()),
         'currentStock': int.parse(_quantityController.text.trim()),
         'unit': _selectedUnit,
+        'category': _selectedCategory,
         'pickupLocation': _pickupLocationController.text.trim(),
         'deliveryOptions': _selectedDeliveryOptions.entries
             .where((entry) => entry.value)
@@ -285,6 +302,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             content: Text(
                 'Product submitted successfully! It will be available once approved by admin.'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
           ),
         );
         Navigator.pop(context, true); // Return true to indicate success
@@ -293,7 +311,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('Error adding product: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding product: $e')),
+          SnackBar(
+          content: Text('Error adding product: $e'),
+          duration: const Duration(seconds: 5),
+        ),
         );
       }
     } finally {
@@ -604,6 +625,40 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             return 'Please enter product description';
                           }
                           return null;
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Category Selection
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedCategory,
+                        decoration: InputDecoration(
+                          labelText: 'Category*',
+                          prefixIcon: Icon(Icons.category,
+                              color: Colors.grey.shade600),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          labelStyle: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        items: _categories.map((category) {
+                          return DropdownMenuItem<String>(
+                            value: category,
+                            child: Text(category),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedCategory = value!;
+                          });
                         },
                       ),
                     ),

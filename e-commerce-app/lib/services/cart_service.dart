@@ -119,6 +119,12 @@ class CartService extends ChangeNotifier {
   // Add item to cart and temporarily hold the stock
   Future<bool> addItem(CartItem item) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('User not authenticated');
+        return false;
+      }
+
       // Skip stock check for reservation items
       if (!item.isReservation) {
         // Check if there's enough stock
@@ -151,6 +157,7 @@ class CartService extends ChangeNotifier {
           unit: existingItem.unit,
           isReservation: existingItem.isReservation,
           pickupDate: item.isReservation ? item.pickupDate : null,
+          imageUrl: existingItem.imageUrl,
         );
         _cartItems[existingIndex] = updatedItem;
       } else {
@@ -158,6 +165,9 @@ class CartService extends ChangeNotifier {
         _cartItems.add(item);
       }
 
+      // Save cart to database
+      await saveCartToDatabase(user.uid);
+      
       notifyListeners();
       return true;
     } catch (e) {
@@ -169,6 +179,12 @@ class CartService extends ChangeNotifier {
   // Remove item from cart and return the stock to inventory
   Future<void> removeItem(String id) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('User not authenticated');
+        return;
+      }
+
       final index = _cartItems.indexWhere((item) => item.id == id);
       if (index >= 0) {
         final item = _cartItems[index];
@@ -182,6 +198,10 @@ class CartService extends ChangeNotifier {
         }
 
         _cartItems.removeAt(index);
+        
+        // Save cart to database
+        await saveCartToDatabase(user.uid);
+        
         notifyListeners();
       }
     } catch (e) {
@@ -242,9 +262,17 @@ class CartService extends ChangeNotifier {
         unit: item.unit,
         isReservation: item.isReservation,
         pickupDate: item.pickupDate,
+        imageUrl: item.imageUrl,
       );
 
       _cartItems[index] = updatedItem;
+      
+      // Save cart to database
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await saveCartToDatabase(user.uid);
+      }
+      
       notifyListeners();
     }
   }
@@ -252,6 +280,12 @@ class CartService extends ChangeNotifier {
   // Clear cart and return all stock to inventory
   Future<void> clearCart() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('User not authenticated');
+        return;
+      }
+
       // Return all non-reservation items to inventory
       for (final item in _cartItems) {
         if (!item.isReservation) {
@@ -262,6 +296,10 @@ class CartService extends ChangeNotifier {
       }
 
       _cartItems.clear();
+      
+      // Save empty cart to database
+      await saveCartToDatabase(user.uid);
+      
       notifyListeners();
     } catch (e) {
       print('Error clearing cart: $e');

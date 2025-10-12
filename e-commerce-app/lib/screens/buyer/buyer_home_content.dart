@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'buyer_product_browse.dart';
 import 'product_details_screen.dart';
+import 'seller_details_screen.dart';
+import '../chat_detail_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class BuyerHomeContent extends StatefulWidget {
   const BuyerHomeContent({Key? key}) : super(key: key);
@@ -12,7 +15,90 @@ class BuyerHomeContent extends StatefulWidget {
 
 class _BuyerHomeContentState extends State<BuyerHomeContent> {
   final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
   String? _selectedCategory; // Track currently selected category filter
+
+  Future<void> _startChatWithSeller(String sellerId, String sellerName, {Map<String, dynamic>? product, String? productId}) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to message sellers'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Check if there's an existing chat between this customer and seller
+      final chatQuery = await _firestore.collection('chats')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('customerId', isEqualTo: currentUser.uid)
+          .limit(1)
+          .get();
+
+      String chatId;
+      
+      if (chatQuery.docs.isEmpty) {
+        // Create a new chat if none exists
+        final chatRef = _firestore.collection('chats').doc();
+        chatId = chatRef.id;
+        
+        Map<String, dynamic> chatData = {
+          'sellerId': sellerId,
+          'customerId': currentUser.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastMessage': '',
+          'lastMessageTimestamp': FieldValue.serverTimestamp(),
+          'lastSenderId': '',
+          'unreadCustomerCount': 0,
+          'unreadSellerCount': 0,
+        };
+        
+        // Add product information if provided
+        if (product != null) {
+          chatData['product'] = product;
+          chatData['productId'] = productId;
+        }
+        
+        await chatRef.set(chatData);
+      } else {
+        // Use existing chat but update product info if provided
+        chatId = chatQuery.docs.first.id;
+        
+        if (product != null) {
+          await _firestore.collection('chats').doc(chatId).update({
+            'product': product,
+            'productId': productId,
+          });
+        }
+      }
+
+      // Navigate to chat screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatDetailScreen(
+            chatId: chatId,
+            otherPartyName: sellerName,
+            sellerId: sellerId,
+            customerId: currentUser.uid,
+            isSeller: false,
+            product: product,
+            productId: productId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error starting chat: $e'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,17 +182,24 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 const SizedBox(height: 16),
 
                 // Categories Icons
-                SizedBox(
-                  height: 80,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildCategoryItem(Icons.apple, 'Fruits', Colors.orange),
-                      _buildCategoryItem(
-                          Icons.set_meal, 'Vegetables', Colors.green),
-                      _buildCategoryItem(Icons.grain, 'Grains', Colors.amber),
-                      _buildCategoryItem(Icons.all_inbox, 'Other', Colors.blue),
-                    ],
+                Container(
+                  height: 100,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        _buildCategoryItem(Icons.apps, 'All', Colors.purple),
+                        const SizedBox(width: 12),
+                        _buildCategoryItem(Icons.set_meal, 'Vegetables', Colors.green),
+                        const SizedBox(width: 12),
+                        _buildCategoryItem(Icons.apple, 'Fruits', Colors.orange),
+                        const SizedBox(width: 12),
+                        _buildCategoryItem(Icons.grain, 'Grains', Colors.amber),
+                        const SizedBox(width: 12),
+                        _buildCategoryItem(Icons.all_inbox, 'Others', Colors.grey),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -117,9 +210,11 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                   children: [
                     Row(
                       children: [
-                        const Text(
-                          'Featured Products',
-                          style: TextStyle(
+                        Text(
+                          _selectedCategory != null 
+                            ? '$_selectedCategory Products'
+                            : 'Featured Products',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -138,13 +233,14 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    _selectedCategory!,
+                                    'Filter Active',
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 10,
                                       color: Colors.green,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                  const SizedBox(width: 2),
+                                  const SizedBox(width: 4),
                                   GestureDetector(
                                     onTap: () {
                                       setState(() {
@@ -278,8 +374,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         '₱${(product['price'] ?? 0.0).toStringAsFixed(2)}',
                         Icons.eco,
                         Colors.green,
-                        '4.5',
-                        product['category'] ?? 'Other',
+                        product['category'] ?? 'Others',
                         allowsReservation: true,
                         currentStock: stockValue,
                         product: product,
@@ -300,50 +395,69 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
 
   Widget _buildCategoryItem(IconData icon, String label, Color color) {
     // Check if this is the currently selected category
-    final isSelected = _selectedCategory == label;
+    final isSelected = (_selectedCategory == label) || (label == 'All' && _selectedCategory == null);
 
     return GestureDetector(
       onTap: () {
         setState(() {
-          // If tapping the already selected category, clear the filter
-          if (_selectedCategory == label) {
+          if (label == 'All') {
+            // Clear any category filter to show all products
             _selectedCategory = null;
           } else {
-            _selectedCategory = label;
+            // If tapping the already selected category, clear the filter
+            if (_selectedCategory == label) {
+              _selectedCategory = null;
+            } else {
+              _selectedCategory = label;
+            }
           }
         });
       },
-      child: Column(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isSelected ? color : color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
-              border: isSelected ? Border.all(color: color, width: 2) : null,
+      child: Container(
+        width: 80,
+        child: Column(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: isSelected ? color : color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(15),
+                border: isSelected ? Border.all(color: color, width: 3) : null,
+                boxShadow: isSelected ? [
+                  BoxShadow(
+                    color: color.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ] : null,
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : color,
+                size: 28,
+              ),
             ),
-            child: Icon(
-              icon,
-              color: isSelected ? Colors.white : color,
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? color : Colors.black87,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? color : Colors.black,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildProductCard(String title, String price, IconData icon,
-      Color color, String rating, String weight,
+      Color color, String category,
       {bool? allowsReservation,
       double? currentStock,
       required Map<String, dynamic> product,
@@ -377,7 +491,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Product Image with Stock Indicator
+              // Product Image with Stock Indicator and Message Icon
               Stack(
                 children: [
                   Container(
@@ -427,6 +541,39 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                             child: Icon(icon, color: Colors.grey[400], size: 40),
                           ),
                   ),
+                  // Message Icon
+                  if (hasStock && product['sellerId'] != null)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () {
+                          final sellerId = product['sellerId'];
+                          final sellerName = product['sellerName'] ?? 'Seller';
+                          _startChatWithSeller(sellerId, sellerName, product: product, productId: productId);
+                        },
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.message,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (!hasStock)
                     Positioned.fill(
                       child: Container(
@@ -495,32 +642,54 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       const SizedBox(height: 1), // Further reduced from 2
                       // Seller info with rating
                       if (product['sellerName'] != null)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                product['sellerName'],
-                                style: TextStyle(
-                                  color: const Color.fromARGB(255, 0, 0, 0),
-                                  fontSize: 10, // Further reduced from 10
+                        GestureDetector(
+                          onTap: () {
+                            if (product['sellerId'] != null) {
+                              print('DEBUG: Navigating to seller details');
+                              print('DEBUG: Product sellerId: "${product['sellerId']}"');
+                              print('DEBUG: Product sellerId type: ${product['sellerId'].runtimeType}');
+                              print('DEBUG: Product data: $product');
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SellerDetailsScreen(
+                                    sellerId: product['sellerId'],
+                                    sellerInfo: null, // Will be loaded in the screen
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (hasStock) ...[
-                              const SizedBox(width: 2),
-                              Icon(Icons.star, color: Colors.amber, size: 10),
-                              const SizedBox(width: 1),
-                              Text(
-                                rating.isNotEmpty ? rating : '4.5',
-                                style: TextStyle(
-                                  color: const Color.fromARGB(255, 0, 0, 0),
-                                  fontSize: 9,
+                              );
+                            } else {
+                              print('DEBUG: No sellerId found in product: $product');
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  product['sellerName'],
+                                  style: TextStyle(
+                                    color: const Color.fromARGB(255, 0, 0, 0),
+                                    fontSize: 10, // Further reduced from 10
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (hasStock) ...[
+                                const SizedBox(width: 2),
+                                Icon(Icons.star, color: Colors.grey.shade400, size: 10), // Gray star for 0.0 rating
+                                const SizedBox(width: 1),
+                                Text(
+                                  '0.0', // Default rating for products
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       const Spacer(),
                       // View Button - full width and bold
