@@ -134,4 +134,3 @@ class AuthService {
   /// Listen to authentication state changes
   static Stream<User?> get authStateChanges => _auth.authStateChanges();
 }
-r

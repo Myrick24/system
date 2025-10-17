@@ -568,25 +568,49 @@ class CartService extends ChangeNotifier {
 
       // Send order confirmation notifications
       try {
+        // Get current user info for buyer name
+        User? currentUser = FirebaseAuth.instance.currentUser;
+        String buyerName = 'Customer';
+        
+        if (currentUser != null) {
+          try {
+            DocumentSnapshot userDoc = await _firestore
+                .collection('users')
+                .doc(currentUser.uid)
+                .get();
+            if (userDoc.exists) {
+              Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+              buyerName = userData['name'] ?? userData['fullName'] ?? 'Customer';
+            }
+          } catch (e) {
+            print('Error loading user name: $e');
+          }
+        }
+
         // Send notifications for each order placed
         for (final item in purchaseItems) {
           final orderId =
               'order_${orderTime.millisecondsSinceEpoch}_${item.productId}';
 
           // Notify buyer about order confirmation
-          await NotificationManager.sendOrderUpdateNotification(
-            userId: userId,
+          await NotificationManager.sendCheckoutConfirmationToBuyer(
+            buyerId: userId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unit: item.unit,
+            totalAmount: item.price * item.quantity,
             orderId: orderId,
-            status: 'confirmed',
-            customerName: null,
           );
 
-          // Notify seller about new order
-          await NotificationManager.sendOrderUpdateNotification(
-            userId: item.sellerId,
+          // Notify seller about new purchase
+          await NotificationManager.sendCheckoutNotificationToSeller(
+            sellerId: item.sellerId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unit: item.unit,
+            totalAmount: item.price * item.quantity,
+            buyerName: buyerName,
             orderId: orderId,
-            status: 'new order received',
-            customerName: 'Customer',
           );
         }
 
@@ -608,7 +632,7 @@ class CartService extends ChangeNotifier {
             userId: item.sellerId,
             orderId: reservationId,
             status: 'new reservation received',
-            customerName: 'Customer',
+            customerName: buyerName,
           );
         }
       } catch (e) {

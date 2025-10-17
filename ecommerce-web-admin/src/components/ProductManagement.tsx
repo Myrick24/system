@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, Tag, Space, Tabs, message, Modal, Image } from 'antd';
+import { Card, Table, Button, Tag, Space, Tabs, message, Modal, Image, Input } from 'antd';
 import { 
   CheckOutlined, 
   CloseOutlined, 
@@ -11,6 +11,7 @@ import { ProductService } from '../services/productService';
 import { Product } from '../types';
 
 const { TabPane } = Tabs;
+const { TextArea } = Input;
 
 export const ProductManagement: React.FC = () => {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -51,7 +52,7 @@ export const ProductManagement: React.FC = () => {
     try {
       const success = await productService.approveProduct(productId);
       if (success) {
-        message.success(`${productName} approved`);
+        message.success(`${productName} approved! Notifications sent to seller and buyers.`);
         loadProductData();
       } else {
         message.error('Failed to approve product');
@@ -63,12 +64,24 @@ export const ProductManagement: React.FC = () => {
   };
 
   const handleRejectProduct = async (productId: string, productName: string) => {
+    let rejectionReason = '';
+    
     Modal.confirm({
       title: 'Reject Product',
-      content: `Are you sure you want to reject "${productName}"?`,
+      content: (
+        <div>
+          <p>Are you sure you want to reject "{productName}"?</p>
+          <p style={{ marginTop: '16px', marginBottom: '8px' }}>Please provide a reason (optional):</p>
+          <TextArea
+            rows={3}
+            placeholder="e.g., Image quality is poor, description incomplete, pricing issue..."
+            onChange={(e) => { rejectionReason = e.target.value; }}
+          />
+        </div>
+      ),
       onOk: async () => {
         try {
-          const success = await productService.rejectProduct(productId);
+          const success = await productService.rejectProduct(productId, rejectionReason.trim() || undefined);
           if (success) {
             message.success(`${productName} rejected`);
             loadProductData();

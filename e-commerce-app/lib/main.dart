@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/cart_service.dart';
 import 'services/auth_service.dart';
+import 'services/realtime_notification_service.dart'; // Import realtime notifications
 import 'tools/admin_setup.dart'; // Import admin setup tool
 import 'tools/sample_data_tool.dart'; // Import sample data tool
 import 'tools/restore_admin.dart'; // Import restore admin tool
@@ -27,6 +28,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize real-time push notifications
+  await RealtimeNotificationService.initialize();
+  print('✅ Real-time push notifications initialized');
 
   runApp(const MyApp());
 }

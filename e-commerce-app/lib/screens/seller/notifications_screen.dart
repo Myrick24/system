@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
+import '../../services/realtime_notification_service.dart';
+import '../../widgets/realtime_notification_widgets.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
@@ -13,6 +15,25 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to real-time notification updates
+    RealtimeNotificationService.notificationStream.listen((notification) {
+      if (mounted && notification['source'] == 'firestore') {
+        // Show snackbar for new notifications
+        RealtimeNotificationSnackbar.show(
+          context,
+          title: notification['data']['title'] ?? 'New Notification',
+          message: notification['data']['message'] ?? '',
+          onTap: () {
+            setState(() {}); // Refresh the list
+          },
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +54,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Row(
+          children: [
+            const Text('Notifications'),
+            const SizedBox(width: 8),
+            StreamBuilder<int>(
+              stream: RealtimeNotificationService.unreadCountStream,
+              builder: (context, snapshot) {
+                final count = snapshot.data ?? 0;
+                if (count == 0) return const SizedBox.shrink();
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    count.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
         backgroundColor: AppTheme.primaryGreen,
         foregroundColor: Colors.white,
         actions: [
@@ -50,7 +98,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         stream: _firestore
             .collection('notifications')
             .where('userId', isEqualTo: currentUser.uid)
-            .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -70,12 +117,35 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   const Icon(Icons.error, size: 64, color: Colors.red),
                   const SizedBox(height: 16),
                   Text('Error loading notifications: ${snapshot.error}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Try refreshing the page',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
                 ],
               ),
             );
           }
 
-          final notifications = snapshot.data?.docs ?? [];
+          var notifications = snapshot.data?.docs ?? [];
+
+          // Sort notifications by timestamp/createdAt (handle both field names)
+          notifications.sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            
+            final aTime = aData['timestamp'] ?? aData['createdAt'];
+            final bTime = bData['timestamp'] ?? bData['createdAt'];
+            
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            
+            final aDate = (aTime as Timestamp).toDate();
+            final bDate = (bTime as Timestamp).toDate();
+            
+            return bDate.compareTo(aDate); // Descending order
+          });
 
           if (notifications.isEmpty) {
             return Center(
@@ -128,11 +198,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _buildNotificationCard(
       Map<String, dynamic> notification, String notificationId) {
-    final isRead = notification['read'] ?? false;
+    final isRead = notification['read'] ?? notification['isRead'] ?? false;
     final type = notification['type'] ?? 'general';
     final title = notification['title'] ?? 'Notification';
     final message = notification['message'] ?? '';
-    final createdAt = notification['createdAt'];
+    final createdAt = notification['createdAt'] ?? notification['timestamp'];
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -357,47 +427,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markAllAsRead() async {
     try {
-      final currentUser = _auth.currentUser;
-      if (currentUser == null) return;
+      await RealtimeNotificationService.markAllAsRead();
 
-      final unreadNotifications = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('read', isEqualTo: false)
-          .get();
-
-      if (unreadNotifications.docs.isEmpty) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No unread notifications')),
+          const SnackBar(
+            content: Text('All notifications marked as read'),
+            backgroundColor: AppTheme.primaryGreen,
+          ),
         );
-        return;
       }
-
-      final batch = _firestore.batch();
-      for (var doc in unreadNotifications.docs) {
-        batch.update(doc.reference, {
-          'read': true,
-          'readAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      await batch.commit();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Marked ${unreadNotifications.docs.length} notifications as read'),
-          backgroundColor: AppTheme.primaryGreen,
-        ),
-      );
     } catch (e) {
       print('Error marking all notifications as read: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error marking notifications as read'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error marking notifications as read'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
