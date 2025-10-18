@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'notification_manager.dart';
 
 class ProductService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -96,6 +97,9 @@ class ProductService {
         final data = product.data() as Map<String, dynamic>;
         final sellerId = data['sellerId'];
         final productName = data['name'] ?? 'Your product';
+        final sellerName = data['sellerName'] ?? 'Seller';
+        final category = data['category'] ?? 'General';
+        final price = data['price'];
 
         // Add notification with better error handling
         await _firestore.collection('notifications').add({
@@ -110,7 +114,32 @@ class ProductService {
           'priority': 'high',
         });
 
-        print('Product approved and notification sent to seller: $sellerId');
+        // Send push notification to seller
+        await NotificationManager.sendProductApprovalNotification(
+          sellerId: sellerId,
+          productName: productName,
+          isApproved: true,
+        );
+
+        // Notify all buyers about new product
+        await NotificationManager.sendNewProductToBuyers(
+          productId: productId,
+          productName: productName,
+          sellerName: sellerName,
+          category: category,
+          price: price is num ? price.toDouble() : null,
+        );
+
+        // Notify other sellers about new product in marketplace
+        await NotificationManager.sendNewProductToSellers(
+          productId: productId,
+          productName: productName,
+          sellerName: sellerName,
+          category: category,
+          excludeSellerId: sellerId,
+        );
+
+        print('Product approved and notifications sent');
       }
 
       return true;

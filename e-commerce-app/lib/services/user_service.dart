@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:e_commerce/services/notification_service.dart';
+import 'notification_manager.dart';
 
 class UserService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -112,7 +113,9 @@ class UserService {
       print('Error getting pending sellers: $e');
       return [];
     }
-  }// Approve seller
+  }
+  
+  // Approve seller
   Future<bool> approveSeller(String userId) async {
     try {
       // Update the user document
@@ -125,6 +128,7 @@ class UserService {
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         String? userEmail = userData['email'];
+        String userName = userData['name'] ?? userData['fullName'] ?? 'Seller';
         
         if (userEmail != null) {
           QuerySnapshot sellerQuery = await _firestore
@@ -139,17 +143,11 @@ class UserService {
               'status': 'approved',
             });
             
-            // Send notification to the seller
-            final notificationService = NotificationService();
-            await notificationService.sendNotificationToUser(
+            // Send notification using NotificationManager
+            await NotificationManager.sendSellerRegistrationNotification(
               userId: userId,
-              title: 'Seller Account Approved!',
-              message: 'Congratulations! Your seller account has been approved. You can now add products to sell in our marketplace.',
-              type: 'seller_approval',
-              additionalData: {
-                'status': 'approved',
-                'timestamp': FieldValue.serverTimestamp()
-              },
+              userName: userName,
+              isApproved: true,
             );
           }
         }
@@ -160,7 +158,9 @@ class UserService {
       print('Error approving seller: $e');
       return false;
     }
-  }  // Reject seller
+  }
+  
+  // Reject seller
   Future<bool> rejectSeller(String userId) async {
     try {
       // Update the user document
