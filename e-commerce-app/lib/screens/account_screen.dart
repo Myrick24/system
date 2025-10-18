@@ -8,6 +8,7 @@ import 'virtual_wallet_screen.dart'; // Import the digital wallet screen
 import 'notifications/account_notifications.dart';
 import '../services/notification_service.dart'; // Import our notification service
 import '../theme/app_theme.dart'; // Import the app theme
+import 'cooperative/coop_dashboard.dart'; // Import Coop Dashboard
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({Key? key}) : super(key: key);
@@ -24,6 +25,7 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isLoading = true;
   bool _isRegisteredSeller = false;
   bool _isSellerApproved = false; // Flag to track if seller is approved
+  bool _isCooperative = false; // Flag to track if user is a cooperative
 
   @override
   void initState() {
@@ -79,6 +81,14 @@ class _AccountScreenState extends State<AccountScreen> {
               print('User name set from users collection: ${userData['name']}');
             } else {
               print('No name found in users collection');
+            }
+            
+            // Check if user is a cooperative
+            if (userData != null && userData['role'] == 'cooperative') {
+              setState(() {
+                _isCooperative = true;
+              });
+              print('User is a cooperative member');
             }
             
             // Check if user is registered as seller from users collection first
@@ -372,8 +382,95 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
             ),
 
-            // Become a Seller section (Shopee/Lazada style)
-            if (!_isRegisteredSeller)
+            // Coop Dashboard section for cooperative users
+            if (_isCooperative)
+              Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.blue.shade400,
+                      Colors.blue.shade600,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.3),
+                      spreadRadius: 2,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CoopDashboard(),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.business,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Cooperative Dashboard',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Manage deliveries, pickups, and payments for your cooperative',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Become a Seller section (Shopee/Lazada style) - Hidden for cooperative users
+            if (!_isRegisteredSeller && !_isCooperative)
               Container(
                 margin: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
