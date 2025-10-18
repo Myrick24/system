@@ -1,0 +1,483 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
+import '../services/paymongo_service.dart';
+import 'checkout_screen.dart';
+
+/// PayMongo GCash Payment Screen with Deep Linking
+/// 
+/// This screen handles the GCash payment flow like Shopee:
+/// 1. Creates a payment source via PayMongo API
+/// 2. Opens the ACTUAL GCash app on user's phone (deep link)
+/// 3. User completes payment in GCash app
+/// 4. User returns to app and we verify payment
+/// 5. Shows success/failure based on payment status
+class PayMongoGCashScreen extends StatefulWidget {
+  final double amount;
+  final String orderId;
+  final String userId;
+  final Map<String, dynamic> orderDetails;
+
+  const PayMongoGCashScreen({
+    Key? key,
+    required this.amount,
+    required this.orderId,
+    required this.userId,
+    required this.orderDetails,
+  }) : super(key: key);
+
+  @override
+  State<PayMongoGCashScreen> createState() => _PayMongoGCashScreenState();
+}
+
+class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> {
+  final PayMongoService _payMongoService = PayMongoService();
+  bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
+  String? _checkoutUrl;
+  String? _sourceId;
+  WebViewController? _webViewController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePayment();
+  }
+
+  /// Initialize PayMongo payment source
+  Future<void> _initializePayment() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      // Create GCash payment source via PayMongo
+      final result = await _payMongoService.createGCashSource(
+        amount: widget.amount,
+        orderId: widget.orderId,
+        userId: widget.userId,
+        orderDetails: widget.orderDetails,
+      );
+
+      if (result['success'] == true) {
+        setState(() {
+          _checkoutUrl = result['checkoutUrl'];
+          _sourceId = result['sourceId'];
+          _isLoading = false;
+        });
+        
+        // Initialize WebView controller
+        _initializeWebView();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = result['error'] ?? 'Failed to initialize payment';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = 'Error: ${e.toString()}';
+      });
+    }
+  }
+
+  /// Initialize WebView controller
+  void _initializeWebView() {
+    _webViewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (String url) {
+            print('Page started loading: $url');
+            _handleUrlChange(url);
+          },
+          onPageFinished: (String url) {
+            print('Page finished loading: $url');
+          },
+          onWebResourceError: (WebResourceError error) {
+            print('Web resource error: ${error.description}');
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            print('Navigation request: ${request.url}');
+            _handleUrlChange(request.url);
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(_checkoutUrl!));
+  }
+
+  /// Handle URL changes to detect payment completion
+  void _handleUrlChange(String url) {
+    // Check if redirected to success or failed URL
+    if (url.contains('/payment/success')) {
+      _handlePaymentSuccess();
+    } else if (url.contains('/payment/failed')) {
+      _handlePaymentFailed();
+    }
+  }
+
+  /// Handle successful payment
+  Future<void> _handlePaymentSuccess() async {
+    if (_sourceId == null) return;
+
+    // Check payment status
+    final statusResult = await _payMongoService.checkPaymentStatus(_sourceId!);
+    
+    if (statusResult['success'] == true) {
+      final status = statusResult['status'];
+      
+      if (mounted) {
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 32),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Payment Successful!',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your GCash payment has been processed successfully.',
+                  style: TextStyle(fontSize: 16),
+                ),
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Amount Paid',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '₱${widget.amount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Divider(),
+                      SizedBox(height: 4),
+                      Text(
+                        'Order ID: ${widget.orderId}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      Text(
+                        'Status: ${status.toUpperCase()}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'Your order will be processed shortly. You can track your order status in the Orders screen.',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(context).pop(true); // Return to previous screen
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CheckoutScreen(),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: Text('View Orders'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle failed payment
+  void _handlePaymentFailed() {
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 32),
+              SizedBox(width: 12),
+              Text('Payment Failed'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Your GCash payment was not completed. Please try again or use a different payment method.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(false); // Return to checkout
+              },
+              child: Text('Back to Checkout'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                _initializePayment(); // Retry payment
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Try Again'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('GCash Payment'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            _showCancelConfirmation();
+          },
+        ),
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return _buildLoadingView();
+    } else if (_hasError) {
+      return _buildErrorView();
+    } else if (_checkoutUrl != null && _webViewController != null) {
+      return _buildWebView();
+    } else {
+      return Center(child: Text('Unexpected error occurred'));
+    }
+  }
+
+  Widget _buildLoadingView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 24),
+          Text(
+            'Initializing GCash Payment...',
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Please wait',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 64),
+            SizedBox(height: 24),
+            Text(
+              'Payment Initialization Failed',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: _initializePayment,
+              icon: Icon(Icons.refresh),
+              label: Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              ),
+            ),
+            SizedBox(height: 12),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: Text('Back to Checkout'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebView() {
+    return Column(
+      children: [
+        // Payment info header
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border(
+              bottom: BorderSide(color: Colors.blue.shade200),
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                'Amount to Pay',
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '₱${widget.amount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                widget.orderDetails['productName'] ?? 'Order',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+        // WebView
+        Expanded(
+          child: WebViewWidget(controller: _webViewController!),
+        ),
+        // Help section
+        Container(
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade300),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 20, color: Colors.grey[600]),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Complete payment in the GCash page above',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showCancelConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cancel Payment?'),
+        content: Text(
+          'Are you sure you want to cancel this payment? Your order will remain unpaid.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+            },
+            child: Text('Continue Payment'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context).pop(false); // Return to checkout
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}

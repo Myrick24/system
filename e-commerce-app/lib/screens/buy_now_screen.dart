@@ -7,9 +7,11 @@ import '../services/cart_service.dart';
 import '../services/rating_service.dart';
 import '../models/rating_model.dart';
 import '../widgets/rating_widgets.dart';
-import 'cart_screen.dart';
+import '../widgets/address_selector.dart';
+import 'checkout_screen.dart';
 import 'login_screen.dart';
 import 'buyer/seller_details_screen.dart';
+import 'paymongo_gcash_screen.dart';
 
 class BuyNowScreen extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -36,20 +38,27 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
   bool _isLoadingRating = true;
   int _quantity = 1;
   bool _isLoading = false;
-  String? _selectedDeliveryOption = 'Pick Up';
-  String? _selectedPaymentOption = 'Cash on Pick-up';
+  String? _selectedDeliveryOption = 'Pickup at Coop';
+  String? _selectedPaymentOption = 'Cash on Delivery';
+  // Store delivery address (informational only, actual validation in cart screen)
+  // ignore: unused_field
+  Map<String, String> _deliveryAddress = {};
 
-  final List<String> _deliveryOptions = ['Pick Up', 'Meet up', 'Delivery'];
-  final List<String> _paymentOptions = [
-    'Cash on Pick-up',
-    'Cash on Meet-up',
-    'GCash'
+  final List<String> _deliveryOptions = [
+    'Cooperative Delivery',
+    'Pickup at Coop'
   ];
+  final List<String> _paymentOptions = ['Cash on Delivery', 'GCash'];
 
   @override
   void initState() {
     super.initState();
     _loadSellerInfo();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   Future<void> _loadSellerInfo() async {
@@ -61,10 +70,10 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
           _firestore.collection('users').doc(sellerId).get(),
           _ratingService.getSellerRatingStats(sellerId),
         ]);
-        
+
         final sellerDoc = futures[0] as DocumentSnapshot;
         final ratingStats = futures[1] as SellerRatingStats;
-        
+
         if (sellerDoc.exists) {
           setState(() {
             _sellerInfo = sellerDoc.data() as Map<String, dynamic>?;
@@ -84,14 +93,14 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
 
   String _getSellerName() {
     if (_sellerInfo == null) return 'Seller';
-    
+
     // Try multiple name fields in order of preference
     final firstName = _sellerInfo!['firstName'];
     final lastName = _sellerInfo!['lastName'];
     final fullName = _sellerInfo!['fullName'];
     final name = _sellerInfo!['name'];
     final displayName = _sellerInfo!['displayName'];
-    
+
     if (firstName != null && firstName.isNotEmpty) {
       if (lastName != null && lastName.isNotEmpty) {
         return '$firstName $lastName';
@@ -112,20 +121,20 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
         return emailName[0].toUpperCase() + emailName.substring(1);
       }
     }
-    
+
     return 'Seller';
   }
 
   String _getSellerLocation() {
     if (_sellerInfo == null) return '';
-    
+
     // Try multiple location fields
     final address = _sellerInfo!['address'];
     final location = _sellerInfo!['location'];
     final city = _sellerInfo!['city'];
     final province = _sellerInfo!['province'];
     final region = _sellerInfo!['region'];
-    
+
     if (address != null && address.isNotEmpty) {
       return address;
     } else if (location != null && location.isNotEmpty) {
@@ -141,7 +150,7 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     } else if (region != null && region.isNotEmpty) {
       return region;
     }
-    
+
     return '';
   }
 
@@ -189,18 +198,52 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
   }
 
   Future<void> _buyNow() async {
+    // Validate user authentication
     if (_auth.currentUser == null) {
       _showLoginPrompt();
       return;
     }
 
+    // Validate delivery address if Cooperative Delivery is selected
+    if (_selectedDeliveryOption == 'Cooperative Delivery') {
+      if (_deliveryAddress.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select your delivery address'),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_deliveryAddress['fullAddress'] == null ||
+          _deliveryAddress['fullAddress']!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please complete your delivery address'),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Show loading state
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Create cart item
+      print('DEBUG: Starting order placement...');
+      print('DEBUG: Selected delivery option: $_selectedDeliveryOption');
+      print('DEBUG: Selected payment option: $_selectedPaymentOption');
+      print('DEBUG: Delivery address: $_deliveryAddress');
+
       final cartService = Provider.of<CartService>(context, listen: false);
+
+      // Create a temporary cart with this single item
       final cartItem = CartItem(
         id: 'item_${DateTime.now().millisecondsSinceEpoch}',
         productId: widget.productId,
@@ -212,41 +255,148 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
         quantity: _quantity,
         unit: widget.product['unit'] ?? 'piece',
         isReservation: false,
+        imageUrl: widget.product['imageUrl'],
       );
 
-      // Clear cart first so only this item is in cart
+      print(
+          'DEBUG: Cart item created: ${cartItem.productName} x ${cartItem.quantity}');
+
+      // Clear cart and add only this item
       await cartService.clearCart();
+      print('DEBUG: Cart cleared');
 
-      // Add to cart - this will update the database stock
-      final success = await cartService.addItem(cartItem);
+      final added = await cartService.addItem(cartItem);
+      print('DEBUG: Item added to cart: $added');
 
-      if (success) {
-        // Save to database if user is logged in
-        if (_auth.currentUser != null) {
-          await cartService.saveCartToDatabase(_auth.currentUser!.uid);
-        }
-
-        // Navigate to cart with checkout option selected
+      if (!added) {
         if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const CartScreen()),
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Sorry, not enough stock available for this quantity'),
+              duration: Duration(seconds: 4),
+              backgroundColor: Colors.red,
+            ),
           );
         }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Not enough stock available'),
-            duration: Duration(seconds: 5),
-          ),
-        );
+        return;
       }
-    } catch (e) {
+
+      print('DEBUG: Processing cart...');
+
+      // Process the order directly
+      final success = await cartService.processCart(
+        _auth.currentUser!.uid,
+        paymentMethod: _selectedPaymentOption ?? 'Cash on Delivery',
+        deliveryMethod: _selectedDeliveryOption ?? 'Pickup at Coop',
+        meetupLocation: null,
+        deliveryAddress: _selectedDeliveryOption == 'Cooperative Delivery'
+            ? _deliveryAddress['fullAddress']
+            : null,
+      );
+
+      print('DEBUG: Cart processed successfully: $success');
+
+      if (success) {
+        print('DEBUG: Order placed successfully!');
+        
+        // If GCash payment is selected, navigate to PayMongo GCash payment screen
+        if (_selectedPaymentOption == 'GCash') {
+          if (mounted) {
+            // Get the order ID that was just created
+            final orderId =
+                'order_${DateTime.now().millisecondsSinceEpoch}_${widget.productId}';
+            
+            // Navigate to PayMongo GCash payment screen
+            final paymentCompleted = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PayMongoGCashScreen(
+                  amount: (widget.product['price'] is int
+                          ? (widget.product['price'] as int).toDouble()
+                          : widget.product['price'] as double) *
+                      _quantity,
+                  orderId: orderId,
+                  userId: _auth.currentUser!.uid,
+                  orderDetails: {
+                    'productName': widget.product['name'],
+                    'quantity': _quantity,
+                    'unit': widget.product['unit'] ?? 'pc',
+                    'deliveryMethod': _selectedDeliveryOption,
+                    'deliveryAddress': _selectedDeliveryOption == 'Cooperative Delivery'
+                        ? _deliveryAddress['fullAddress']
+                        : null,
+                  },
+                ),
+              ),
+            );
+
+            // After returning from GCash payment, go to orders screen
+            if (paymentCompleted == true && mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CheckoutScreen(),
+                ),
+              );
+            }
+          }
+        } else {
+          // For Cash on Delivery, show success dialog
+          if (mounted) {
+            _showSuccessDialog();
+          }
+        }
+      } else {
+        print('DEBUG: Order placement failed - processCart returned false');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Unable to place order. Please check your connection and try again.',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              duration: Duration(seconds: 5),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      print('ERROR placing order: $e');
+      print('Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            duration: const Duration(seconds: 5),
+            content: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'An error occurred: ${e.toString()}',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 6),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'RETRY',
+              textColor: Colors.white,
+              onPressed: () {
+                _buyNow();
+              },
+            ),
           ),
         );
       }
@@ -256,7 +406,99 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
           _isLoading = false;
         });
       }
+      print('DEBUG: Order placement process completed');
     }
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 32),
+              SizedBox(width: 12),
+              Text(
+                'Order Placed Successfully!',
+                style: TextStyle(fontSize: 18),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your order has been successfully placed!',
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 16),
+              Divider(),
+              SizedBox(height: 8),
+              Text(
+                'Order Details:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text('Product: ${widget.product['name']}'),
+              Text('Quantity: $_quantity ${widget.product['unit'] ?? 'pc'}'),
+              Text(
+                'Total: ₱${((widget.product['price'] is int ? (widget.product['price'] as int).toDouble() : widget.product['price'] as double) * _quantity).toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text('Delivery: $_selectedDeliveryOption'),
+              Text('Payment: $_selectedPaymentOption'),
+              if (_selectedDeliveryOption == 'Cooperative Delivery' &&
+                  _deliveryAddress['fullAddress'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Address: ${_deliveryAddress['fullAddress']}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to product list
+              },
+              child: Text('Continue Shopping'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CheckoutScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('View Orders'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -291,50 +533,10 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Product Details'),
+        title: const Text('Checkout'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CartScreen()),
-                  );
-                },
-              ),
-              // Show badge if cart has items
-              Consumer<CartService>(builder: (context, cart, child) {
-                if (cart.itemCount == 0) return const SizedBox();
-                return Positioned(
-                  right: 5,
-                  top: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '${cart.itemCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {
@@ -365,11 +567,13 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                                 ? loadingProgress.cumulativeBytesLoaded /
                                     loadingProgress.expectedTotalBytes!
                                 : null,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.green),
                           ),
                         );
                       },
-                      errorBuilder: (context, error, stackTrace) => const Center(
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(
                         child: Icon(
                           Icons.shopping_basket,
                           size: 80,
@@ -505,7 +709,8 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                   // Seller Information
                   GestureDetector(
                     onTap: () {
-                      if (widget.product['sellerId'] != null && _sellerInfo != null) {
+                      if (widget.product['sellerId'] != null &&
+                          _sellerInfo != null) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -529,7 +734,8 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                           Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.green.shade300, width: 2),
+                              border: Border.all(
+                                  color: Colors.green.shade300, width: 2),
                             ),
                             child: CircleAvatar(
                               backgroundColor: Colors.green,
@@ -551,22 +757,29 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  !_isLoadingSeller ? _getSellerName() : 'Loading...',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  !_isLoadingSeller
+                                      ? _getSellerName()
+                                      : 'Loading...',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
                                 ),
-                                if (!_isLoadingSeller && _getSellerLocation().isNotEmpty)
+                                if (!_isLoadingSeller &&
+                                    _getSellerLocation().isNotEmpty)
                                   Text(
                                     _getSellerLocation(),
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.grey),
                                   ),
                                 const SizedBox(height: 4),
                                 // Rating Section
-                                if (!_isLoadingRating && _ratingStats != null) ...[
+                                if (!_isLoadingRating &&
+                                    _ratingStats != null) ...[
                                   RatingWidget(
                                     rating: _ratingStats!.averageRating,
                                     showText: true,
                                     size: 14,
-                                    customText: '${_ratingStats!.averageRating.toStringAsFixed(1)} (${_ratingStats!.totalReviews})',
+                                    customText:
+                                        '${_ratingStats!.averageRating.toStringAsFixed(1)} (${_ratingStats!.totalReviews})',
                                   ),
                                 ] else if (!_isLoadingRating) ...[
                                   Row(
@@ -715,6 +928,26 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                     );
                   }),
 
+                  // Delivery Address Field (show only for Cooperative Delivery)
+                  if (_selectedDeliveryOption == 'Cooperative Delivery') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Delivery Address *',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    AddressSelector(
+                      onAddressChanged: (address) {
+                        setState(() {
+                          _deliveryAddress = address;
+                        });
+                      },
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
 
                   // Payment Options
@@ -794,32 +1027,59 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Buy Now Button
+                  // Place Order Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor:
+                            _isLoading ? Colors.grey : Colors.green,
                         foregroundColor: Colors.white,
+                        elevation: _isLoading ? 0 : 2,
                       ),
-                      onPressed: _isLoading ? null : _buyNow,
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              print('DEBUG: Place Order button pressed');
+                              _buyNow();
+                            },
                       child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                                strokeWidth: 2,
-                              ),
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Processing...',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             )
-                          : const Text(
-                              'Buy Now',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.shopping_bag, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Place Order',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                     ),
                   ),

@@ -138,7 +138,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       for (String status in statuses) {
         final query = await _firestore
             .collection('orders')
-            .where('userId', isEqualTo: userId)
+            .where('buyerId', isEqualTo: userId)
             .where('status', isEqualTo: status)
             .get();
 

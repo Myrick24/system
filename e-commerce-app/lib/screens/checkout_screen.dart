@@ -56,7 +56,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             // Simplified query - removed orderBy to avoid index requirements
             final ordersSnapshot = await _firestore
                 .collection('orders')
-                .where('userId', isEqualTo: user.uid)
+                .where('buyerId', isEqualTo: user.uid)
                 .get();
 
             // Debug print the count of orders found
@@ -430,6 +430,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   style: TextStyle(
                                                     color:
                                                         Colors.orange.shade800,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (order['deliveryMethod'] ==
+                                              'Cooperative Delivery' &&
+                                          order['deliveryAddress'] != null)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 4),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.local_shipping,
+                                                  size: 14, color: Colors.blue),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  'Deliver to: ${order['deliveryAddress']}',
+                                                  style: TextStyle(
+                                                    color: Colors.blue.shade800,
                                                     fontSize: 13,
                                                   ),
                                                 ),
