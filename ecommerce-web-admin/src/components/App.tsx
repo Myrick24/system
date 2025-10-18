@@ -10,7 +10,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BellOutlined,
-  ToolOutlined
+  ToolOutlined,
+  TeamOutlined
 } from '@ant-design/icons';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +24,7 @@ import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
 import { SellerStatusFixer } from './SellerStatusFixer';
+import { CooperativeManagement } from './CooperativeManagement';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -52,6 +54,11 @@ const AdminLayout: React.FC = () => {
       key: '/users',
       icon: <UserOutlined />,
       label: 'User Management',
+    },
+    {
+      key: '/cooperative',
+      icon: <TeamOutlined />,
+      label: 'Cooperative',
     },
     {
       key: '/products',
@@ -173,6 +180,7 @@ const AdminLayout: React.FC = () => {
           <Routes>
             <Route path="/" element={<DashboardHome />} />
             <Route path="/users" element={<UserManagement />} />
+            <Route path="/cooperative" element={<CooperativeManagement />} />
             <Route path="/products" element={<ProductManagement />} />
             <Route path="/transactions" element={<TransactionMonitoring />} />
             <Route path="/seller-fixer" element={<SellerStatusFixer />} />
