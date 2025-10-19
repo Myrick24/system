@@ -17,8 +17,9 @@ class PayMongoService {
   // Get these from: https://dashboard.paymongo.com/developers/api-keys
   // For testing, use TEST keys (starts with pk_test_ and sk_test_)
   // For production, use LIVE keys (starts with pk_live_ and sk_live_)
-  static const String _publicKey = 'pk_test_4tUiAUKKHASyG6h6VWMLjJhH';
-  static const String _secretKey = 'sk_test_KiH6sokR7sk8UnqoMzUHRmHb';
+  // TODO: Move these to environment variables or secure storage
+  static const String _publicKey = 'YOUR_PAYMONGO_PUBLIC_KEY_HERE';
+  static const String _secretKey = 'YOUR_PAYMONGO_SECRET_KEY_HERE';
   
   static const String _baseUrl = 'https://api.paymongo.com/v1';
   
