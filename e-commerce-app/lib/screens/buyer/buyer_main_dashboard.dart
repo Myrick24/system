@@ -13,25 +13,27 @@ class BuyerMainDashboard extends StatefulWidget {
   State<BuyerMainDashboard> createState() => _BuyerMainDashboardState();
 }
 
-class _BuyerMainDashboardState extends State<BuyerMainDashboard> {
+class _BuyerMainDashboardState extends State<BuyerMainDashboard>
+    with AutomaticKeepAliveClientMixin {
   int _selectedIndex = 0;
 
-  List<Widget> _pages = [];
-
   @override
-  void initState() {
-    super.initState();
-    _pages = [
-      const BuyerHomeContent(), // Home products
-      const BuyerOrdersScreen(), // Order history
-      const CartScreen(), // Shopping cart
-      const MessagesScreen(), // Chat with sellers
-      const AccountScreen(), // Account and seller registration
-    ];
-  }
+  bool get wantKeepAlive => true;
+
+  final List<Widget> _pages = [
+    const BuyerHomeContent(), // Home products
+    const BuyerOrdersScreen(), // Order history
+    const CartScreen(), // Shopping cart
+    const MessagesScreen(), // Chat with sellers
+    const AccountScreen(
+        key:
+            PageStorageKey('AccountScreen')), // Account and seller registration
+  ];
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
@@ -43,9 +45,12 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard> {
         unselectedItemColor: Colors.grey,
         currentIndex: _selectedIndex,
         onTap: (index) {
+          print('=== BuyerMainDashboard: Tab tapped: $index ===');
           setState(() {
             _selectedIndex = index;
           });
+          print(
+              '=== BuyerMainDashboard: _selectedIndex set to: $_selectedIndex ===');
         },
         items: const [
           BottomNavigationBarItem(

@@ -253,6 +253,7 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
     final amount = (order['totalAmount'] ?? 0.0).toDouble();
     final customerName = order['customerName'] ?? 'Unknown';
     final productName = order['productName'] ?? 'Unknown Product';
+    final orderId = order['id'] ?? '';
 
     // Determine payment status
     bool isPaid = false;
@@ -261,106 +262,271 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
 
     if (paymentMethod == 'GCash') {
       isPaid = true;
-      paymentStatus = 'Paid (GCash)';
+      paymentStatus = 'Paid';
       statusColor = Colors.green;
     } else if (paymentMethod == 'Cash on Delivery') {
       if (status == 'delivered' || status == 'completed') {
         isPaid = true;
-        paymentStatus = 'Paid (COD)';
+        paymentStatus = 'Paid';
         statusColor = Colors.green;
       } else {
-        paymentStatus = 'Unpaid (COD)';
+        paymentStatus = 'Unpaid';
         statusColor = Colors.orange;
       }
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header with Order ID and Status Badge
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        productName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          isPaid ? Icons.check_circle : Icons.pending,
+                          color: statusColor,
+                          size: 24,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Order #${order['id'].substring(0, 8)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Order #${orderId.length > 8 ? orderId.substring(0, 8) : orderId}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              productName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                Chip(
-                  label: Text(
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
                     paymentStatus,
                     style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
-                  backgroundColor: statusColor,
-                  avatar: Icon(
-                    isPaid ? Icons.check_circle : Icons.pending,
-                    size: 16,
-                    color: Colors.white,
-                  ),
                 ),
               ],
             ),
 
-            const Divider(height: 24),
+            const SizedBox(height: 16),
 
-            // Payment Details
-            Row(
-              children: [
-                Expanded(
-                  child: _buildPaymentInfo('Customer', customerName),
-                ),
-                Expanded(
-                  child: _buildPaymentInfo(
-                      'Amount', '₱${amount.toStringAsFixed(2)}'),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildPaymentInfo('Method', paymentMethod),
-                ),
-                Expanded(
-                  child: _buildPaymentInfo('Status', status.toUpperCase()),
-                ),
-              ],
-            ),
-
-            if (order['timestamp'] != null) ...[
-              const SizedBox(height: 8),
-              _buildPaymentInfo(
-                'Date',
-                _formatTimestamp(order['timestamp']),
+            // Customer Info
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(Icons.person, size: 18, color: Colors.grey.shade600),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      customerName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Payment Details Grid
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  // Amount
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.attach_money,
+                              size: 18, color: Colors.green.shade700),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Amount',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '₱${amount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  Divider(height: 20, color: Colors.grey.shade200),
+
+                  // Payment Method
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            paymentMethod == 'GCash'
+                                ? Icons.phone_android
+                                : Icons.money,
+                            size: 18,
+                            color: Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Payment Method',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        paymentMethod,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  Divider(height: 20, color: Colors.grey.shade200),
+
+                  // Order Status
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.local_shipping,
+                              size: 18, color: Colors.orange.shade700),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Order Status',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(status).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: _getStatusColor(status),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Date
+                  if (order['timestamp'] != null) ...[
+                    Divider(height: 20, color: Colors.grey.shade200),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today,
+                                size: 18, color: Colors.grey.shade600),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Date',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          _formatTimestamp(order['timestamp']),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
 
             // Action button for unpaid COD
             if (paymentMethod == 'Cash on Delivery' && !isPaid) ...[
@@ -368,11 +534,20 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => _markAsPaid(order['id']),
-                  icon: const Icon(Icons.check),
-                  label: const Text('Mark as Paid (Collected COD)'),
+                  onPressed: () => _markAsPaid(orderId),
+                  icon: const Icon(Icons.check_circle, size: 20),
+                  label: const Text(
+                    'Mark as Paid (COD Collected)',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -381,6 +556,26 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
         ),
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'confirmed':
+        return Colors.blue;
+      case 'processing':
+        return Colors.purple;
+      case 'ready':
+        return Colors.teal;
+      case 'delivered':
+      case 'completed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildPaymentInfo(String label, String value) {
