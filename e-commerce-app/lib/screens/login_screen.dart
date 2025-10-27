@@ -5,6 +5,7 @@ import '../services/notification_manager.dart';
 import 'signup_screen.dart';
 import 'admin/admin_dashboard.dart';
 import 'unified_main_dashboard.dart';
+import 'cooperative/coop_dashboard.dart';
 import 'guest_main_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -79,6 +80,13 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const AdminDashboard()),
+            (route) => false,
+          );
+        } else if (userDoc.exists && userData?['role'] == 'cooperative') {
+          // Navigate to Cooperative Dashboard for cooperative users
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const CoopDashboard()),
             (route) => false,
           );
         } else if (userDoc.exists && userData?['role'] == 'seller') {

@@ -13,6 +13,13 @@
 migrate_working_dir/
 .gradle/
 
+# API Keys and Secrets - DO NOT COMMIT
+.env
+*.env
+lib/config/paymongo_config.dart
+lib/config/*_keys.dart
+lib/config/secrets.dart
+
 # IntelliJ related
 *.iml
 *.ipr

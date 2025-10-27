@@ -10,11 +10,12 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BellOutlined,
-  ToolOutlined
+  ToolOutlined,
+  TeamOutlined
 } from '@ant-design/icons';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { DashboardHome } from './DashboardHome';
+import { EnhancedDashboard } from './EnhancedDashboard';
 import { UserManagement } from './UserManagement';
 import { ProductManagement } from './ProductManagement';
 import { TransactionMonitoring } from './TransactionMonitoring';
@@ -23,6 +24,9 @@ import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
 import { SellerStatusFixer } from './SellerStatusFixer';
+import { CooperativeManagement } from './CooperativeManagement';
+import { AnalyticsReports } from './AnalyticsReports';
+import { AuditLogs } from './AuditLogs';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -49,14 +53,19 @@ const AdminLayout: React.FC = () => {
       label: 'Dashboard',
     },
     {
+      key: '/cooperative',
+      icon: <TeamOutlined />,
+      label: 'Cooperatives',
+    },
+    {
       key: '/users',
       icon: <UserOutlined />,
-      label: 'User Management',
+      label: 'Users',
     },
     {
       key: '/products',
       icon: <ShopOutlined />,
-      label: 'Product Management',
+      label: 'Products',
     },
     {
       key: '/transactions',
@@ -64,9 +73,9 @@ const AdminLayout: React.FC = () => {
       label: 'Transactions',
     },
     {
-      key: '/seller-fixer',
-      icon: <ToolOutlined />,
-      label: 'Seller Status Fixer',
+      key: '/analytics',
+      icon: <DashboardOutlined />,
+      label: 'Analytics',
     },
     {
       key: '/announcements',
@@ -74,10 +83,20 @@ const AdminLayout: React.FC = () => {
       label: 'Announcements',
     },
     {
+      key: '/audit-logs',
+      icon: <ToolOutlined />,
+      label: 'Audit Logs',
+    },
+    {
+      key: '/seller-fixer',
+      icon: <ToolOutlined />,
+      label: 'Status Tools',
+    },
+    {
       key: '/settings',
       icon: <SettingOutlined />,
       label: 'Settings',
-    }
+    },
   ];
 
   const userMenu = (
@@ -171,12 +190,15 @@ const AdminLayout: React.FC = () => {
           background: '#f0f2f5'
         }}>
           <Routes>
-            <Route path="/" element={<DashboardHome />} />
+            <Route path="/" element={<EnhancedDashboard />} />
             <Route path="/users" element={<UserManagement />} />
+            <Route path="/cooperative" element={<CooperativeManagement />} />
             <Route path="/products" element={<ProductManagement />} />
+            <Route path="/analytics" element={<AnalyticsReports />} />
             <Route path="/transactions" element={<TransactionMonitoring />} />
             <Route path="/seller-fixer" element={<SellerStatusFixer />} />
             <Route path="/announcements" element={<AnnouncementManagement />} />
+            <Route path="/audit-logs" element={<AuditLogs />} />
             <Route path="/settings" element={<AdminSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -167,7 +167,7 @@ class CartService extends ChangeNotifier {
 
       // Save cart to database
       await saveCartToDatabase(user.uid);
-      
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -198,10 +198,10 @@ class CartService extends ChangeNotifier {
         }
 
         _cartItems.removeAt(index);
-        
+
         // Save cart to database
         await saveCartToDatabase(user.uid);
-        
+
         notifyListeners();
       }
     } catch (e) {
@@ -266,13 +266,13 @@ class CartService extends ChangeNotifier {
       );
 
       _cartItems[index] = updatedItem;
-      
+
       // Save cart to database
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         await saveCartToDatabase(user.uid);
       }
-      
+
       notifyListeners();
     }
   }
@@ -296,10 +296,10 @@ class CartService extends ChangeNotifier {
       }
 
       _cartItems.clear();
-      
+
       // Save empty cart to database
       await saveCartToDatabase(user.uid);
-      
+
       notifyListeners();
     } catch (e) {
       print('Error clearing cart: $e');
@@ -362,6 +362,7 @@ class CartService extends ChangeNotifier {
     required String paymentMethod,
     required String deliveryMethod,
     String? meetupLocation,
+    String? deliveryAddress,
   }) async {
     try {
       print('Starting checkout process for user: $userId');
@@ -409,7 +410,7 @@ class CartService extends ChangeNotifier {
           final orderRef = _firestore.collection('orders').doc(orderId);
           final orderData = {
             'id': orderId,
-            'userId': userId,
+            'buyerId': userId,
             'totalAmount': item.price * item.quantity,
             'status': 'pending',
             'paymentMethod': paymentMethod,
@@ -422,11 +423,17 @@ class CartService extends ChangeNotifier {
             'quantity': item.quantity,
             'unit': item.unit,
             'sellerId': item.sellerId,
+            'productImage': item.imageUrl ?? '',
             // Add meet-up location if delivery method is Meet-up
             if (deliveryMethod == 'Meet-up' &&
                 meetupLocation != null &&
                 meetupLocation.isNotEmpty)
               'meetupLocation': meetupLocation,
+            // Add delivery address if delivery method is Cooperative Delivery
+            if (deliveryMethod == 'Cooperative Delivery' &&
+                deliveryAddress != null &&
+                deliveryAddress.isNotEmpty)
+              'deliveryAddress': deliveryAddress,
             // Add customer info
             'customerName': userData['name'] ??
                 userData['fullName'] ??
@@ -640,7 +647,7 @@ class CartService extends ChangeNotifier {
       }
 
       // Clear the cart after successful processing
-      clearCart();
+      await clearCart();
 
       return true;
     } catch (e) {

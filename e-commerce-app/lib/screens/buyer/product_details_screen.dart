@@ -29,7 +29,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final RatingService _ratingService = RatingService();
-  
+
   Map<String, dynamic>? _sellerInfo;
   SellerRatingStats? _ratingStats;
   bool _isLoadingSeller = true;
@@ -51,10 +51,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           _firestore.collection('users').doc(sellerId).get(),
           _ratingService.getSellerRatingStats(sellerId),
         ]);
-        
+
         final sellerDoc = futures[0] as DocumentSnapshot;
         final ratingStats = futures[1] as SellerRatingStats;
-        
+
         if (sellerDoc.exists) {
           setState(() {
             _sellerInfo = sellerDoc.data() as Map<String, dynamic>?;
@@ -92,19 +92,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     try {
       // Check if there's an existing chat between this customer and seller
-      final chatQuery = await _firestore.collection('chats')
+      final chatQuery = await _firestore
+          .collection('chats')
           .where('sellerId', isEqualTo: sellerId)
           .where('customerId', isEqualTo: currentUser.uid)
           .limit(1)
           .get();
 
       String chatId;
-      
+
       if (chatQuery.docs.isEmpty) {
         // Create a new chat if none exists
         final chatRef = _firestore.collection('chats').doc();
         chatId = chatRef.id;
-        
+
         await chatRef.set({
           'sellerId': sellerId,
           'customerId': currentUser.uid,
@@ -126,7 +127,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       } else {
         // Use existing chat but update product info
         chatId = chatQuery.docs.first.id;
-        
+
         await _firestore.collection('chats').doc(chatId).update({
           'product': {
             'id': widget.productId,
@@ -142,7 +143,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       // Get seller name for the chat screen
       String sellerName = 'Seller';
       if (_sellerInfo != null) {
-        sellerName = '${_sellerInfo!['firstName'] ?? ''} ${_sellerInfo!['lastName'] ?? ''}'.trim();
+        sellerName =
+            '${_sellerInfo!['firstName'] ?? ''} ${_sellerInfo!['lastName'] ?? ''}'
+                .trim();
         if (sellerName.isEmpty) {
           sellerName = _sellerInfo!['name'] ?? 'Seller';
         }
@@ -185,7 +188,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       final cartItem = CartItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         productId: widget.productId,
-        productName: widget.product['productName'] ?? widget.product['name'] ?? 'Unknown Product',
+        productName: widget.product['productName'] ??
+            widget.product['name'] ??
+            'Unknown Product',
         price: (widget.product['price'] ?? 0).toDouble(),
         imageUrl: widget.product['imageUrl'],
         sellerId: widget.product['sellerId'] ?? '',
@@ -194,21 +199,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         isReservation: false,
       );
 
-      print('DEBUG: Adding item to cart - ProductID: ${widget.productId}, Quantity: $_quantity');
-      
+      print(
+          'DEBUG: Adding item to cart - ProductID: ${widget.productId}, Quantity: $_quantity');
+
       bool success = await cartService.addItem(cartItem);
-      
+
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${widget.product['productName'] ?? widget.product['name']} added to cart'),
+            content: Text(
+                '${widget.product['productName'] ?? widget.product['name']} added to cart'),
             backgroundColor: Colors.green,
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to add to cart - insufficient stock or other error'),
+            content: const Text(
+                'Failed to add to cart - insufficient stock or other error'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -303,14 +311,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   String _getSellerName() {
     if (_sellerInfo == null) return 'Seller';
-    
+
     // Try multiple name fields in order of preference
     final firstName = _sellerInfo!['firstName'];
     final lastName = _sellerInfo!['lastName'];
     final fullName = _sellerInfo!['fullName'];
     final name = _sellerInfo!['name'];
     final displayName = _sellerInfo!['displayName'];
-    
+
     if (firstName != null && firstName.isNotEmpty) {
       if (lastName != null && lastName.isNotEmpty) {
         return '$firstName $lastName';
@@ -331,20 +339,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         return emailName[0].toUpperCase() + emailName.substring(1);
       }
     }
-    
+
     return 'Seller';
   }
 
   String _getSellerLocation() {
     if (_sellerInfo == null) return '';
-    
+
     // Try multiple location fields
     final address = _sellerInfo!['address'];
     final location = _sellerInfo!['location'];
     final city = _sellerInfo!['city'];
     final province = _sellerInfo!['province'];
     final region = _sellerInfo!['region'];
-    
+
     if (address != null && address.isNotEmpty) {
       return address;
     } else if (location != null && location.isNotEmpty) {
@@ -360,14 +368,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     } else if (region != null && region.isNotEmpty) {
       return region;
     }
-    
+
     return '';
   }
 
   @override
   Widget build(BuildContext context) {
-    final productName = widget.product['productName'] ?? widget.product['name'] ?? 'Unknown Product';
-    final description = widget.product['description'] ?? 'No description available';
+    final productName = widget.product['productName'] ??
+        widget.product['name'] ??
+        'Unknown Product';
+    final description =
+        widget.product['description'] ?? 'No description available';
     final category = widget.product['category'] ?? 'Uncategorized';
     final unit = widget.product['unit'] ?? 'pc';
     final price = widget.product['price'] ?? 0;
@@ -377,7 +388,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(productName),
+        title: const Text('Product Details'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -428,7 +439,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -508,14 +520,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   // Order Type
                   if (widget.product['orderType'] != null) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: widget.product['orderType'] == 'Available Now' 
+                        color: widget.product['orderType'] == 'Available Now'
                             ? Colors.green.withOpacity(0.1)
                             : Colors.orange.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: widget.product['orderType'] == 'Available Now' 
+                          color: widget.product['orderType'] == 'Available Now'
                               ? Colors.green
                               : Colors.orange,
                           width: 1,
@@ -529,9 +542,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 ? Icons.check_circle
                                 : Icons.schedule,
                             size: 16,
-                            color: widget.product['orderType'] == 'Available Now' 
-                                ? Colors.green
-                                : Colors.orange,
+                            color:
+                                widget.product['orderType'] == 'Available Now'
+                                    ? Colors.green
+                                    : Colors.orange,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -539,9 +553,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: widget.product['orderType'] == 'Available Now' 
-                                  ? Colors.green.shade700
-                                  : Colors.orange.shade700,
+                              color:
+                                  widget.product['orderType'] == 'Available Now'
+                                      ? Colors.green.shade700
+                                      : Colors.orange.shade700,
                             ),
                           ),
                         ],
@@ -553,8 +568,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   const SizedBox(height: 24),
 
                   // Pickup Location
-                  if (widget.product['pickupLocation'] != null && 
-                      widget.product['pickupLocation'].toString().isNotEmpty) ...[
+                  if (widget.product['pickupLocation'] != null &&
+                      widget.product['pickupLocation']
+                          .toString()
+                          .isNotEmpty) ...[
                     const Text(
                       'Pickup Location',
                       style: TextStyle(
@@ -596,8 +613,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ],
 
                   // Delivery Options
-                  if (widget.product['deliveryOptions'] != null && 
-                      (widget.product['deliveryOptions'] as List).isNotEmpty) ...[
+                  if (widget.product['deliveryOptions'] != null &&
+                      (widget.product['deliveryOptions'] as List)
+                          .isNotEmpty) ...[
                     const Text(
                       'Available Delivery Methods',
                       style: TextStyle(
@@ -639,8 +657,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 4,
-                            children: (widget.product['deliveryOptions'] as List)
-                                .map<Widget>((option) {
+                            children:
+                                (widget.product['deliveryOptions'] as List)
+                                    .map<Widget>((option) {
                               IconData iconData;
                               Color chipColor;
                               Color textColor;
@@ -665,14 +684,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                   chipColor = Colors.grey;
                                   textColor = Colors.grey.shade700;
                               }
-                              
+
                               return Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: chipColor.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: chipColor.withOpacity(0.5)),
+                                  border: Border.all(
+                                      color: chipColor.withOpacity(0.5)),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -798,15 +818,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.green.shade300, width: 2),
+                                border: Border.all(
+                                    color: Colors.green.shade300, width: 2),
                               ),
                               child: CircleAvatar(
                                 radius: 22,
                                 backgroundColor: Colors.green,
                                 child: Text(
-                                  (_sellerInfo!['firstName']?[0] ?? 
-                                   _sellerInfo!['name']?[0] ?? 
-                                   _sellerInfo!['fullName']?[0] ?? 'S').toUpperCase(),
+                                  (_sellerInfo!['firstName']?[0] ??
+                                          _sellerInfo!['name']?[0] ??
+                                          _sellerInfo!['fullName']?[0] ??
+                                          'S')
+                                      .toUpperCase(),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -830,63 +853,66 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  
-                                // Rating Section
-                                if (!_isLoadingRating && _ratingStats != null) ...[
-                                  RatingWidget(
-                                    rating: _ratingStats!.averageRating,
-                                    showText: true,
-                                    size: 16,
-                                    customText: '${_ratingStats!.averageRating.toStringAsFixed(1)} (${_ratingStats!.totalReviews})',
-                                  ),
-                                ] else if (!_isLoadingRating) ...[
-                                  Row(
-                                    children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: List.generate(5, (index) {
-                                          return Icon(
-                                            Icons.star_border,
-                                            color: Colors.grey.shade400,
-                                            size: 16,
-                                          );
-                                        }),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'No rating (0)',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 14,
+
+                                  // Rating Section
+                                  if (!_isLoadingRating &&
+                                      _ratingStats != null) ...[
+                                    RatingWidget(
+                                      rating: _ratingStats!.averageRating,
+                                      showText: true,
+                                      size: 16,
+                                      customText:
+                                          '${_ratingStats!.averageRating.toStringAsFixed(1)} (${_ratingStats!.totalReviews})',
+                                    ),
+                                  ] else if (!_isLoadingRating) ...[
+                                    Row(
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: List.generate(5, (index) {
+                                            return Icon(
+                                              Icons.star_border,
+                                              color: Colors.grey.shade400,
+                                              size: 16,
+                                            );
+                                          }),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ] else ...[
-                                  Row(
-                                    children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: List.generate(5, (index) {
-                                          return Icon(
-                                            Icons.star_border,
-                                            color: Colors.grey.shade300,
-                                            size: 16,
-                                          );
-                                        }),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Loading...',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade500,
-                                          fontSize: 14,
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'No rating (0)',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 14,
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ],                                  const SizedBox(height: 4),
-                                  
+                                      ],
+                                    ),
+                                  ] else ...[
+                                    Row(
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: List.generate(5, (index) {
+                                            return Icon(
+                                              Icons.star_border,
+                                              color: Colors.grey.shade300,
+                                              size: 16,
+                                            );
+                                          }),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Loading...',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  const SizedBox(height: 4),
+
                                   // Location
                                   if (_getSellerLocation().isNotEmpty)
                                     Row(
@@ -909,7 +935,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                         ),
                                       ],
                                     ),
-                                  
+
                                   // Tap to view profile hint
                                   const SizedBox(height: 4),
                                   Text(
@@ -920,7 +946,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                       fontStyle: FontStyle.italic,
                                     ),
                                   ),
-                                  
+
                                   // Member since or verification badge
                                   if (_sellerInfo!['verified'] == true)
                                     Padding(
@@ -1014,7 +1040,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               iconSize: 20,
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: Text(
                                 _quantity.toString(),
                                 style: const TextStyle(
@@ -1074,7 +1101,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     _showLoginPrompt();
                     return;
                   }
-                  
+
                   Navigator.push(
                     context,
                     MaterialPageRoute(

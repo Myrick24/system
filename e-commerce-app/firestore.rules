@@ -78,9 +78,9 @@ service cloud.firestore {
       allow read, update, delete: if request.auth != null && 
                                  resource.data.sellerId == request.auth.uid;
       
-      // Allow authenticated users to update only stock-related fields (for cart operations)
+      // Allow authenticated users to update stock-related fields (for cart operations)
       allow update: if request.auth != null && 
-                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock']);
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock', 'quantity']);
         
       // Admins can read, update and delete any product
       allow read, update, delete: if request.auth != null && isAdmin();
@@ -315,22 +315,162 @@ service cloud.firestore {
     
     // Orders collection
     match /orders/{orderId} {
-      // Users can read and create orders where they are buyer or seller
-      allow read, create: if request.auth != null && 
-        (request.resource.data.buyerId == request.auth.uid || 
-         request.resource.data.sellerId == request.auth.uid ||
-         resource.data.buyerId == request.auth.uid || 
+      // Authenticated users can create orders
+      allow create: if request.auth != null;
+      
+      // Users can read orders where they are buyer or seller
+      allow read: if request.auth != null && 
+        (resource.data.buyerId == request.auth.uid || 
+         resource.data.userId == request.auth.uid ||
          resource.data.sellerId == request.auth.uid);
-         
+      
+      // Allow authenticated users to list/query orders (needed for collection queries)
+      allow list: if request.auth != null;
+      
       // Users can update their own orders with specific fields
       allow update: if request.auth != null && 
         (resource.data.buyerId == request.auth.uid || 
+         resource.data.userId == request.auth.uid ||
          resource.data.sellerId == request.auth.uid) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes']);
-          
+      
       // Admins can read and update any order
       allow read, update: if request.auth != null && isAdmin();
+      
+      // Order items subcollection
+      match /items/{itemId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+    
+    // GCash payments collection (legacy - manual reference)
+    match /gcash_payments/{paymentId} {
+      // Users can create their own payments
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can read their own payments
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // Users can update their own payments (to add reference number)
+      allow update: if request.auth != null && 
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['referenceNumber', 'status', 'updatedAt']);
+      
+      // Sellers can read payments for their orders (future enhancement)
+      // Admins can read and update any payment
+      allow read, update: if request.auth != null && isAdmin();
+      
+      // Allow listing payments for authenticated users (for queries)
+      allow list: if request.auth != null;
+    }
+    
+    // PayMongo payments collection (via PayMongo API)
+    match /paymongo_payments/{paymentId} {
+      // Users can create their own payments
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can read their own payments
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // Users can update their own payments (status updates from webhook)
+      allow update: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // Admins can read and update any payment
+      allow read, update: if request.auth != null && isAdmin();
+      
+      // Allow listing payments for authenticated users (for queries)
+      allow list: if request.auth != null;
+    }
+    
+    // Seller notifications collection (for orders/reservations)
+    match /seller_notifications/{notificationId} {
+      // Sellers can read their own notifications
+      allow read: if request.auth != null && 
+        resource.data.sellerId == request.auth.uid;
+        
+      // System can create seller notifications (during order creation)
+      allow create: if request.auth != null;
+      
+      // Sellers can update their notifications (mark as read/handled)
+      allow update: if request.auth != null && 
+        resource.data.sellerId == request.auth.uid;
+        
+      // Admins can manage all seller notifications
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    
+    // Reservations collection
+    match /reservations/{reservationId} {
+      // Users can read reservations they created or are selling
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+         
+      // Users can create reservations
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+         
+      // Users can update their own reservations
+      allow update: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.sellerId == request.auth.uid);
+         
+      // Allow authenticated users to list reservations
+      allow list: if request.auth != null;
+         
+      // Admins can manage all reservations
+      allow read, write: if request.auth != null && isAdmin();
+      
+      // Reservation items subcollection
+      match /items/{itemId} {
+        allow read, write: if request.auth != null && 
+          (get(/databases/$(database)/documents/reservations/$(reservationId)).data.userId == request.auth.uid ||
+           get(/databases/$(database)/documents/reservations/$(reservationId)).data.sellerId == request.auth.uid ||
+           isAdmin());
+      }
+    }
+    
+    // Product orders collection (tracks orders per product)
+    match /product_orders/{productId} {
+      // Allow authenticated users to read product orders
+      allow read: if request.auth != null;
+      
+      // Allow creation of product orders during checkout
+      allow create: if request.auth != null;
+      
+      // Admins can manage all product orders
+      allow read, write: if request.auth != null && isAdmin();
+      
+      // Orders subcollection (stores references to orders for this product)
+      match /orders/{orderId} {
+        // Allow authenticated users to read
+        allow read: if request.auth != null;
+        
+        // Allow creation during checkout
+        allow create: if request.auth != null;
+        
+        // Admins can manage
+        allow write: if request.auth != null && isAdmin();
+      }
+      
+      // Order references subcollection (alternative name for compatibility)
+      match /order_refs/{orderRefId} {
+        // Allow authenticated users to read
+        allow read: if request.auth != null;
+        
+        // Allow creation during checkout
+        allow create: if request.auth != null;
+        
+        // Admins can manage
+        allow write: if request.auth != null && isAdmin();
+      }
     }
     
     // Default deny

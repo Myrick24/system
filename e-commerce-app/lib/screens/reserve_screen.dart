@@ -9,7 +9,7 @@ import 'cart_screen.dart';
 class ReserveScreen extends StatefulWidget {
   final Map<String, dynamic> product;
   final String productId;
-  
+
   const ReserveScreen({
     Key? key,
     required this.product,
@@ -23,20 +23,20 @@ class ReserveScreen extends StatefulWidget {
 class _ReserveScreenState extends State<ReserveScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
-  
+
   int _quantity = 1;
   bool _isLoading = false;
   String? _selectedPickupOption = 'On Available Date';
   final List<String> _pickupOptions = ['On Available Date', 'Custom Date'];
   DateTime? _customPickupDate;
-  
+
   double _calculateTotal() {
-    double price = widget.product['price'] is int 
-        ? (widget.product['price'] as int).toDouble() 
+    double price = widget.product['price'] is int
+        ? (widget.product['price'] as int).toDouble()
         : widget.product['price'] as double;
     return price * _quantity;
   }
-  
+
   Future<void> _selectCustomDate(BuildContext context) async {
     // Get availableDate from product
     DateTime availableDate = DateTime.now().add(const Duration(days: 1));
@@ -47,12 +47,13 @@ class _ReserveScreenState extends State<ReserveScreen> {
         // Use default
       }
     }
-    
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _customPickupDate ?? availableDate,
       firstDate: availableDate, // Can't pick before availability
-      lastDate: availableDate.add(const Duration(days: 30)), // Allow up to 30 days after availability
+      lastDate: availableDate.add(
+          const Duration(days: 30)), // Allow up to 30 days after availability
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -65,18 +66,18 @@ class _ReserveScreenState extends State<ReserveScreen> {
         );
       },
     );
-    
+
     if (picked != null) {
       setState(() {
         _customPickupDate = picked;
       });
     }
   }
-  
+
   String _getFormattedDate(DateTime date) {
     return DateFormat('MM/dd/yyyy').format(date);
   }
-  
+
   void _addToCart() async {
     if (_auth.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -84,21 +85,21 @@ class _ReserveScreenState extends State<ReserveScreen> {
       );
       return;
     }
-    
+
     if (_selectedPickupOption == 'Custom Date' && _customPickupDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a pickup date')),
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       final cartService = Provider.of<CartService>(context, listen: false);
-      
+
       // Get product available date
       DateTime availableDate = DateTime.now().add(const Duration(days: 1));
       if (widget.product['availableDate'] != null) {
@@ -108,19 +109,20 @@ class _ReserveScreenState extends State<ReserveScreen> {
           // Use default
         }
       }
-      
+
       // Determine pickup date based on selection
-      DateTime pickupDate = _selectedPickupOption == 'Custom Date' && _customPickupDate != null
-          ? _customPickupDate!
-          : availableDate;
-        // Create cart item
+      DateTime pickupDate =
+          _selectedPickupOption == 'Custom Date' && _customPickupDate != null
+              ? _customPickupDate!
+              : availableDate;
+      // Create cart item
       final cartItem = CartItem(
         id: 'reservation_${DateTime.now().millisecondsSinceEpoch}',
         productId: widget.productId,
         sellerId: widget.product['sellerId'],
         productName: widget.product['name'],
-        price: widget.product['price'] is int 
-            ? (widget.product['price'] as int).toDouble() 
+        price: widget.product['price'] is int
+            ? (widget.product['price'] as int).toDouble()
             : widget.product['price'] as double,
         quantity: _quantity,
         unit: widget.product['unit'] ?? 'piece',
@@ -128,21 +130,22 @@ class _ReserveScreenState extends State<ReserveScreen> {
         pickupDate: pickupDate,
         imageUrl: widget.product['imageUrl'],
       );
-      
+
       // Add to cart
       final success = await cartService.addItem(cartItem);
-      
+
       if (success) {
         // Save to database if user is logged in
         if (_auth.currentUser != null) {
           await cartService.saveCartToDatabase(_auth.currentUser!.uid);
         }
-        
+
         // Show confirmation
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Reserved $_quantity ${widget.product['unit']} to cart'),
+              content:
+                  Text('Reserved $_quantity ${widget.product['unit']} to cart'),
               action: SnackBarAction(
                 label: 'VIEW CART',
                 onPressed: () {
@@ -158,7 +161,8 @@ class _ReserveScreenState extends State<ReserveScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cannot reserve more than available quantity')),
+            const SnackBar(
+                content: Text('Cannot reserve more than available quantity')),
           );
         }
       }
@@ -176,26 +180,27 @@ class _ReserveScreenState extends State<ReserveScreen> {
       }
     }
   }
-  
+
   Future<void> _reserveNow() async {
     if (_auth.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login to continue with reservation')),
+        const SnackBar(
+            content: Text('Please login to continue with reservation')),
       );
       return;
     }
-    
+
     if (_selectedPickupOption == 'Custom Date' && _customPickupDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a pickup date')),
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       // Get product available date
       DateTime availableDate = DateTime.now().add(const Duration(days: 1));
@@ -206,12 +211,13 @@ class _ReserveScreenState extends State<ReserveScreen> {
           // Use default
         }
       }
-      
+
       // Determine pickup date based on selection
-      DateTime pickupDate = _selectedPickupOption == 'Custom Date' && _customPickupDate != null
-          ? _customPickupDate!
-          : availableDate;
-      
+      DateTime pickupDate =
+          _selectedPickupOption == 'Custom Date' && _customPickupDate != null
+              ? _customPickupDate!
+              : availableDate;
+
       // Create cart item
       final cartService = Provider.of<CartService>(context, listen: false);
       final cartItem = CartItem(
@@ -219,27 +225,28 @@ class _ReserveScreenState extends State<ReserveScreen> {
         productId: widget.productId,
         sellerId: widget.product['sellerId'],
         productName: widget.product['name'],
-        price: widget.product['price'] is int 
-            ? (widget.product['price'] as int).toDouble() 
+        price: widget.product['price'] is int
+            ? (widget.product['price'] as int).toDouble()
             : widget.product['price'] as double,
         quantity: _quantity,
         unit: widget.product['unit'] ?? 'piece',
         isReservation: true,
         pickupDate: pickupDate,
+        imageUrl: widget.product['imageUrl'],
       );
-      
+
       // Clear cart first so only this reservation is in cart
       await cartService.clearCart();
-      
+
       // Add to cart
       final success = await cartService.addItem(cartItem);
-      
+
       if (success) {
         // Save to database if user is logged in
         if (_auth.currentUser != null) {
           await cartService.saveCartToDatabase(_auth.currentUser!.uid);
         }
-        
+
         // Navigate to cart for checkout
         if (mounted) {
           Navigator.push(
@@ -250,7 +257,8 @@ class _ReserveScreenState extends State<ReserveScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cannot reserve more than available quantity')),
+            const SnackBar(
+                content: Text('Cannot reserve more than available quantity')),
           );
         }
       }
@@ -274,29 +282,30 @@ class _ReserveScreenState extends State<ReserveScreen> {
     // Extract product data
     final isOrganic = widget.product['isOrganic'] ?? false;
     final productName = widget.product['name'] ?? 'Product Name';
-    final description = widget.product['description'] ?? 'No description available';
+    final description =
+        widget.product['description'] ?? 'No description available';
     final unit = widget.product['unit'] ?? 'unit';
     final double price = widget.product['price'] is int
         ? (widget.product['price'] as int).toDouble()
         : widget.product['price'] as double;
-    
+
     // Get current stock information
     final double quantity = widget.product['quantity'] is int
         ? (widget.product['quantity'] as int).toDouble()
         : widget.product['quantity'] as double;
-        
-    final double currentReserved = widget.product['reserved'] is int 
-        ? (widget.product['reserved'] as int).toDouble() 
+
+    final double currentReserved = widget.product['reserved'] is int
+        ? (widget.product['reserved'] as int).toDouble()
         : (widget.product['reserved'] as double? ?? 0.0);
-    
+
     // Calculate available quantity for reservation
     final double availableForReservation = quantity - currentReserved;
     final int maxQuantity = availableForReservation.toInt();
-    
+
     // Availability date
     DateTime availableDate = DateTime.now().add(const Duration(days: 1));
     String availableDateString = 'Tomorrow';
-    
+
     if (widget.product['availableDate'] != null) {
       try {
         availableDate = DateTime.parse(widget.product['availableDate']);
@@ -305,7 +314,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
         // Use default
       }
     }
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Product Details'),
@@ -323,43 +332,47 @@ class _ReserveScreenState extends State<ReserveScreen> {
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [            // Product Image
+          children: [
+            // Product Image
             Container(
               height: 300,
               width: double.infinity,
               color: Colors.grey[200],
-              child: widget.product['imageUrl'] != null && widget.product['imageUrl'].toString().isNotEmpty
-                ? Image.network(
-                    widget.product['imageUrl'],
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                            : null,
-                          valueColor: AlwaysStoppedAnimation<Color>(isOrganic ? Colors.green : Colors.orange),
+              child: widget.product['imageUrl'] != null &&
+                      widget.product['imageUrl'].toString().isNotEmpty
+                  ? Image.network(
+                      widget.product['imageUrl'],
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                isOrganic ? Colors.green : Colors.orange),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) => Center(
+                        child: Icon(
+                          Icons.shopping_basket,
+                          size: 80,
+                          color: isOrganic ? Colors.green : Colors.orange,
                         ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) => Center(
+                      ),
+                    )
+                  : Center(
                       child: Icon(
                         Icons.shopping_basket,
                         size: 80,
                         color: isOrganic ? Colors.green : Colors.orange,
                       ),
                     ),
-                  )
-                : Center(
-                    child: Icon(
-                      Icons.shopping_basket,
-                      size: 80,
-                      color: isOrganic ? Colors.green : Colors.orange,
-                    ),
-                  ),
             ),
-            
+
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -378,7 +391,8 @@ class _ReserveScreenState extends State<ReserveScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: Colors.green,
                           borderRadius: BorderRadius.circular(20),
@@ -394,9 +408,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   // Product Description
                   Text(
                     description,
@@ -405,9 +419,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       height: 1.4,
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Quantity and Availability
                   Row(
                     children: [
@@ -427,15 +441,21 @@ class _ReserveScreenState extends State<ReserveScreen> {
                             ),
                             const SizedBox(width: 4),
                             StreamBuilder<DocumentSnapshot>(
-                              stream: _firestore.collection('products').doc(widget.productId).snapshots(),
+                              stream: _firestore
+                                  .collection('products')
+                                  .doc(widget.productId)
+                                  .snapshots(),
                               builder: (context, snapshot) {
                                 // Default to the initial values from the product
                                 double totalQuantity = quantity;
                                 double reservedAmount = currentReserved;
-                                
+
                                 // Update with live data if available
-                                if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
-                                  final data = snapshot.data!.data() as Map<String, dynamic>?;
+                                if (snapshot.hasData &&
+                                    snapshot.data != null &&
+                                    snapshot.data!.exists) {
+                                  final data = snapshot.data!.data()
+                                      as Map<String, dynamic>?;
                                   if (data != null) {
                                     if (data['quantity'] != null) {
                                       totalQuantity = data['quantity'] is int
@@ -449,13 +469,16 @@ class _ReserveScreenState extends State<ReserveScreen> {
                                     }
                                   }
                                 }
-                                
-                                final availableForReserve = totalQuantity - reservedAmount;
-                                
+
+                                final availableForReserve =
+                                    totalQuantity - reservedAmount;
+
                                 return Text(
                                   '${availableForReserve.toStringAsFixed(0)} $unit reservable',
                                   style: TextStyle(
-                                    color: availableForReserve > 0 ? Colors.green : Colors.red,
+                                    color: availableForReserve > 0
+                                        ? Colors.green
+                                        : Colors.red,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 );
@@ -464,9 +487,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                           ],
                         ),
                       ),
-                      
+
                       const SizedBox(width: 16),
-                      
+
                       // Availability Date
                       Container(
                         padding: const EdgeInsets.all(8),
@@ -494,9 +517,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Seller Information
                   Row(
                     children: [
@@ -514,29 +537,35 @@ class _ReserveScreenState extends State<ReserveScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           FutureBuilder<DocumentSnapshot>(
-                            future: _firestore.collection('sellers').doc(widget.product['sellerId']).get(),
+                            future: _firestore
+                                .collection('sellers')
+                                .doc(widget.product['sellerId'])
+                                .get(),
                             builder: (context, snapshot) {
                               String sellerName = 'Seller';
                               String location = 'Location';
-                              
+
                               if (snapshot.hasData && snapshot.data!.exists) {
-                                final data = snapshot.data!.data() as Map<String, dynamic>?;
+                                final data = snapshot.data!.data()
+                                    as Map<String, dynamic>?;
                                 if (data != null) {
                                   sellerName = data['fullName'] ?? 'Seller';
                                   location = data['location'] ?? 'Location';
                                 }
                               }
-                              
+
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     sellerName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
                                   ),
                                   Text(
                                     location,
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.grey),
                                   ),
                                 ],
                               );
@@ -563,9 +592,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const Divider(height: 32),
-                  
+
                   // Reservation Notice
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -607,9 +636,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Reservation Options
                   const Text(
                     'Reservation Options',
@@ -619,7 +648,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Quantity Selector
                   Row(
                     children: [
@@ -639,32 +668,37 @@ class _ReserveScreenState extends State<ReserveScreen> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.remove, size: 16),
-                              onPressed: _quantity > 1 ? () {
-                                setState(() {
-                                  _quantity--;
-                                });
-                              } : null,
+                              onPressed: _quantity > 1
+                                  ? () {
+                                      setState(() {
+                                        _quantity--;
+                                      });
+                                    }
+                                  : null,
                             ),
                             Text(
                               _quantity.toString(),
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             IconButton(
                               icon: const Icon(Icons.add, size: 16),
-                              onPressed: _quantity < maxQuantity ? () {
-                                setState(() {
-                                  _quantity++;
-                                });
-                              } : null,
+                              onPressed: _quantity < maxQuantity
+                                  ? () {
+                                      setState(() {
+                                        _quantity++;
+                                      });
+                                    }
+                                  : null,
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Pickup Date Options
                   const Text(
                     'Pickup Date Options',
@@ -673,15 +707,16 @@ class _ReserveScreenState extends State<ReserveScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Pickup Radio Buttons
                   ...List.generate(_pickupOptions.length, (index) {
                     return RadioListTile<String>(
                       title: Text(_pickupOptions[index]),
-                      subtitle: _pickupOptions[index] == 'On Available Date' 
+                      subtitle: _pickupOptions[index] == 'On Available Date'
                           ? Text('Pick up on $availableDateString')
-                          : (_customPickupDate != null 
-                              ? Text('Pick up on ${_getFormattedDate(_customPickupDate!)}')
+                          : (_customPickupDate != null
+                              ? Text(
+                                  'Pick up on ${_getFormattedDate(_customPickupDate!)}')
                               : const Text('Select a custom date')),
                       value: _pickupOptions[index],
                       groupValue: _selectedPickupOption,
@@ -696,7 +731,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       contentPadding: EdgeInsets.zero,
                     );
                   }),
-                  
+
                   if (_selectedPickupOption == 'Custom Date')
                     Padding(
                       padding: const EdgeInsets.only(left: 16),
@@ -709,9 +744,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                         ),
                       ),
                     ),
-                  
+
                   const Divider(height: 32),
-                  
+
                   // Reservation Summary
                   const Text(
                     'Reservation Summary',
@@ -721,7 +756,7 @@ class _ReserveScreenState extends State<ReserveScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Price Row
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -743,10 +778,10 @@ class _ReserveScreenState extends State<ReserveScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Pickup Date:'),
-                      Text(_selectedPickupOption == 'On Available Date' 
-                          ? availableDateString 
-                          : (_customPickupDate != null 
-                              ? _getFormattedDate(_customPickupDate!) 
+                      Text(_selectedPickupOption == 'On Available Date'
+                          ? availableDateString
+                          : (_customPickupDate != null
+                              ? _getFormattedDate(_customPickupDate!)
                               : 'Not selected')),
                     ],
                   ),
@@ -771,9 +806,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 32),
-                  
+
                   // Reserve Button
                   SizedBox(
                     width: double.infinity,
@@ -783,7 +818,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: (_selectedPickupOption == 'Custom Date' && _customPickupDate == null) || _isLoading
+                      onPressed: (_selectedPickupOption == 'Custom Date' &&
+                                  _customPickupDate == null) ||
+                              _isLoading
                           ? null
                           : _reserveNow,
                       child: _isLoading
@@ -791,7 +828,8 @@ class _ReserveScreenState extends State<ReserveScreen> {
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
                                 strokeWidth: 2,
                               ),
                             )
@@ -804,9 +842,9 @@ class _ReserveScreenState extends State<ReserveScreen> {
                             ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Add to Cart Button
                   SizedBox(
                     width: double.infinity,
@@ -832,7 +870,6 @@ class _ReserveScreenState extends State<ReserveScreen> {
           ],
         ),
       ),
-      
     );
   }
 }

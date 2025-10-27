@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
+import '../widgets/address_selector.dart';
 import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -15,17 +16,17 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   final _auth = FirebaseAuth.instance;
   bool _isLoading = false;
-  String? _selectedPaymentOption = 'Cash on Pick-up';
-  String? _selectedDeliveryOption = 'Pick Up';
-  String _meetupLocation = '';
+  String? _selectedPaymentOption = 'Cash on Delivery';
+  String? _selectedDeliveryOption = 'Pickup at Coop';
   final TextEditingController _locationController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
+  Map<String, String> _deliveryAddress = {};
 
-  final List<String> _deliveryOptions = ['Pick Up', 'Meet up', 'Delivery'];
-  final List<String> _paymentOptions = [
-    'Cash on Pick-up',
-    'Cash on Meet-up',
-    'GCash'
+  final List<String> _deliveryOptions = [
+    'Cooperative Delivery',
+    'Pickup at Coop'
   ];
+  final List<String> _paymentOptions = ['Cash on Delivery', 'GCash'];
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void dispose() {
     _locationController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -73,8 +75,8 @@ class _CartScreenState extends State<CartScreen> {
       ),
       bottomNavigationBar: Consumer<CartService>(
         builder: (context, cartService, child) {
-          return cartService.cartItems.isEmpty 
-              ? const SizedBox.shrink() 
+          return cartService.cartItems.isEmpty
+              ? const SizedBox.shrink()
               : _buildCheckoutBar();
         },
       ),
@@ -146,7 +148,8 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ),
             ),
-            ...regularItems.map((item) => _buildCartItemTile(item, cartService)),
+            ...regularItems
+                .map((item) => _buildCartItemTile(item, cartService)),
           ],
 
           if (reservationItems.isNotEmpty) ...[
@@ -160,7 +163,8 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ),
             ),
-            ...reservationItems.map((item) => _buildCartItemTile(item, cartService)),
+            ...reservationItems
+                .map((item) => _buildCartItemTile(item, cartService)),
           ],
 
           const Divider(thickness: 1),
@@ -195,29 +199,28 @@ class _CartScreenState extends State<CartScreen> {
                   );
                 }),
 
-                if (_selectedDeliveryOption == 'Meet up') ...[
+                // Delivery Address Field (show only for Cooperative Delivery)
+                if (_selectedDeliveryOption == 'Cooperative Delivery') ...[
                   const SizedBox(height: 16),
                   const Text(
-                    'Meet-up Location',
+                    'Delivery Address *',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _locationController,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Enter meet-up location',
-                    ),
-                    onChanged: (value) {
+                  const SizedBox(height: 12),
+                  AddressSelector(
+                    onAddressChanged: (address) {
                       setState(() {
-                        _meetupLocation = value;
+                        _deliveryAddress = address;
                       });
                     },
                   ),
                 ],
+
+                // Removed meet-up location field as it's no longer needed
+                const SizedBox(height: 16),
 
                 const SizedBox(height: 16),
 
@@ -378,7 +381,8 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => _showRemoveItemDialog(item, cartService),
+                        onPressed: () =>
+                            _showRemoveItemDialog(item, cartService),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -469,7 +473,8 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   // Show a confirmation dialog when removing an item from cart
-  Future<void> _showRemoveItemDialog(CartItem item, CartService cartService) async {
+  Future<void> _showRemoveItemDialog(
+      CartItem item, CartService cartService) async {
     return showDialog<void>(
       context: context,
       barrierDismissible: false, // User must tap a button to close dialog
@@ -570,7 +575,8 @@ class _CartScreenState extends State<CartScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                 ),
                 child: const Text(
                   'Checkout',
@@ -598,13 +604,14 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
-    // Validate meet-up location if needed
-    if (_selectedDeliveryOption == 'Meet-up' &&
-        _meetupLocation.trim().isEmpty) {
+    // Validate delivery address for Cooperative Delivery
+    if (_selectedDeliveryOption == 'Cooperative Delivery' &&
+        (_deliveryAddress['fullAddress'] == null ||
+            _deliveryAddress['fullAddress']!.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a meet-up location'),
-          duration: Duration(seconds: 5),
+          content: Text('Please complete your delivery address'),
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -618,9 +625,11 @@ class _CartScreenState extends State<CartScreen> {
       final success = await cartService.processCart(
         _auth.currentUser!.uid,
         paymentMethod: _selectedPaymentOption ?? 'Cash on Delivery',
-        deliveryMethod: _selectedDeliveryOption ?? 'Delivery',
-        meetupLocation:
-            _selectedDeliveryOption == 'Meet-up' ? _meetupLocation : null,
+        deliveryMethod: _selectedDeliveryOption ?? 'Pickup at Coop',
+        meetupLocation: null, // Not needed anymore
+        deliveryAddress: _selectedDeliveryOption == 'Cooperative Delivery'
+            ? _deliveryAddress['fullAddress']
+            : null,
       );
 
       if (success) {

@@ -8,6 +8,7 @@ import 'virtual_wallet_screen.dart'; // Import the digital wallet screen
 import 'notifications/account_notifications.dart';
 import '../services/notification_service.dart'; // Import our notification service
 import '../theme/app_theme.dart'; // Import the app theme
+import 'cooperative/coop_dashboard.dart'; // Import Coop Dashboard
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({Key? key}) : super(key: key);
@@ -16,7 +17,8 @@ class AccountScreen extends StatefulWidget {
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends State<AccountScreen> {
+class _AccountScreenState extends State<AccountScreen>
+    with AutomaticKeepAliveClientMixin {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   User? _currentUser;
@@ -24,6 +26,10 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isLoading = true;
   bool _isRegisteredSeller = false;
   bool _isSellerApproved = false; // Flag to track if seller is approved
+  bool _isCooperative = false; // Flag to track if user is a cooperative
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -58,11 +64,11 @@ class _AccountScreenState extends State<AccountScreen> {
       try {
         // Force refresh the Firebase Auth token to ensure we have latest permissions
         await _currentUser!.getIdToken(true);
-        
+
         print('=== DEBUG: Current User Info ===');
         print('User ID: ${_currentUser!.uid}');
         print('User Email: ${_currentUser!.email}');
-        
+
         // Try to get user data from Firestore
         final userDocRef =
             _firestore.collection('users').doc(_currentUser!.uid);
@@ -72,7 +78,9 @@ class _AccountScreenState extends State<AccountScreen> {
           if (userDoc.exists) {
             // Get the user name from Firestore
             final userData = userDoc.data();
-            if (userData != null && userData.containsKey('name') && userData['name'] != null) {
+            if (userData != null &&
+                userData.containsKey('name') &&
+                userData['name'] != null) {
               setState(() {
                 _userName = userData['name'];
               });
@@ -80,15 +88,23 @@ class _AccountScreenState extends State<AccountScreen> {
             } else {
               print('No name found in users collection');
             }
-            
+
+            // Check if user is a cooperative
+            if (userData != null && userData['role'] == 'cooperative') {
+              setState(() {
+                _isCooperative = true;
+              });
+              print('User is a cooperative member');
+            }
+
             // Check if user is registered as seller from users collection first
             if (userData != null && userData['role'] == 'seller') {
               String userStatus = userData['status'] ?? 'pending';
               bool isApproved = userStatus == 'approved';
-              
+
               print('User is registered as seller from users collection');
               print('User Status: $userStatus');
-              
+
               setState(() {
                 _isRegisteredSeller = true;
                 _isSellerApproved = isApproved;
@@ -129,11 +145,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   print('Full seller data: $sellerData');
 
                   // Set user name from seller data if not already set
-                  if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                  if (_userName == null &&
+                      sellerData.containsKey('name') &&
+                      sellerData['name'] != null) {
                     setState(() {
                       _userName = sellerData['name'];
                     });
-                    print('User name set from sellers collection: ${sellerData['name']}');
+                    print(
+                        'User name set from sellers collection: ${sellerData['name']}');
                   }
 
                   setState(() {
@@ -146,14 +165,15 @@ class _AccountScreenState extends State<AccountScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Seller status: ${status.toUpperCase()}'),
-                        backgroundColor: isApproved ? Colors.green : Colors.orange,
+                        backgroundColor:
+                            isApproved ? Colors.green : Colors.orange,
                         duration: const Duration(seconds: 2),
                       ),
                     );
                   }
                 } else {
                   print('No seller found for email: ${_currentUser!.email}');
-                  
+
                   // Let's also try to search by user ID as a fallback
                   print('=== DEBUG: Trying search by user ID ===');
                   final sellerByUidQuery = await _firestore
@@ -161,27 +181,32 @@ class _AccountScreenState extends State<AccountScreen> {
                       .where('userId', isEqualTo: _currentUser!.uid)
                       .limit(1)
                       .get();
-                      
-                  print('Seller by UID query result count: ${sellerByUidQuery.docs.length}');
-                  
+
+                  print(
+                      'Seller by UID query result count: ${sellerByUidQuery.docs.length}');
+
                   if (sellerByUidQuery.docs.isNotEmpty) {
                     final sellerDoc = sellerByUidQuery.docs.first;
                     final sellerData = sellerDoc.data();
                     String status = sellerData['status'] ?? 'pending';
                     bool isApproved = status == 'approved';
 
-                    print('Seller found by UID - User ID: ${_currentUser!.uid}');
+                    print(
+                        'Seller found by UID - User ID: ${_currentUser!.uid}');
                     print('Seller ID: ${sellerDoc.id}');
                     print('Seller Status: $status');
                     print('Is Approved: $isApproved');
                     print('Full seller data: $sellerData');
 
                     // Set user name from seller data if not already set
-                    if (_userName == null && sellerData.containsKey('name') && sellerData['name'] != null) {
+                    if (_userName == null &&
+                        sellerData.containsKey('name') &&
+                        sellerData['name'] != null) {
                       setState(() {
                         _userName = sellerData['name'];
                       });
-                      print('User name set from sellers collection (by UID): ${sellerData['name']}');
+                      print(
+                          'User name set from sellers collection (by UID): ${sellerData['name']}');
                     }
 
                     setState(() {
@@ -193,8 +218,10 @@ class _AccountScreenState extends State<AccountScreen> {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Seller status: ${status.toUpperCase()}'),
-                          backgroundColor: isApproved ? Colors.green : Colors.orange,
+                          content:
+                              Text('Seller status: ${status.toUpperCase()}'),
+                          backgroundColor:
+                              isApproved ? Colors.green : Colors.orange,
                           duration: const Duration(seconds: 2),
                         ),
                       );
@@ -216,13 +243,14 @@ class _AccountScreenState extends State<AccountScreen> {
           print('Firestore error: $error');
           // Handle the Firestore permission error based on the memory
         }
-        
+
         // Final fallback: if no name was found anywhere, try to use Firebase Auth displayName
         if (_userName == null && _currentUser?.displayName != null) {
           setState(() {
             _userName = _currentUser!.displayName;
           });
-          print('User name set from Firebase Auth displayName: ${_currentUser!.displayName}');
+          print(
+              'User name set from Firebase Auth displayName: ${_currentUser!.displayName}');
         }
       } catch (e) {
         print('Error fetching user data: $e');
@@ -273,7 +301,10 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
     if (_isLoading) {
       return const Scaffold(
         body: Center(
@@ -372,8 +403,95 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
             ),
 
-            // Become a Seller section (Shopee/Lazada style)
-            if (!_isRegisteredSeller)
+            // Coop Dashboard section for cooperative users
+            if (_isCooperative)
+              Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.green.shade400,
+                      Colors.green.shade600,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.green.withOpacity(0.3),
+                      spreadRadius: 2,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CoopDashboard(),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.business,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Cooperative Dashboard',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Manage deliveries, pickups, and payments for your cooperative',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Become a Seller section (Shopee/Lazada style) - Hidden for cooperative users
+            if (!_isRegisteredSeller && !_isCooperative)
               Container(
                 margin: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -623,7 +741,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                       const SizedBox(height: 12),
                       // Status information
-                      _buildStatusItem('📄', 'Application submitted successfully'),
+                      _buildStatusItem(
+                          '📄', 'Application submitted successfully'),
                       const SizedBox(height: 8),
                       _buildStatusItem('🔍', 'Documents under verification'),
                       const SizedBox(height: 8),
@@ -671,14 +790,14 @@ class _AccountScreenState extends State<AccountScreen> {
                                 duration: Duration(seconds: 1),
                               ),
                             );
-                            
+
                             // Clear current status first
                             setState(() {
                               _isLoading = true;
                             });
-                            
+
                             await _getCurrentUser();
-                            
+
                             // Show completion message
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -1034,7 +1153,9 @@ class _AccountScreenState extends State<AccountScreen> {
             if (_isRegisteredSeller)
               _buildSettingsItem(
                 icon: Icons.update,
-                title: _isSellerApproved ? 'Seller Status: Approved' : 'Seller Status: Pending',
+                title: _isSellerApproved
+                    ? 'Seller Status: Approved'
+                    : 'Seller Status: Pending',
                 onTap: () async {
                   // Reset notification flags to force check
                   await NotificationService.resetNotificationState();
@@ -1051,7 +1172,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   );
 
                   // Clear current status first to force refresh, but preserve username
-                  String? currentUserName = _userName; // Preserve current username
+                  String? currentUserName =
+                      _userName; // Preserve current username
                   setState(() {
                     _isLoading = true;
                     _isRegisteredSeller = false;
@@ -1061,7 +1183,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
                   // Re-fetch user data which will trigger notification checks
                   await _getCurrentUser();
-                  
+
                   // Restore username if it was cleared during refresh
                   if (_userName == null && currentUserName != null) {
                     setState(() {
@@ -1071,17 +1193,18 @@ class _AccountScreenState extends State<AccountScreen> {
 
                   // Notify user with current status
                   if (mounted) {
-                    String statusMessage = _isRegisteredSeller 
-                        ? (_isSellerApproved 
-                            ? 'Status: APPROVED - You can now access the seller dashboard!' 
+                    String statusMessage = _isRegisteredSeller
+                        ? (_isSellerApproved
+                            ? 'Status: APPROVED - You can now access the seller dashboard!'
                             : 'Status: PENDING - Still waiting for admin approval')
                         : 'No seller application found';
-                        
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(statusMessage),
                         duration: const Duration(seconds: 3),
-                        backgroundColor: _isSellerApproved ? Colors.green : Colors.orange,
+                        backgroundColor:
+                            _isSellerApproved ? Colors.green : Colors.orange,
                       ),
                     );
                   }
