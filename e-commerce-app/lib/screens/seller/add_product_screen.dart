@@ -36,6 +36,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   DateTime? _estimatedAvailabilityDate;
   bool _isLoading = false;
 
+  // Cooperative selection
+  List<Map<String, dynamic>> _cooperatives = [];
+  String? _selectedCoopId;
+  String? _selectedCoopName;
+  bool _loadingCoops = false;
+
   // Multiple delivery options - simplified to 3 choices
   final List<String> _deliveryOptions = ['Delivery', 'Pick Up', 'Meet up'];
 
@@ -50,7 +56,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   final List<String> _units = [
     'kg',
-    'g', 
+    'g',
     'lbs',
     'pieces',
     'bunches',
@@ -58,12 +64,79 @@ class _AddProductScreenState extends State<AddProductScreen> {
     'dozens'
   ];
 
-  final List<String> _categories = [
-    'Vegetables',
-    'Fruits', 
-    'Grains',
-    'Others'
-  ];
+  final List<String> _categories = ['Vegetables', 'Fruits', 'Grains', 'Others'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSellerCooperative();
+  }
+
+  // Load the seller's assigned cooperative
+  Future<void> _loadSellerCooperative() async {
+    setState(() {
+      _loadingCoops = true;
+    });
+
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser != null) {
+        // Get seller's assigned cooperative from users or sellers collection
+        final userDoc =
+            await _firestore.collection('users').doc(currentUser.uid).get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          final cooperativeId = userData['cooperativeId'] as String?;
+
+          if (cooperativeId != null) {
+            // Load the specific cooperative
+            final coopDoc =
+                await _firestore.collection('users').doc(cooperativeId).get();
+
+            if (coopDoc.exists) {
+              final coopData = coopDoc.data() as Map<String, dynamic>;
+              setState(() {
+                _selectedCoopId = cooperativeId;
+                _selectedCoopName = coopData['name'] ?? 'Unnamed Cooperative';
+                _cooperatives = [
+                  {
+                    'id': cooperativeId,
+                    'name': coopData['name'] ?? 'Unnamed Cooperative',
+                    'email': coopData['email'] ?? '',
+                  }
+                ];
+              });
+            }
+          } else {
+            // If no cooperative assigned, load all active cooperatives
+            final coopsSnapshot = await _firestore
+                .collection('users')
+                .where('role', isEqualTo: 'cooperative')
+                .where('status', isEqualTo: 'active')
+                .get();
+
+            setState(() {
+              _cooperatives = coopsSnapshot.docs.map((doc) {
+                final data = doc.data();
+                return {
+                  'id': doc.id,
+                  'name': data['name'] ?? 'Unnamed Cooperative',
+                  'email': data['email'] ?? '',
+                };
+              }).toList();
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Error loading cooperatives: $e');
+    } finally {
+      setState(() {
+        _loadingCoops = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -142,6 +215,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> _submitProduct() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Check if cooperative is selected
+    if (_selectedCoopId == null || _selectedCoopId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a cooperative to handle this product'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
       return;
     }
 
@@ -265,11 +350,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'sellerId': currentUser.uid,
         'sellerName': sellerName,
         'sellerEmail': currentUser.email,
-        'status': 'pending', // Requires admin approval
+        'status': 'pending', // Requires cooperative approval
         'createdAt': FieldValue.serverTimestamp(),
         'reserved': 0,
         'sold': 0,
         'imageUrl': imageUrl, // Now properly set with uploaded image URL
+        'cooperativeId': _selectedCoopId, // Link to cooperative
+        'cooperativeName':
+            _selectedCoopName, // Store cooperative name for display
       };
 
       // Add product to Firestore with the specific ID
@@ -279,28 +367,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
       await NotificationManager.sendDirectTestNotification(
         title: '📋 Product Submitted',
         body:
-            'Your product "${_nameController.text.trim()}" has been submitted for admin review. You\'ll be notified once it\'s approved.',
+            'Your product "${_nameController.text.trim()}" has been submitted for cooperative review. You\'ll be notified once it\'s approved.',
         payload: 'product_submitted|$productId',
       );
 
-      // Notify admins about new product submission
-      try {
-        await NotificationManager.sendDirectTestNotification(
-          title: '🛍️ New Product Pending',
-          body:
-              'New product "${_nameController.text.trim()}" by $sellerName requires approval.',
-          payload: 'admin_product_approval|$productId',
-        );
-      } catch (e) {
-        print('Failed to notify admins: $e');
-        // Don't fail the whole operation if admin notification fails
+      // Notify cooperative about new product submission
+      if (_selectedCoopId != null) {
+        try {
+          await _firestore.collection('cooperative_notifications').add({
+            'title': 'New Product Pending Approval',
+            'message':
+                'New product "${_nameController.text.trim()}" by $sellerName requires your approval.',
+            'createdAt': FieldValue.serverTimestamp(),
+            'type': 'product_approval',
+            'read': false,
+            'sellerId': currentUser.uid,
+            'productId': productId,
+            'priority': 'medium',
+            'cooperativeId': _selectedCoopId, // Target specific cooperative
+          });
+        } catch (e) {
+          print('Failed to notify cooperative: $e');
+          // Don't fail the whole operation if cooperative notification fails
+        }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-                'Product submitted successfully! It will be available once approved by admin.'),
+                'Product submitted successfully to ${_selectedCoopName ?? "cooperative"}! It will be available once approved.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 5),
           ),
@@ -312,9 +408,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-          content: Text('Error adding product: $e'),
-          duration: const Duration(seconds: 5),
-        ),
+            content: Text('Error adding product: $e'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -642,8 +738,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         value: _selectedCategory,
                         decoration: InputDecoration(
                           labelText: 'Category*',
-                          prefixIcon: Icon(Icons.category,
-                              color: Colors.grey.shade600),
+                          prefixIcon:
+                              Icon(Icons.category, color: Colors.grey.shade600),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
@@ -662,6 +758,155 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         },
                       ),
                     ),
+
+                    const SizedBox(height: 16),
+
+                    // Cooperative Selection
+                    if (_loadingCoops)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else if (_cooperatives.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber,
+                                color: Colors.orange.shade700),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'No cooperative assigned. Please contact support.',
+                                style: TextStyle(
+                                  color: Colors.orange.shade900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_cooperatives.length == 1)
+                      // Show assigned cooperative (read-only)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.business,
+                                color: Colors.green.shade700, size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Your Cooperative',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _selectedCoopName ?? 'Unknown',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.green.shade900,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'This product will be handled by your assigned cooperative',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      // Show dropdown if multiple cooperatives available
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedCoopId,
+                          decoration: InputDecoration(
+                            labelText: 'Select Cooperative*',
+                            prefixIcon: Icon(Icons.business,
+                                color: Colors.grey.shade600),
+                            border: InputBorder.none,
+                            labelStyle: TextStyle(color: Colors.grey.shade700),
+                          ),
+                          items: _cooperatives.map((coop) {
+                            return DropdownMenuItem<String>(
+                              value: coop['id'] as String,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    coop['name'] as String,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  Text(
+                                    coop['email'] as String,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedCoopId = value;
+                              final selectedCoop = _cooperatives.firstWhere(
+                                (coop) => coop['id'] == value,
+                                orElse: () => {'name': ''},
+                              );
+                              _selectedCoopName =
+                                  selectedCoop['name'] as String?;
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please select a cooperative';
+                            }
+                            return null;
+                          },
+                          isExpanded: true,
+                        ),
+                      ),
 
                     const SizedBox(height: 16),
 

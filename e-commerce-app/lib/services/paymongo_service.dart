@@ -3,10 +3,10 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// PayMongo Payment Service
-/// 
+///
 /// This service integrates with PayMongo API for GCash payments.
 /// PayMongo is a Philippine payment gateway that supports GCash, credit cards, etc.
-/// 
+///
 /// Setup Instructions:
 /// 1. Sign up at https://paymongo.com
 /// 2. Get your API keys from the Dashboard
@@ -18,11 +18,11 @@ class PayMongoService {
   // For testing, use TEST keys (starts with pk_test_ and sk_test_)
   // For production, use LIVE keys (starts with pk_live_ and sk_live_)
   // TODO: Move these to environment variables or secure storage
-  static const String _publicKey = 'YOUR_PAYMONGO_PUBLIC_KEY_HERE';
-  static const String _secretKey = 'YOUR_PAYMONGO_SECRET_KEY_HERE';
-  
+  static const String _publicKey = 'Ypk_test_4tUiAUKKHASyG6h6VWMLjJhH';
+  static const String _secretKey = 'sk_test_KiH6sokR7sk8UnqoMzUHRmHb';
+
   static const String _baseUrl = 'https://api.paymongo.com/v1';
-  
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// Get authorization header for PayMongo API
@@ -32,10 +32,10 @@ class PayMongoService {
   }
 
   /// Create a PayMongo Source for GCash payment with deep linking
-  /// 
+  ///
   /// This will create a payment source that opens the GCash app directly
   /// (like Shopee, Lazada, etc.)
-  /// 
+  ///
   /// Returns a Map containing:
   /// - sourceId: The PayMongo source ID
   /// - checkoutUrl: URL that opens GCash app
@@ -49,10 +49,10 @@ class PayMongoService {
     try {
       print('Creating PayMongo GCash source for amount: ₱$amount');
       print('This will open the GCash app on the user\'s phone');
-      
+
       // Convert amount to centavos (PayMongo uses smallest currency unit)
       final int amountInCentavos = (amount * 100).toInt();
-      
+
       final response = await http.post(
         Uri.parse('$_baseUrl/sources'),
         headers: {
@@ -81,17 +81,18 @@ class PayMongoService {
       );
 
       print('PayMongo API Response Status: ${response.statusCode}');
-      
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         final sourceData = data['data'];
-        
+
         final sourceId = sourceData['id'];
-        final checkoutUrl = sourceData['attributes']['redirect']['checkout_url'];
+        final checkoutUrl =
+            sourceData['attributes']['redirect']['checkout_url'];
         final status = sourceData['attributes']['status'];
-        
+
         print('GCash source created successfully: $sourceId');
-        
+
         // Save payment record to Firestore
         await _savePaymentRecord(
           sourceId: sourceId,
@@ -102,7 +103,7 @@ class PayMongoService {
           status: status,
           orderDetails: orderDetails,
         );
-        
+
         return {
           'success': true,
           'sourceId': sourceId,
@@ -115,7 +116,8 @@ class PayMongoService {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'error': errorData['errors']?[0]?['detail'] ?? 'Failed to create payment source',
+          'error': errorData['errors']?[0]?['detail'] ??
+              'Failed to create payment source',
         };
       }
     } catch (e) {
@@ -164,13 +166,13 @@ class PayMongoService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final status = data['data']['attributes']['status'];
-        
+
         // Update Firestore record
         await _firestore.collection('paymongo_payments').doc(sourceId).update({
           'status': status,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        
+
         return {
           'success': true,
           'status': status,
@@ -194,11 +196,9 @@ class PayMongoService {
   /// Get payment record from Firestore
   Future<Map<String, dynamic>?> getPaymentRecord(String sourceId) async {
     try {
-      final doc = await _firestore
-          .collection('paymongo_payments')
-          .doc(sourceId)
-          .get();
-      
+      final doc =
+          await _firestore.collection('paymongo_payments').doc(sourceId).get();
+
       if (doc.exists) {
         return doc.data();
       }
@@ -210,14 +210,15 @@ class PayMongoService {
   }
 
   /// Get payments by order ID
-  Future<List<Map<String, dynamic>>> getPaymentsByOrderId(String orderId) async {
+  Future<List<Map<String, dynamic>>> getPaymentsByOrderId(
+      String orderId) async {
     try {
       final querySnapshot = await _firestore
           .collection('paymongo_payments')
           .where('orderId', isEqualTo: orderId)
           .orderBy('createdAt', descending: true)
           .get();
-      
+
       return querySnapshot.docs
           .map((doc) => {'id': doc.id, ...doc.data()})
           .toList();
@@ -236,7 +237,7 @@ class PayMongoService {
           .orderBy('createdAt', descending: true)
           .limit(50)
           .get();
-      
+
       return querySnapshot.docs
           .map((doc) => {'id': doc.id, ...doc.data()})
           .toList();
@@ -255,7 +256,7 @@ class PayMongoService {
   }) async {
     try {
       final int amountInCentavos = (amount * 100).toInt();
-      
+
       final response = await http.post(
         Uri.parse('$_baseUrl/payment_intents'),
         headers: {
@@ -289,7 +290,8 @@ class PayMongoService {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'error': errorData['errors']?[0]?['detail'] ?? 'Failed to create payment intent',
+          'error': errorData['errors']?[0]?['detail'] ??
+              'Failed to create payment intent',
         };
       }
     } catch (e) {
@@ -353,7 +355,7 @@ class PayMongoService {
       final expectedSignature = base64Encode(
         utf8.encode(_secretKey + signatureData),
       );
-      
+
       return signature == expectedSignature;
     } catch (e) {
       print('Error verifying webhook: $e');
