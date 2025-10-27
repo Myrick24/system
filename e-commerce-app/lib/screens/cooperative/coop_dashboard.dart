@@ -33,11 +33,9 @@ class _CoopDashboardState extends State<CoopDashboard>
   final List<String> _orderStatuses = [
     'All',
     'pending',
-    'confirmed',
     'processing',
-    'ready',
-    'delivered',
-    'completed'
+    'shipped',
+    'delivered'
   ];
 
   @override
@@ -117,41 +115,92 @@ class _CoopDashboardState extends State<CoopDashboard>
     });
 
     try {
-      final ordersSnapshot = await _firestore.collection('orders').get();
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
 
-      int totalOrders = ordersSnapshot.docs.length;
+      // Get all sellers (farmers) belonging to this cooperative
+      final sellersSnapshot = await _firestore
+          .collection('users')
+          .where('cooperativeId', isEqualTo: currentUser.uid)
+          .where('role', isEqualTo: 'seller')
+          .get();
+
+      // Extract seller IDs
+      final farmerIds = sellersSnapshot.docs.map((doc) => doc.id).toList();
+
+      if (farmerIds.isEmpty) {
+        // No farmers assigned to this cooperative yet
+        setState(() {
+          _stats = {
+            'totalOrders': 0,
+            'pendingOrders': 0,
+            'processingOrders': 0,
+            'shippedOrders': 0,
+            'deliveredOrders': 0,
+            'unpaidCOD': 0,
+            'totalRevenue': 0.0,
+            'pendingPayments': 0.0,
+          };
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Get orders from these farmers only
+      // Note: Firestore 'in' operator has a limit of 10 items, so we need to batch
+      List<QuerySnapshot> ordersBatches = [];
+      for (int i = 0; i < farmerIds.length; i += 10) {
+        final batchIds = farmerIds.sublist(
+          i,
+          i + 10 > farmerIds.length ? farmerIds.length : i + 10,
+        );
+        final batchSnapshot = await _firestore
+            .collection('orders')
+            .where('sellerId', whereIn: batchIds)
+            .get();
+        ordersBatches.add(batchSnapshot);
+      }
+
+      int totalOrders = 0;
       int pendingOrders = 0;
-      int readyForPickup = 0;
-      int inDelivery = 0;
-      int completed = 0;
+      int processingOrders = 0;
+      int shippedOrders = 0;
+      int deliveredOrders = 0;
       int unpaidCOD = 0;
       double totalRevenue = 0.0;
       double pendingPayments = 0.0;
 
-      for (var doc in ordersSnapshot.docs) {
-        final data = doc.data();
-        final status = data['status'] ?? 'pending';
-        final paymentMethod = data['paymentMethod'] ?? '';
-        final totalAmount = (data['totalAmount'] ?? 0.0).toDouble();
+      for (var batch in ordersBatches) {
+        totalOrders += batch.docs.length;
 
-        // Count by status
-        if (status == 'pending' || status == 'confirmed') {
-          pendingOrders++;
-        } else if (status == 'ready') {
-          readyForPickup++;
-        } else if (status == 'processing' || status == 'shipped') {
-          inDelivery++;
-        } else if (status == 'delivered' || status == 'completed') {
-          completed++;
-          totalRevenue += totalAmount;
-        }
+        for (var doc in batch.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final status = data['status'] ?? 'pending';
+          final paymentMethod = data['paymentMethod'] ?? '';
+          final totalAmount = (data['totalAmount'] ?? 0.0).toDouble();
 
-        // Track Cash on Delivery payments
-        if (paymentMethod == 'Cash on Delivery' &&
-            status != 'delivered' &&
-            status != 'completed') {
-          unpaidCOD++;
-          pendingPayments += totalAmount;
+          // Count by status (matching seller side)
+          if (status == 'pending') {
+            pendingOrders++;
+          } else if (status == 'processing') {
+            processingOrders++;
+          } else if (status == 'shipped') {
+            shippedOrders++;
+          } else if (status == 'delivered') {
+            deliveredOrders++;
+            totalRevenue += totalAmount;
+          }
+
+          // Track Cash on Delivery payments
+          if (paymentMethod == 'Cash on Delivery' && status != 'delivered') {
+            unpaidCOD++;
+            pendingPayments += totalAmount;
+          }
         }
       }
 
@@ -159,9 +208,9 @@ class _CoopDashboardState extends State<CoopDashboard>
         _stats = {
           'totalOrders': totalOrders,
           'pendingOrders': pendingOrders,
-          'readyForPickup': readyForPickup,
-          'inDelivery': inDelivery,
-          'completed': completed,
+          'processingOrders': processingOrders,
+          'shippedOrders': shippedOrders,
+          'deliveredOrders': deliveredOrders,
           'unpaidCOD': unpaidCOD,
           'totalRevenue': totalRevenue,
           'pendingPayments': pendingPayments,
@@ -390,6 +439,8 @@ class _CoopDashboardState extends State<CoopDashboard>
             stream: _firestore
                 .collection('users')
                 .where('role', isEqualTo: 'seller')
+                .where('cooperativeId',
+                    isEqualTo: _auth.currentUser?.uid) // Filter by cooperative
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -667,9 +718,47 @@ class _CoopDashboardState extends State<CoopDashboard>
   // Update seller status
   Future<void> _updateSellerStatus(String sellerId, String newStatus) async {
     try {
+      // Update status in users collection
       await _firestore.collection('users').doc(sellerId).update({
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Also update status in sellers collection if exists
+      try {
+        final sellersQuery = await _firestore
+            .collection('sellers')
+            .where('userId', isEqualTo: sellerId)
+            .limit(1)
+            .get();
+
+        if (sellersQuery.docs.isNotEmpty) {
+          await _firestore
+              .collection('sellers')
+              .doc(sellersQuery.docs.first.id)
+              .update({
+            'status': newStatus,
+            'verified': newStatus == 'approved',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (e) {
+        print('Error updating sellers collection: $e');
+      }
+
+      // Send notification to seller
+      await _firestore.collection('user_notifications').add({
+        'title': newStatus == 'approved'
+            ? 'Application Approved ✅'
+            : 'Application Not Approved',
+        'message': newStatus == 'approved'
+            ? 'Congratulations! Your seller application has been approved by the cooperative. You can now start listing products.'
+            : 'Your seller application was not approved. Please contact the cooperative for more information.',
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'seller_status',
+        'read': false,
+        'userId': sellerId,
+        'priority': 'high',
       });
 
       if (mounted) {
@@ -805,7 +894,8 @@ class _CoopDashboardState extends State<CoopDashboard>
           StreamBuilder<QuerySnapshot>(
             stream: _firestore
                 .collection('products')
-                .orderBy('createdAt', descending: true)
+                .where('cooperativeId',
+                    isEqualTo: _auth.currentUser?.uid) // Filter by cooperative
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -840,12 +930,38 @@ class _CoopDashboardState extends State<CoopDashboard>
                         Icon(Icons.inventory_2_outlined,
                             size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
-                        const Text('No products found'),
+                        Text('No products found for your cooperative'),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Products will appear here when sellers upload them',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600),
+                        ),
                       ],
                     ),
                   ),
                 );
               }
+
+              // Sort products: pending first, then by creation date
+              products.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aStatus = aData['status'] ?? 'pending';
+                final bStatus = bData['status'] ?? 'pending';
+
+                // Pending items first
+                if (aStatus == 'pending' && bStatus != 'pending') return -1;
+                if (aStatus != 'pending' && bStatus == 'pending') return 1;
+
+                // Then sort by creation date (newest first)
+                final aTime = aData['createdAt'] as Timestamp?;
+                final bTime = bData['createdAt'] as Timestamp?;
+                if (aTime == null && bTime == null) return 0;
+                if (aTime == null) return 1;
+                if (bTime == null) return -1;
+                return bTime.compareTo(aTime);
+              });
 
               // Count products by status
               int pending = products.where((doc) {
@@ -919,6 +1035,35 @@ class _CoopDashboardState extends State<CoopDashboard>
 
                   const SizedBox(height: 16),
 
+                  // Pending Products Alert
+                  if (pending > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.notification_important,
+                              color: Colors.orange.shade700, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'You have $pending product${pending > 1 ? 's' : ''} waiting for approval. Tap to review and approve/reject.',
+                              style: TextStyle(
+                                color: Colors.orange.shade900,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Products List
                   ListView.builder(
                     shrinkWrap: true,
@@ -947,10 +1092,7 @@ class _CoopDashboardState extends State<CoopDashboard>
     final price = product['price'] ?? 0;
     final unit = product['unit'] ?? 'kg';
     final sellerId = product['sellerId'] ?? '';
-    final imageUrl =
-        (product['images'] is List && (product['images'] as List).isNotEmpty)
-            ? product['images'][0]
-            : null;
+    final imageUrl = product['imageUrl']; // Use imageUrl field directly
 
     Color statusColor;
     IconData statusIcon;
@@ -1049,78 +1191,377 @@ class _CoopDashboardState extends State<CoopDashboard>
   // Show product details dialog
   void _showProductDetails(Map<String, dynamic> product, String productId) {
     final status = product['status'] ?? 'pending';
-    final imageUrl =
-        (product['images'] is List && (product['images'] as List).isNotEmpty)
-            ? product['images'][0]
-            : null;
+    final imageUrl = product['imageUrl']; // Use imageUrl field directly
+
+    // Get delivery options as list
+    final deliveryOptions = product['deliveryOptions'] as List<dynamic>?;
+    final deliveryText = deliveryOptions != null && deliveryOptions.isNotEmpty
+        ? deliveryOptions.join(', ')
+        : 'Not specified';
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(product['name'] ?? 'Product Details'),
-        content: SingleChildScrollView(
+      builder: (context) => Dialog(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (imageUrl != null) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    imageUrl,
-                    height: 150,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 150,
-                      color: Colors.grey.shade200,
-                      child: const Icon(Icons.image_not_supported, size: 48),
-                    ),
+              // Title Bar
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: status == 'approved'
+                      ? Colors.green.shade100
+                      : status == 'rejected'
+                          ? Colors.red.shade100
+                          : Colors.orange.shade100,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    topRight: Radius.circular(8),
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
-              _buildDetailRow('Price',
-                  '₱${product['price']?.toStringAsFixed(2) ?? '0.00'}'),
-              _buildDetailRow('Unit', product['unit'] ?? 'N/A'),
-              _buildDetailRow(
-                  'Description', product['description'] ?? 'No description'),
-              _buildDetailRow('Category', product['category'] ?? 'N/A'),
-              _buildDetailRow('Status', status.toUpperCase()),
-              _buildDetailRow(
-                  'Listed',
-                  product['createdAt']?.toDate().toString().split(' ')[0] ??
-                      'N/A'),
+                child: Row(
+                  children: [
+                    Icon(
+                      status == 'approved'
+                          ? Icons.check_circle
+                          : status == 'rejected'
+                              ? Icons.cancel
+                              : Icons.pending,
+                      color: status == 'approved'
+                          ? Colors.green.shade700
+                          : status == 'rejected'
+                              ? Colors.red.shade700
+                              : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        product['name'] ?? 'Product Details',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                      tooltip: 'Close',
+                    ),
+                  ],
+                ),
+              ),
+
+              // Scrollable Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Product Image
+                      if (imageUrl != null &&
+                          imageUrl.toString().isNotEmpty) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            imageUrl,
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                height: 200,
+                                color: Colors.grey.shade200,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes !=
+                                            null
+                                        ? loadingProgress
+                                                .cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                              height: 200,
+                              color: Colors.grey.shade200,
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.image_not_supported,
+                                      size: 48, color: Colors.grey),
+                                  SizedBox(height: 8),
+                                  Text('Image not available',
+                                      style: TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Product Information Section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Product Information',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildDetailRow('Price',
+                                '₱${product['price']?.toStringAsFixed(2) ?? '0.00'}'),
+                            _buildDetailRow(
+                                'Quantity', '${product['quantity'] ?? 0}'),
+                            _buildDetailRow('Unit', product['unit'] ?? 'N/A'),
+                            _buildDetailRow(
+                                'Category', product['category'] ?? 'N/A'),
+                            _buildDetailRow(
+                                'Order Type', product['orderType'] ?? 'N/A'),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Description Section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Description',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.blue.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              product['description'] ??
+                                  'No description provided',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Delivery & Location Section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Delivery & Location',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.purple.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildDetailRow('Pickup Location',
+                                product['pickupLocation'] ?? 'N/A'),
+                            _buildDetailRow('Delivery Options', deliveryText),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Seller & Dates Section
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Seller & Dates',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildDetailRow('Seller Name',
+                                product['sellerName'] ?? 'Unknown'),
+                            _buildDetailRow('Seller Email',
+                                product['sellerEmail'] ?? 'N/A'),
+                            _buildDetailRow(
+                                'Harvest Date',
+                                product['harvestDate'] != null
+                                    ? (product['harvestDate'] as Timestamp)
+                                        .toDate()
+                                        .toString()
+                                        .split(' ')[0]
+                                    : 'N/A'),
+                            if (product['orderType'] == 'Pre Order' &&
+                                product['estimatedAvailabilityDate'] != null)
+                              _buildDetailRow(
+                                  'Est. Availability',
+                                  (product['estimatedAvailabilityDate']
+                                          as Timestamp)
+                                      .toDate()
+                                      .toString()
+                                      .split(' ')[0]),
+                            _buildDetailRow(
+                                'Listed',
+                                product['createdAt']
+                                        ?.toDate()
+                                        .toString()
+                                        .split(' ')[0] ??
+                                    'N/A'),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Status Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: status == 'approved'
+                              ? Colors.green.shade100
+                              : status == 'rejected'
+                                  ? Colors.red.shade100
+                                  : Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: status == 'approved'
+                                ? Colors.green.shade300
+                                : status == 'rejected'
+                                    ? Colors.red.shade300
+                                    : Colors.orange.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              status == 'approved'
+                                  ? Icons.check_circle
+                                  : status == 'rejected'
+                                      ? Icons.cancel
+                                      : Icons.hourglass_empty,
+                              color: status == 'approved'
+                                  ? Colors.green.shade700
+                                  : status == 'rejected'
+                                      ? Colors.red.shade700
+                                      : Colors.orange.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Status: ${status.toUpperCase()}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: status == 'approved'
+                                    ? Colors.green.shade900
+                                    : status == 'rejected'
+                                        ? Colors.red.shade900
+                                        : Colors.orange.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Action Buttons
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border(top: BorderSide(color: Colors.grey.shade300)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (status == 'pending') ...[
+                      TextButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(context); // Close dialog first
+                          await _updateProductStatus(productId, 'rejected');
+                        },
+                        icon: const Icon(Icons.cancel, color: Colors.red),
+                        label: const Text('Reject'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(context); // Close dialog first
+                          await _updateProductStatus(productId, 'approved');
+                        },
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Approve'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                        ),
+                      ),
+                    ] else ...[
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        actions: [
-          if (status == 'pending') ...[
-            TextButton.icon(
-              onPressed: () async {
-                await _updateProductStatus(productId, 'rejected');
-                if (context.mounted) Navigator.pop(context);
-              },
-              icon: const Icon(Icons.cancel, color: Colors.red),
-              label: const Text('Reject'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-            ),
-            ElevatedButton.icon(
-              onPressed: () async {
-                await _updateProductStatus(productId, 'approved');
-                if (context.mounted) Navigator.pop(context);
-              },
-              icon: const Icon(Icons.check_circle),
-              label: const Text('Approve'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            ),
-          ] else ...[
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -1128,10 +1569,75 @@ class _CoopDashboardState extends State<CoopDashboard>
   // Update product status
   Future<void> _updateProductStatus(String productId, String newStatus) async {
     try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No user logged in');
+      }
+
+      print('Current User ID: ${currentUser.uid}');
+      print('Updating product: $productId to status: $newStatus');
+
+      // Get product data to find seller
+      final productDoc =
+          await _firestore.collection('products').doc(productId).get();
+
+      if (!productDoc.exists) {
+        throw Exception('Product not found');
+      }
+
+      final productData = productDoc.data();
+      if (productData == null) {
+        throw Exception('Product data is empty');
+      }
+
+      final sellerId = productData['sellerId'] as String?;
+      final productName = productData['name'] as String? ?? 'Product';
+      final productCoopId = productData['cooperativeId'] as String?;
+
+      print('Product Seller ID: $sellerId');
+      print('Product Cooperative ID: $productCoopId');
+      print('Current User ID: ${currentUser.uid}');
+
+      // Verify this cooperative owns this product
+      if (productCoopId != currentUser.uid) {
+        throw Exception(
+            'You do not have permission to approve this product. It belongs to another cooperative.');
+      }
+
+      // Update product status
       await _firestore.collection('products').doc(productId).update({
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
+        'approvedBy': currentUser.uid,
+        'approvedAt':
+            newStatus == 'approved' ? FieldValue.serverTimestamp() : null,
       });
+
+      print('Product status updated successfully');
+
+      // Send notification to seller
+      if (sellerId != null && sellerId.isNotEmpty) {
+        try {
+          await _firestore.collection('user_notifications').add({
+            'title': newStatus == 'approved'
+                ? 'Product Approved ✅'
+                : 'Product Not Approved',
+            'message': newStatus == 'approved'
+                ? 'Your product "$productName" has been approved by the cooperative and is now live!'
+                : 'Your product "$productName" was not approved. Please review and resubmit or contact the cooperative.',
+            'createdAt': FieldValue.serverTimestamp(),
+            'type': 'product_status',
+            'read': false,
+            'userId': sellerId,
+            'productId': productId,
+            'priority': 'medium',
+          });
+          print('Notification sent to seller');
+        } catch (notificationError) {
+          print('Failed to send notification: $notificationError');
+          // Don't fail the whole operation if notification fails
+        }
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1140,15 +1646,18 @@ class _CoopDashboardState extends State<CoopDashboard>
                 'Product ${newStatus == 'approved' ? 'approved' : 'rejected'} successfully'),
             backgroundColor:
                 newStatus == 'approved' ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
+      print('Error updating product status: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating product: $e'),
+            content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -1185,7 +1694,7 @@ class _CoopDashboardState extends State<CoopDashboard>
                         ),
                         SizedBox(height: 4),
                         Text(
-                          'View & coordinate all buyer orders',
+                          'View & coordinate all orders from your farmers',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey,
@@ -1231,7 +1740,7 @@ class _CoopDashboardState extends State<CoopDashboard>
                       Expanded(
                         child: _buildStatItem(
                           'Processing',
-                          _stats['inDelivery']?.toString() ?? '0',
+                          _stats['processingOrders']?.toString() ?? '0',
                           Icons.autorenew,
                           Colors.blue,
                         ),
@@ -1239,8 +1748,17 @@ class _CoopDashboardState extends State<CoopDashboard>
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildStatItem(
-                          'Completed',
-                          _stats['completed']?.toString() ?? '0',
+                          'Shipped',
+                          _stats['shippedOrders']?.toString() ?? '0',
+                          Icons.local_shipping,
+                          Colors.purple,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatItem(
+                          'Delivered',
+                          _stats['deliveredOrders']?.toString() ?? '0',
                           Icons.check_circle,
                           Colors.green,
                         ),
@@ -1256,7 +1774,7 @@ class _CoopDashboardState extends State<CoopDashboard>
 
           // Orders List
           const Text(
-            'All Orders',
+            'Farmer Orders (Real-time)',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -1264,23 +1782,22 @@ class _CoopDashboardState extends State<CoopDashboard>
           ),
           const SizedBox(height: 12),
 
-          StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('orders')
-                .orderBy('orderDate', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
+          // First, get the list of farmer IDs, then stream their orders
+          FutureBuilder<List<String>>(
+            future: _getFarmerIds(),
+            builder: (context, farmerSnapshot) {
+              if (farmerSnapshot.hasError) {
                 return Card(
                   elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: Text('Error: ${snapshot.error}'),
+                    child:
+                        Text('Error loading farmers: ${farmerSnapshot.error}'),
                   ),
                 );
               }
 
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (farmerSnapshot.connectionState == ConnectionState.waiting) {
                 return const Card(
                   elevation: 2,
                   child: Padding(
@@ -1290,39 +1807,280 @@ class _CoopDashboardState extends State<CoopDashboard>
                 );
               }
 
-              var orders = snapshot.data!.docs;
+              final farmerIds = farmerSnapshot.data ?? [];
 
-              if (orders.isEmpty) {
+              if (farmerIds.isEmpty) {
                 return Card(
                   elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(40),
                     child: Column(
                       children: [
-                        Icon(Icons.inbox,
+                        Icon(Icons.group_off,
                             size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
-                        const Text('No orders found'),
+                        const Text(
+                            'No farmers assigned to your cooperative yet'),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Farmers will appear here once they register with your cooperative',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   ),
                 );
               }
 
-              return ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: orders.length,
-                itemBuilder: (context, index) {
-                  final order = orders[index].data() as Map<String, dynamic>;
-                  order['id'] = orders[index].id;
-                  return _buildOrderCard(order);
-                },
-              );
+              // Stream orders from these farmers in real-time
+              return _buildFarmerOrdersStream(farmerIds);
             },
           ),
         ],
       ),
+    );
+  }
+
+  // Get farmer IDs assigned to this cooperative
+  Future<List<String>> _getFarmerIds() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return [];
+
+      final sellersSnapshot = await _firestore
+          .collection('users')
+          .where('cooperativeId', isEqualTo: currentUser.uid)
+          .where('role', isEqualTo: 'seller')
+          .get();
+
+      return sellersSnapshot.docs.map((doc) => doc.id).toList();
+    } catch (e) {
+      print('Error getting farmer IDs: $e');
+      return [];
+    }
+  }
+
+  // Build real-time stream of orders from farmers
+  Widget _buildFarmerOrdersStream(List<String> farmerIds) {
+    // Firestore 'in' operator limit is 10, so we need to handle batching
+    if (farmerIds.length <= 10) {
+      return StreamBuilder<QuerySnapshot>(
+        stream: _firestore
+            .collection('orders')
+            .where('sellerId', whereIn: farmerIds)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            // Sort in memory after receiving the data
+            var sortedDocs = snapshot.data!.docs.toList()
+              ..sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aTimestamp = aData['timestamp'] as Timestamp?;
+                final bTimestamp = bData['timestamp'] as Timestamp?;
+                if (aTimestamp == null || bTimestamp == null) return 0;
+                return bTimestamp.compareTo(aTimestamp); // Most recent first
+              });
+
+            // Create a new AsyncSnapshot with sorted data
+            final sortedSnapshot = AsyncSnapshot<QuerySnapshot>.withData(
+              ConnectionState.done,
+              snapshot.data!,
+            );
+
+            return _buildOrdersListSorted(sortedSnapshot, sortedDocs);
+          }
+          return _buildOrdersList(snapshot);
+        },
+      );
+    } else {
+      // For more than 10 farmers, we need to combine multiple streams
+      // For simplicity, we'll use the first 10 and show a note
+      return Column(
+        children: [
+          if (farmerIds.length > 10)
+            Card(
+              color: Colors.blue.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Showing orders from your first 10 farmers (${farmerIds.length} total). Pull to refresh to see updated data.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('orders')
+                .where('sellerId', whereIn: farmerIds.take(10).toList())
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) {
+                // Sort in memory after receiving the data
+                var sortedDocs = snapshot.data!.docs.toList()
+                  ..sort((a, b) {
+                    final aData = a.data() as Map<String, dynamic>;
+                    final bData = b.data() as Map<String, dynamic>;
+                    final aTimestamp = aData['timestamp'] as Timestamp?;
+                    final bTimestamp = bData['timestamp'] as Timestamp?;
+                    if (aTimestamp == null || bTimestamp == null) return 0;
+                    return bTimestamp
+                        .compareTo(aTimestamp); // Most recent first
+                  });
+
+                // Create a new AsyncSnapshot with sorted data
+                final sortedSnapshot = AsyncSnapshot<QuerySnapshot>.withData(
+                  ConnectionState.done,
+                  snapshot.data!,
+                );
+
+                return _buildOrdersListSorted(sortedSnapshot, sortedDocs);
+              }
+              return _buildOrdersList(snapshot);
+            },
+          ),
+        ],
+      );
+    }
+  }
+
+  // Build the orders list from sorted documents
+  Widget _buildOrdersListSorted(AsyncSnapshot<QuerySnapshot> snapshot,
+      List<QueryDocumentSnapshot> sortedDocs) {
+    if (snapshot.hasError) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+              const SizedBox(height: 12),
+              Text('Error: ${snapshot.error}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Please try refreshing the page',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (sortedDocs.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            children: [
+              Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text('No orders yet from your farmers'),
+              const SizedBox(height: 8),
+              const Text(
+                'Orders will appear here when buyers purchase from your farmers',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedDocs.length,
+      itemBuilder: (context, index) {
+        final order = sortedDocs[index].data() as Map<String, dynamic>;
+        order['id'] = sortedDocs[index].id;
+        return _buildOrderCard(order);
+      },
+    );
+  }
+
+  // Build the orders list from snapshot
+  Widget _buildOrdersList(AsyncSnapshot<QuerySnapshot> snapshot) {
+    if (snapshot.hasError) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+              const SizedBox(height: 12),
+              Text('Error: ${snapshot.error}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Please try refreshing the page',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Card(
+        elevation: 2,
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    var orders = snapshot.data?.docs ?? [];
+
+    if (orders.isEmpty) {
+      return Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            children: [
+              Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text('No orders yet from your farmers'),
+              const SizedBox(height: 8),
+              const Text(
+                'Orders will appear here when buyers purchase from your farmers',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: orders.length,
+      itemBuilder: (context, index) {
+        final order = orders[index].data() as Map<String, dynamic>;
+        order['id'] = orders[index].id;
+        return _buildOrderCard(order);
+      },
     );
   }
 
@@ -2123,13 +2881,14 @@ class _CoopDashboardState extends State<CoopDashboard>
   ) {
     List<Widget> buttons = [];
 
-    if (status == 'pending' || status == 'confirmed') {
+    // Pending orders can be started (moved to processing)
+    if (status == 'pending') {
       buttons.add(
         Expanded(
           child: ElevatedButton.icon(
             onPressed: () => _updateOrderStatus(orderId, 'processing'),
             icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('Start'),
+            label: const Text('Start Processing'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
@@ -2143,15 +2902,16 @@ class _CoopDashboardState extends State<CoopDashboard>
       );
     }
 
-    if (status == 'processing' && deliveryMethod == 'Pickup at Coop') {
+    // Processing orders can be marked as shipped
+    if (status == 'processing') {
       buttons.add(
         Expanded(
           child: ElevatedButton.icon(
-            onPressed: () => _updateOrderStatus(orderId, 'ready'),
-            icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Ready'),
+            onPressed: () => _updateOrderStatus(orderId, 'shipped'),
+            icon: const Icon(Icons.local_shipping, size: 18),
+            label: const Text('Mark Shipped'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: Colors.purple,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
@@ -2163,16 +2923,16 @@ class _CoopDashboardState extends State<CoopDashboard>
       );
     }
 
-    if (status == 'ready' ||
-        (status == 'processing' && deliveryMethod == 'Cooperative Delivery')) {
+    // Shipped orders can be marked as delivered
+    if (status == 'shipped') {
       buttons.add(
         Expanded(
           child: ElevatedButton.icon(
             onPressed: () => _updateOrderStatus(orderId, 'delivered'),
-            icon: const Icon(Icons.done_all, size: 18),
-            label: const Text('Complete'),
+            icon: const Icon(Icons.check_circle, size: 18),
+            label: const Text('Mark Delivered'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
+              backgroundColor: Colors.green,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
@@ -2202,17 +2962,12 @@ class _CoopDashboardState extends State<CoopDashboard>
     switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
-      case 'confirmed':
-        return Colors.blue;
       case 'processing':
-        return Colors.purple;
-      case 'ready':
-        return Colors.green;
+        return Colors.blue;
       case 'shipped':
+        return Colors.purple;
       case 'delivered':
-        return Colors.teal;
-      case 'completed':
-        return Colors.green.shade700;
+        return Colors.green;
       case 'cancelled':
         return Colors.red;
       default:
@@ -2224,18 +2979,12 @@ class _CoopDashboardState extends State<CoopDashboard>
     switch (status.toLowerCase()) {
       case 'pending':
         return Icons.pending;
-      case 'confirmed':
-        return Icons.check;
       case 'processing':
         return Icons.autorenew;
-      case 'ready':
-        return Icons.check_circle;
       case 'shipped':
         return Icons.local_shipping;
       case 'delivered':
-        return Icons.done_all;
-      case 'completed':
-        return Icons.verified;
+        return Icons.check_circle;
       case 'cancelled':
         return Icons.cancel;
       default:

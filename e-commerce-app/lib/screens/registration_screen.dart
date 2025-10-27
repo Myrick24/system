@@ -38,6 +38,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _sitioController = TextEditingController();
   final _vegetableListController = TextEditingController();
 
+  // Cooperative selection
+  List<Map<String, dynamic>> _cooperatives = [];
+  String? _selectedCoopId;
+  String? _selectedCoopName;
+  bool _loadingCoops = false;
+
   @override
   void dispose() {
     _fullNameController.dispose();
@@ -52,6 +58,39 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   void initState() {
     super.initState();
     _fillCurrentUserInfo();
+    _loadCooperatives();
+  }
+
+  // Load available cooperatives
+  Future<void> _loadCooperatives() async {
+    setState(() {
+      _loadingCoops = true;
+    });
+
+    try {
+      final coopsSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'cooperative')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      setState(() {
+        _cooperatives = coopsSnapshot.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'name': data['name'] ?? 'Unnamed Cooperative',
+            'email': data['email'] ?? '',
+          };
+        }).toList();
+        _loadingCoops = false;
+      });
+    } catch (e) {
+      print('Error loading cooperatives: $e');
+      setState(() {
+        _loadingCoops = false;
+      });
+    }
   }
 
   Future<void> _fillCurrentUserInfo() async {
@@ -128,6 +167,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select your complete address'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    // Check if cooperative is selected
+    if (_selectedCoopId == null || _selectedCoopId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please select a cooperative to handle your application'),
           duration: Duration(seconds: 5),
         ),
       );
@@ -218,43 +269,49 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         'email': userEmail,
         'governmentIdUrl': governmentIdUrl,
         'createdAt': FieldValue.serverTimestamp(),
-        'status': 'pending', // Changed to pending for verification
+        'status': 'pending', // Changed to pending for cooperative verification
         'verified': false,
         'userId': currentUser.uid,
         'documentsVerified': false,
         'termsAccepted': true,
         'privacyAccepted': true,
+        'cooperativeId': _selectedCoopId, // Link to selected cooperative
+        'cooperativeName':
+            _selectedCoopName, // Store cooperative name for display
       });
 
       // Update the user's role to seller in the users collection
       // Use set with merge to handle case where user document might not exist
       await _firestore.collection('users').doc(currentUser.uid).set({
-        'name': _fullNameController.text.trim(), // Use the name from the form instead of displayName
+        'name': _fullNameController.text
+            .trim(), // Use the name from the form instead of displayName
         'email': currentUser.email ?? '',
         'role': 'seller',
         'status': 'pending', // Set to pending until verification
         'sellerApplicationDate': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
+        'cooperativeId': _selectedCoopId, // Link seller to cooperative
       }, SetOptions(merge: true));
 
-      // Send notification to admin about new seller application
-      await _firestore.collection('admin_notifications').add({
+      // Send notification to selected cooperative about new seller application
+      await _firestore.collection('cooperative_notifications').add({
         'title': 'New Seller Application',
         'message':
-            'A new seller application from ${_fullNameController.text.trim()} requires verification.',
+            'A new seller application from ${_fullNameController.text.trim()} requires your approval.',
         'createdAt': FieldValue.serverTimestamp(),
         'type': 'seller_application',
         'read': false,
         'userId': currentUser.uid,
         'sellerId': sellerId,
         'priority': 'high',
+        'cooperativeId': _selectedCoopId, // Target specific cooperative
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-                'Application submitted successfully! Please wait for admin verification. Check your account screen for status updates.'),
+                'Application submitted successfully to $_selectedCoopName! Please wait for cooperative approval. Check your account screen for status updates.'),
             duration: Duration(seconds: 4),
             backgroundColor: Colors.green,
           ),
@@ -588,6 +645,163 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     },
                   ),
                 ),
+                const SizedBox(height: 24),
+
+                // Cooperative Selection Section
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppTheme.primaryGreen.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.group,
+                        color: AppTheme.primaryGreen,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Select Cooperative',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppTheme.primaryGreenDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Cooperative Dropdown
+                if (_loadingCoops)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (_cooperatives.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber,
+                            color: Colors.orange.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'No active cooperatives available at the moment. Please try again later.',
+                            style: TextStyle(
+                              color: Colors.orange.shade900,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedCoopId,
+                      decoration: InputDecoration(
+                        labelText: 'Choose Cooperative*',
+                        prefixIcon:
+                            Icon(Icons.business, color: Colors.grey.shade600),
+                        border: InputBorder.none,
+                        labelStyle: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      items: _cooperatives.map((coop) {
+                        return DropdownMenuItem<String>(
+                          value: coop['id'] as String,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                coop['name'] as String,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                coop['email'] as String,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCoopId = value;
+                          // Find the selected cooperative name
+                          final selectedCoop = _cooperatives.firstWhere(
+                            (coop) => coop['id'] == value,
+                            orElse: () => {'name': ''},
+                          );
+                          _selectedCoopName = selectedCoop['name'] as String?;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please select a cooperative to handle your application';
+                        }
+                        return null;
+                      },
+                      hint: const Text(
+                          'Select a cooperative that will handle your products'),
+                      isExpanded: true,
+                    ),
+                  ),
+                if (_selectedCoopName != null && _selectedCoopName!.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline,
+                            color: Colors.green.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Your application will be reviewed by $_selectedCoopName. They will handle your product deliveries and approvals.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 24),
 
                 // Payout Information Section

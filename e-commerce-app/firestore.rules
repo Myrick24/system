@@ -2,331 +2,251 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if the user is an admin
     function isAdmin() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
-      // Users collection
+    
+    function isCoop() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cooperative';
+    }
+    
+    function isAdminOrCoop() {
+      return isAdmin() || isCoop();
+    }
+    
     match /users/{userId} {
-      // User can read and update their own profile
       allow read, update: if request.auth != null && request.auth.uid == userId;
-      
-      // Allow any authenticated user to read basic profile info (for chat display)
-      // This allows displaying names in chat lists
       allow read: if request.auth != null;
-      
-      // Only admins can delete users
       allow delete: if request.auth != null && isAdmin();
-      
-      // Any authenticated user can create a user document with their own UID
       allow create: if request.auth != null && request.auth.uid == userId;
-      
-      // Allow users to update their role to 'seller' with 'pending' status
-      // Also allow creating user document if it doesn't exist (using set with merge)
       allow write: if request.auth != null && 
         request.auth.uid == userId &&
         (
-          // Allow creating basic user document
           (request.resource.data.keys().hasAll(['name', 'email']) &&
            !('role' in request.resource.data.keys()) || request.resource.data.role == null ||
            request.resource.data.role == 'buyer') ||
-          // Allow updating to seller role with pending status
           (request.resource.data.role == 'seller' &&
            request.resource.data.status == 'pending')
         );
     }
     
-    // Admin can manage user roles
     match /users/{userId} {
       allow update: if request.auth != null && 
         isAdmin() &&
         (request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['role', 'status']));
     }
-      // Sellers collection
+    
+    match /users/{userId} {
+      allow read: if isCoop() && 
+                    resource.data.cooperativeId == request.auth.uid;
+      allow update: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['status', 'updatedAt']);
+    }
+    
     match /sellers/{sellerId} {
-      // Users can create and read their own seller profile
       allow create: if request.auth != null && 
                     request.resource.data.userId == request.auth.uid;
       allow read: if request.auth != null && 
                  (resource.data.userId == request.auth.uid || isAdmin());
-      
-      // Allow any authenticated user to read seller profiles (for chat display)
       allow read: if request.auth != null;
-      
-      // Only admins can update seller status
+      allow read: if isCoop() && 
+                    resource.data.cooperativeId == request.auth.uid;
+      allow update: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['status', 'verified', 'updatedAt']);
       allow update: if request.auth != null && isAdmin();
     }
       
-    // Products collection
     match /products/{productId} {
-      // Anyone (including guests) can read approved products
-      // This covers both individual document reads and collection queries
       allow read: if resource.data.status == 'approved';
-      
-      // Allow authenticated users to list/query products with filtering
-      // This is needed for collection queries from buyers
       allow list: if request.auth != null;
-      
-      // Sellers can create products and read/update/delete their own
-      // But only if they are approved sellers
       allow create: if request.auth != null && 
                    exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'seller' &&
                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
-      
       allow read, update, delete: if request.auth != null && 
                                  resource.data.sellerId == request.auth.uid;
-      
-      // Allow authenticated users to update stock-related fields (for cart operations)
+      allow read: if isCoop() && 
+                    resource.data.cooperativeId == request.auth.uid;
+      allow update: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['status', 'updatedAt', 'approvedBy', 'approvedAt']);
       allow update: if request.auth != null && 
                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock', 'quantity']);
-        
-      // Admins can read, update and delete any product
-      allow read, update, delete: if request.auth != null && isAdmin();
-    }
-      // Admin notifications collection
-    match /admin_notifications/{notificationId} {
-      // Users can create notifications for admin
-      allow create: if request.auth != null;
-      // Only admins can read and update admin notifications
       allow read, update, delete: if request.auth != null && isAdmin();
     }
     
-    // User notifications subcollection
+    match /admin_notifications/{notificationId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null && isAdmin();
+    }
+    
+    match /cooperative_notifications/{notificationId} {
+      allow create: if request.auth != null;
+      allow read: if isCoop() && 
+                    resource.data.cooperativeId == request.auth.uid;
+      allow update: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+    
+    match /user_notifications/{notificationId} {
+      allow create: if request.auth != null;
+      allow read: if request.auth != null && 
+                    resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && 
+                      resource.data.userId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+    
     match /users/{userId}/notifications/{notificationId} {
-      // Users can read their own notifications
       allow read: if request.auth != null && request.auth.uid == userId;
-      // Admins can create notifications for any user
       allow create: if request.auth != null && isAdmin();
-      // Users can mark their notifications as read
       allow update: if request.auth != null && 
                    request.auth.uid == userId && 
                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
     }
     
-    // Transactions collection
     match /transactions/{transactionId} {
-      // Users can read and create their own transactions
       allow read, create: if request.auth != null && 
         (request.resource.data.buyerId == request.auth.uid || 
          request.resource.data.sellerId == request.auth.uid);
-         
-      // Users can only update their own transactions with specific fields
       allow update: if request.auth != null && 
         (resource.data.buyerId == request.auth.uid || 
          resource.data.sellerId == request.auth.uid) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'updatedAt']);
-          
-      // Admins can read and update any transaction
       allow read, update: if request.auth != null && isAdmin();
     }
     
-    // Notifications collection
     match /notifications/{notificationId} {
-      // Users can read their own notifications
       allow read: if request.auth != null && 
         resource.data.userId == request.auth.uid;
-        
-      // Only admins can create general notifications
       allow create: if request.auth != null && 
         (request.resource.data.type == 'personal' && 
          request.resource.data.userId == request.auth.uid) || isAdmin();
-         
-      // Admins can read and manage all notifications
       allow read, write: if request.auth != null && isAdmin();
     }
     
-    // Chats collection
     match /chats/{chatId} {
-      // Users can read and write chats where they are either the seller or customer
       allow read, write: if request.auth != null && 
         (resource.data.sellerId == request.auth.uid || 
          resource.data.customerId == request.auth.uid);
-         
-      // Allow creating new chats
       allow create: if request.auth != null && 
         (request.resource.data.sellerId == request.auth.uid || 
          request.resource.data.customerId == request.auth.uid);
-         
-      // Allow listing chats for authenticated users (needed for collection queries)
       allow list: if request.auth != null;
-         
-      // Admins can read and manage all chats
       allow read, write: if request.auth != null && isAdmin();
       
-      // Messages subcollection
       match /messages/{messageId} {
-        // Users can read and create messages in chats where they are participants
         allow read, create: if request.auth != null && 
           (get(/databases/$(database)/documents/chats/$(chatId)).data.sellerId == request.auth.uid || 
            get(/databases/$(database)/documents/chats/$(chatId)).data.customerId == request.auth.uid);
-           
-        // Users can update messages they sent (for read status)
         allow update: if request.auth != null && 
           resource.data.senderId == request.auth.uid;
-          
-        // Admins can read and manage all messages
         allow read, write: if request.auth != null && isAdmin();
       }
     }
 
-    // Seller Ratings collection
     match /seller_ratings/{ratingId} {
-      // Anyone can read ratings (to display on seller profiles)
       allow read: if true;
-      
-      // Only authenticated users can create ratings
       allow create: if request.auth != null && 
         request.resource.data.buyerId == request.auth.uid;
-      
-      // Users can update/delete their own ratings
       allow update, delete: if request.auth != null && 
         resource.data.buyerId == request.auth.uid;
-        
-      // Admins can manage all ratings
       allow read, write: if request.auth != null && isAdmin();
     }
 
-    // Review Reports collection
     match /review_reports/{reportId} {
-      // Users can create reports
       allow create: if request.auth != null && 
         request.resource.data.reportedBy == request.auth.uid;
-        
-      // Only admins can read and manage reports
       allow read, write: if request.auth != null && isAdmin();
     }
     
-    // User carts collection
     match /user_carts/{userId} {
-      // Users can only access their own cart
       allow read, write: if request.auth != null && request.auth.uid == userId;
       
-      // Cart items subcollection
       match /cart_items/{cartItemId} {
-        // Users can only access their own cart items
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
-    // Orders collection
     match /orders/{orderId} {
-      // Authenticated users can create orders
       allow create: if request.auth != null;
-      
-      // Users can read orders where they are buyer or seller
       allow read: if request.auth != null && 
         (resource.data.buyerId == request.auth.uid || 
          resource.data.userId == request.auth.uid ||
-         resource.data.sellerId == request.auth.uid);
-      
-      // Allow authenticated users to list/query orders (needed for collection queries)
-      allow list: if request.auth != null;
-      
-      // Users can update their own orders with specific fields
+         resource.data.sellerId == request.auth.uid ||
+         isCoop() ||
+         isAdmin());
+      allow list: if request.auth != null && (isCoop() || isAdmin()) || 
+                  request.auth != null;
       allow update: if request.auth != null && 
-        (resource.data.buyerId == request.auth.uid || 
+        ((resource.data.buyerId == request.auth.uid || 
          resource.data.userId == request.auth.uid ||
          resource.data.sellerId == request.auth.uid) &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes']);
-      
-      // Admins can read and update any order
+          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes'])) ||
+        (isCoop() && 
+         request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'paymentCollected', 'paymentCollectedAt']));
       allow read, update: if request.auth != null && isAdmin();
       
-      // Order items subcollection
       match /items/{itemId} {
         allow read, write: if request.auth != null;
       }
     }
     
-    // GCash payments collection (legacy - manual reference)
     match /gcash_payments/{paymentId} {
-      // Users can create their own payments
       allow create: if request.auth != null && 
         request.resource.data.userId == request.auth.uid;
-      
-      // Users can read their own payments
       allow read: if request.auth != null && 
         resource.data.userId == request.auth.uid;
-      
-      // Users can update their own payments (to add reference number)
       allow update: if request.auth != null && 
         resource.data.userId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['referenceNumber', 'status', 'updatedAt']);
-      
-      // Sellers can read payments for their orders (future enhancement)
-      // Admins can read and update any payment
       allow read, update: if request.auth != null && isAdmin();
-      
-      // Allow listing payments for authenticated users (for queries)
       allow list: if request.auth != null;
     }
     
-    // PayMongo payments collection (via PayMongo API)
     match /paymongo_payments/{paymentId} {
-      // Users can create their own payments
       allow create: if request.auth != null && 
         request.resource.data.userId == request.auth.uid;
-      
-      // Users can read their own payments
       allow read: if request.auth != null && 
         resource.data.userId == request.auth.uid;
-      
-      // Users can update their own payments (status updates from webhook)
       allow update: if request.auth != null && 
         resource.data.userId == request.auth.uid;
-      
-      // Admins can read and update any payment
       allow read, update: if request.auth != null && isAdmin();
-      
-      // Allow listing payments for authenticated users (for queries)
       allow list: if request.auth != null;
     }
     
-    // Seller notifications collection (for orders/reservations)
     match /seller_notifications/{notificationId} {
-      // Sellers can read their own notifications
       allow read: if request.auth != null && 
         resource.data.sellerId == request.auth.uid;
-        
-      // System can create seller notifications (during order creation)
       allow create: if request.auth != null;
-      
-      // Sellers can update their notifications (mark as read/handled)
       allow update: if request.auth != null && 
         resource.data.sellerId == request.auth.uid;
-        
-      // Admins can manage all seller notifications
       allow read, write: if request.auth != null && isAdmin();
     }
     
-    // Reservations collection
     match /reservations/{reservationId} {
-      // Users can read reservations they created or are selling
       allow read: if request.auth != null && 
         (resource.data.userId == request.auth.uid || 
          resource.data.sellerId == request.auth.uid);
-         
-      // Users can create reservations
       allow create: if request.auth != null && 
         request.resource.data.userId == request.auth.uid;
-         
-      // Users can update their own reservations
       allow update: if request.auth != null && 
         (resource.data.userId == request.auth.uid || 
          resource.data.sellerId == request.auth.uid);
-         
-      // Allow authenticated users to list reservations
       allow list: if request.auth != null;
-         
-      // Admins can manage all reservations
       allow read, write: if request.auth != null && isAdmin();
       
-      // Reservation items subcollection
       match /items/{itemId} {
         allow read, write: if request.auth != null && 
           (get(/databases/$(database)/documents/reservations/$(reservationId)).data.userId == request.auth.uid ||
@@ -335,43 +255,24 @@ service cloud.firestore {
       }
     }
     
-    // Product orders collection (tracks orders per product)
     match /product_orders/{productId} {
-      // Allow authenticated users to read product orders
       allow read: if request.auth != null;
-      
-      // Allow creation of product orders during checkout
       allow create: if request.auth != null;
-      
-      // Admins can manage all product orders
       allow read, write: if request.auth != null && isAdmin();
       
-      // Orders subcollection (stores references to orders for this product)
       match /orders/{orderId} {
-        // Allow authenticated users to read
         allow read: if request.auth != null;
-        
-        // Allow creation during checkout
         allow create: if request.auth != null;
-        
-        // Admins can manage
         allow write: if request.auth != null && isAdmin();
       }
       
-      // Order references subcollection (alternative name for compatibility)
       match /order_refs/{orderRefId} {
-        // Allow authenticated users to read
         allow read: if request.auth != null;
-        
-        // Allow creation during checkout
         allow create: if request.auth != null;
-        
-        // Admins can manage
         allow write: if request.auth != null && isAdmin();
       }
     }
     
-    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
