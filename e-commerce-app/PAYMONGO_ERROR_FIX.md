@@ -20,14 +20,14 @@ Changed from **LIVE keys** to **TEST keys** in `paymongo_service.dart`:
 
 ### Before (Using Live Keys):
 ```dart
-static const String _publicKey = 'pk_live_eP4c48kkbzYT4iwrNUSdFhGw';
-static const String _secretKey = 'sk_live_GmMKFCcrj2Mzy7F4iAbxFwrG';
+static const String _publicKey = 'pk_live_YOUR_PUBLIC_KEY_HERE';
+static const String _secretKey = 'sk_live_YOUR_SECRET_KEY_HERE';
 ```
 
 ### After (Using Test Keys):
 ```dart
-static const String _publicKey = 'pk_test_eP4c48kkbzYT4iwrNUSdFhGw';
-static const String _secretKey = 'sk_test_GmMKFCcrj2Mzy7F4iAbxFwrG';
+static const String _publicKey = 'pk_test_YOUR_TEST_PUBLIC_KEY';
+static const String _secretKey = 'sk_test_YOUR_TEST_SECRET_KEY';
 ```
 
 ---
@@ -120,8 +120,8 @@ Then:
    // static const String _secretKey = 'sk_test_xxx';
    
    // Uncomment live keys:
-   static const String _publicKey = 'pk_live_eP4c48kkbzYT4iwrNUSdFhGw';
-   static const String _secretKey = 'sk_live_GmMKFCcrj2Mzy7F4iAbxFwrG';
+   static const String _publicKey = 'pk_live_YOUR_LIVE_PUBLIC_KEY';
+   static const String _secretKey = 'sk_live_YOUR_LIVE_SECRET_KEY';
    ```
 
 ---

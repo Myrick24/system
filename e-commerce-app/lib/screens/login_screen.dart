@@ -6,6 +6,7 @@ import 'signup_screen.dart';
 import 'admin/admin_dashboard.dart';
 import 'unified_main_dashboard.dart';
 import 'cooperative/coop_dashboard.dart';
+import 'guest_main_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   final String? email;
@@ -293,6 +294,25 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const GuestMainDashboard(),
+                    ),
+                    (route) => false,
+                  );
+                },
+                child: const Text(
+                  'Continue as Guest',
+                  style: TextStyle(
+                    color: Colors.green,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
               ),
             ],
           ),

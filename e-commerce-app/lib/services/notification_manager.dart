@@ -1,4 +1,5 @@
-import 'push_notification_service.dart';
+import 'realtime_notification_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum NotificationType {
   orderUpdate,
@@ -8,9 +9,13 @@ enum NotificationType {
   general,
   announcement,
   reminder,
+  checkout,
+  sellerRegistration,
+  productUpdate,
 }
 
 class NotificationManager {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Send direct local test notification (bypasses FCM for immediate system notification)
   static Future<bool> sendDirectTestNotification({
     required String title,
@@ -18,7 +23,7 @@ class NotificationManager {
     String? payload,
   }) async {
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: payload,
@@ -46,7 +51,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'order_update|$orderId|$status',
@@ -74,7 +79,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'new_product|$productId|$sellerName',
@@ -104,7 +109,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'product_approval|$productName|$isApproved',
@@ -130,7 +135,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'payment|$orderId|$amount|$isReceived',
@@ -155,7 +160,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'low_stock|$productName|$currentStock',
@@ -190,7 +195,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'welcome|$userName|$userRole',
@@ -212,7 +217,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: message,
         payload: 'reminder|$reminderType',
@@ -234,7 +239,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: notificationTitle,
         body: message,
         payload: 'announcement|$title|${targetRole ?? "all"}',
@@ -255,7 +260,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: tip,
         payload: 'farming_tip|${season ?? "general"}',
@@ -282,7 +287,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'market_price|$productName|$newPrice|$oldPrice',
@@ -296,23 +301,23 @@ class NotificationManager {
 
   // Subscribe user to relevant notification topics based on their role
   static Future<void> subscribeToRoleBasedTopics(String userRole) async {
-    await PushNotificationService.subscribeToTopic('all_users');
-    await PushNotificationService.subscribeToTopic(userRole);
+    await RealtimeNotificationService.subscribeToTopic('all_users');
+    await RealtimeNotificationService.subscribeToTopic(userRole);
 
     switch (userRole) {
       case 'farmer':
-        await PushNotificationService.subscribeToTopic('farmers');
-        await PushNotificationService.subscribeToTopic('market_updates');
-        await PushNotificationService.subscribeToTopic('farming_tips');
+        await RealtimeNotificationService.subscribeToTopic('farmers');
+        await RealtimeNotificationService.subscribeToTopic('market_updates');
+        await RealtimeNotificationService.subscribeToTopic('farming_tips');
         break;
       case 'buyer':
-        await PushNotificationService.subscribeToTopic('buyers');
-        await PushNotificationService.subscribeToTopic('new_products');
-        await PushNotificationService.subscribeToTopic('deals');
+        await RealtimeNotificationService.subscribeToTopic('buyers');
+        await RealtimeNotificationService.subscribeToTopic('new_products');
+        await RealtimeNotificationService.subscribeToTopic('deals');
         break;
       case 'cooperative':
-        await PushNotificationService.subscribeToTopic('cooperatives');
-        await PushNotificationService.subscribeToTopic('admin_updates');
+        await RealtimeNotificationService.subscribeToTopic('cooperatives');
+        await RealtimeNotificationService.subscribeToTopic('admin_updates');
         break;
     }
   }
@@ -335,7 +340,310 @@ class NotificationManager {
     ];
 
     for (String topic in topics) {
-      await PushNotificationService.unsubscribeFromTopic(topic);
+      await RealtimeNotificationService.unsubscribeFromTopic(topic);
+    }
+  }
+
+  // ===== NEW NOTIFICATION METHODS =====
+
+  // Send checkout notification to seller when buyer purchases their product
+  static Future<bool> sendCheckoutNotificationToSeller({
+    required String sellerId,
+    required String productName,
+    required int quantity,
+    required String unit,
+    required double totalAmount,
+    required String buyerName,
+    required String orderId,
+  }) async {
+    String title = '🛒 New Purchase!';
+    String body = '$buyerName just purchased $quantity $unit of "$productName" (\$${totalAmount.toStringAsFixed(2)})';
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'checkout|seller|$orderId|$productName',
+      );
+
+      // Store notification in Firestore for seller
+      await _firestore.collection('notifications').add({
+        'userId': sellerId,
+        'title': title,
+        'message': body,
+        'type': 'checkout_seller',
+        'orderId': orderId,
+        'productName': productName,
+        'quantity': quantity,
+        'totalAmount': totalAmount,
+        'buyerName': buyerName,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'priority': 'high',
+      });
+
+      return true;
+    } catch (e) {
+      print('Error sending checkout notification to seller: $e');
+      return false;
+    }
+  }
+
+  // Send checkout confirmation to buyer
+  static Future<bool> sendCheckoutConfirmationToBuyer({
+    required String buyerId,
+    required String productName,
+    required int quantity,
+    required String unit,
+    required double totalAmount,
+    required String orderId,
+  }) async {
+    String title = '✅ Order Confirmed!';
+    String body = 'Your order for $quantity $unit of "$productName" has been confirmed (\$${totalAmount.toStringAsFixed(2)})';
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'checkout|buyer|$orderId|$productName',
+      );
+
+      // Store notification in Firestore for buyer
+      await _firestore.collection('notifications').add({
+        'userId': buyerId,
+        'title': title,
+        'message': body,
+        'type': 'checkout_buyer',
+        'orderId': orderId,
+        'productName': productName,
+        'quantity': quantity,
+        'totalAmount': totalAmount,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'priority': 'high',
+      });
+
+      return true;
+    } catch (e) {
+      print('Error sending checkout confirmation to buyer: $e');
+      return false;
+    }
+  }
+
+  // Send seller registration approval notification
+  static Future<bool> sendSellerRegistrationNotification({
+    required String userId,
+    required String userName,
+    required bool isApproved,
+    String? rejectionReason,
+  }) async {
+    String title = isApproved ? '🎉 Seller Account Approved!' : '❌ Seller Application Rejected';
+    String body = isApproved
+        ? 'Congratulations $userName! Your seller account has been approved. You can now start selling products.'
+        : 'Your seller application has been rejected.';
+
+    if (!isApproved && rejectionReason != null) {
+      body += ' Reason: $rejectionReason';
+    }
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'seller_registration|$isApproved',
+      );
+
+      // Store notification in Firestore
+      await _firestore.collection('notifications').add({
+        'userId': userId,
+        'title': title,
+        'message': body,
+        'type': isApproved ? 'seller_approved' : 'seller_rejected',
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'priority': 'high',
+      });
+
+      return true;
+    } catch (e) {
+      print('Error sending seller registration notification: $e');
+      return false;
+    }
+  }
+
+  // Send product update notification to buyers (when existing product is updated)
+  static Future<bool> sendProductUpdateNotification({
+    required String productId,
+    required String productName,
+    required String sellerName,
+    required String updateType, // 'price', 'stock', 'details'
+    String? updateDetails,
+  }) async {
+    String title = '📝 Product Updated';
+    String body = '$sellerName updated "$productName"';
+
+    if (updateDetails != null) {
+      body += ' - $updateDetails';
+    }
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'product_update|$productId|$updateType',
+      );
+
+      // Store notification in Firestore for all buyers (or targeted buyers)
+      // Note: In a real app, you might want to only notify buyers who favorited/purchased this product
+      await _firestore.collection('product_updates').add({
+        'productId': productId,
+        'productName': productName,
+        'sellerName': sellerName,
+        'updateType': updateType,
+        'updateDetails': updateDetails,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error sending product update notification: $e');
+      return false;
+    }
+  }
+
+  // Send notification when another seller adds a new product (notify all sellers)
+  static Future<bool> sendNewProductToSellers({
+    required String productId,
+    required String productName,
+    required String sellerName,
+    required String category,
+    String? excludeSellerId, // Don't notify the seller who added the product
+  }) async {
+    String title = '🆕 New Product Added';
+    String body = '$sellerName added "$productName" in $category category';
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'new_product_seller|$productId|$category',
+      );
+
+      // Store notification in Firestore for sellers
+      await _firestore.collection('seller_market_updates').add({
+        'productId': productId,
+        'productName': productName,
+        'sellerName': sellerName,
+        'category': category,
+        'excludeSellerId': excludeSellerId,
+        'type': 'new_product_market',
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error sending new product notification to sellers: $e');
+      return false;
+    }
+  }
+
+  // Send notification to all buyers about new product
+  static Future<bool> sendNewProductToBuyers({
+    required String productId,
+    required String productName,
+    required String sellerName,
+    required String category,
+    double? price,
+  }) async {
+    String title = '🎁 New Product Available!';
+    String body = 'Check out "$productName" from $sellerName in $category';
+    
+    if (price != null) {
+      body += ' - \$${price.toStringAsFixed(2)}';
+    }
+
+    // Send push notification
+    try {
+      await RealtimeNotificationService.sendTestNotification(
+        title: title,
+        body: body,
+        payload: 'new_product_buyer|$productId|$category',
+      );
+
+      // Get all buyers and send individual notifications
+      final usersSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'buyer')
+          .get();
+
+      // Create individual notifications for each buyer
+      final batch = _firestore.batch();
+      for (var userDoc in usersSnapshot.docs) {
+        final notificationRef = _firestore.collection('notifications').doc();
+        batch.set(notificationRef, {
+          'userId': userDoc.id,
+          'title': title,
+          'message': body,
+          'type': 'new_product_buyer',
+          'productId': productId,
+          'productName': productName,
+          'sellerName': sellerName,
+          'category': category,
+          'price': price,
+          'read': false,
+          'timestamp': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'priority': 'normal',
+        });
+      }
+      
+      // Commit all notifications at once
+      await batch.commit();
+      
+      print('Sent new product notification to ${usersSnapshot.docs.length} buyers');
+
+      return true;
+    } catch (e) {
+      print('Error sending new product notification to buyers: $e');
+      return false;
+    }
+  }
+
+  // Create a general notification record in Firestore
+  static Future<bool> createNotificationRecord({
+    required String userId,
+    required String title,
+    required String message,
+    required String type,
+    Map<String, dynamic>? additionalData,
+  }) async {
+    try {
+      final notificationData = {
+        'userId': userId,
+        'title': title,
+        'message': message,
+        'type': type,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        ...?additionalData,
+      };
+
+      await _firestore.collection('notifications').add(notificationData);
+      return true;
+    } catch (e) {
+      print('Error creating notification record: $e');
+      return false;
     }
   }
 }

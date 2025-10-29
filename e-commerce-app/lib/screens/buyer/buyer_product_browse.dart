@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../services/cart_service.dart';
 import 'product_details_screen.dart';
+import 'seller_details_screen.dart';
 import '../cart_screen.dart';
 import '../login_screen.dart';
 import '../chat_detail_screen.dart';
@@ -331,10 +332,13 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text('Browse Products'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
         actions: [
           Stack(
             children: [
@@ -483,12 +487,54 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product, String productId) {
+    final double currentStock = (product['currentStock'] ?? product['stock'] ?? product['quantity'] ?? 0).toDouble();
+    final bool hasStock = currentStock > 0;
+    final String productName = product['productName'] ?? product['name'] ?? 'Unknown Product';
+    final String price = _formatPrice(product['price']);
+    final String unit = product['unit'] ?? 'pcs';
+    final String category = product['category'] ?? 'Others';
+    
+    // Get icon and color based on category
+    IconData icon = Icons.shopping_basket;
+    Color color = Colors.green;
+    
+    switch (category.toLowerCase()) {
+      case 'vegetables':
+        icon = Icons.eco;
+        color = Colors.green;
+        break;
+      case 'fruits':
+        icon = Icons.apple;
+        color = Colors.orange;
+        break;
+      case 'grains':
+        icon = Icons.grain;
+        color = Colors.brown;
+        break;
+      case 'herbs':
+        icon = Icons.local_florist;
+        color = Colors.lightGreen;
+        break;
+      case 'livestock':
+        icon = Icons.cruelty_free;
+        color = Colors.red;
+        break;
+      case 'dairy':
+        icon = Icons.breakfast_dining;
+        color = Colors.blue;
+        break;
+      default:
+        icon = Icons.shopping_basket;
+        color = Colors.green;
+    }
+    
     return Card(
       elevation: 4,
+      shadowColor: Colors.black26,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: InkWell(
+      child: GestureDetector(
         onTap: () {
           Navigator.push(
             context,
@@ -500,47 +546,66 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Product Image with Message Icon
-            Expanded(
-              flex: 3,
-              child: Stack(
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image with Stock Indicator and Message Icon
+              Stack(
                 children: [
-                  ClipRRect(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(12)),
-                    child: Container(
-                      width: double.infinity,
-                      child: product['imageUrl'] != null
-                          ? Image.network(
+                  Container(
+                    height: 100,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                    ),
+                    child: product['imageUrl'] != null &&
+                            product['imageUrl'].toString().isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              topRight: Radius.circular(16),
+                            ),
+                            child: Image.network(
                               product['imageUrl'],
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(
-                                    Icons.image_not_supported,
-                                    color: Colors.grey,
-                                    size: 40,
+                              width: double.infinity,
+                              height: double.infinity,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes !=
+                                            null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    valueColor:
+                                        AlwaysStoppedAnimation<Color>(color),
                                   ),
                                 );
                               },
-                            )
-                          : Container(
-                              color: Colors.grey.shade200,
-                              child: const Icon(
-                                Icons.image,
-                                color: Colors.grey,
-                                size: 40,
-                              ),
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Icon(icon, color: Colors.grey[400], size: 40),
+                                );
+                              },
                             ),
-                    ),
+                          )
+                        : Center(
+                            child: Icon(icon, color: Colors.grey[400], size: 40),
+                          ),
                   ),
                   // Message Icon
-                  if (product['sellerId'] != null)
+                  if (hasStock && product['sellerId'] != null)
                     Positioned(
                       top: 8,
                       right: 8,
@@ -551,8 +616,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           _startChatWithSeller(sellerId, sellerName, product: product, productId: productId);
                         },
                         child: Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: Colors.green,
                             shape: BoxShape.circle,
@@ -567,107 +632,163 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           child: const Icon(
                             Icons.message,
                             color: Colors.white,
-                            size: 18,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (!hasStock)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'OUT OF STOCK',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),
                     ),
                 ],
               ),
-            ),
-
-            // Product Details
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(6), // Reduced from 8
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min, // Added to prevent overflow
-                  children: [
-                    // Product Name
-                    Flexible(
-                      child: Text(
-                        product['productName'] ?? 'Unknown Product',
+              // Product Info with better spacing and styling
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(6.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Product Title
+                      Text(
+                        productName,
                         style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13, // Reduced from 14
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: Colors.black87,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-
-                    const SizedBox(height: 2), // Reduced from 4
-
-                    // Price and Unit
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _formatPrice(product['price']),
+                      const SizedBox(height: 2),
+                      // Price with unit
+                      Row(
+                        children: [
+                          Text(
+                            price,
                             style: const TextStyle(
                               color: Colors.green,
                               fontWeight: FontWeight.bold,
-                              fontSize: 14, // Reduced from 16
+                              fontSize: 15,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        Text(
-                          '/${product['unit'] ?? 'pc'}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 11, // Reduced from 12
+                          const SizedBox(width: 4),
+                          Text(
+                            '/$unit',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 2), // Reduced from 4
-
-                    // Available Date
-                    Flexible(
-                      child: Text(
-                        _formatAvailableDate(product['availableDate']),
-                        style: TextStyle(
-                          fontSize: 11, // Reduced from 12
-                          color: Colors.grey[600],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        ],
                       ),
-                    ),
-
-                    const SizedBox(height: 4), // Small fixed spacing instead of Spacer
-
-                    // Add to Cart Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 28, // Reduced from 32
-                      child: ElevatedButton.icon(
-                        onPressed: () => _addToCart(product, productId),
-                        icon: const Icon(Icons.add_shopping_cart, size: 14), // Reduced from 16
-                        label: const Text(
-                          'Add to Cart',
-                          style: TextStyle(fontSize: 11), // Reduced from 12
+                      const SizedBox(height: 1),
+                      // Seller info with rating
+                      if (product['sellerName'] != null)
+                        GestureDetector(
+                          onTap: () {
+                            if (product['sellerId'] != null) {
+                              print('DEBUG: Navigating to seller details');
+                              print('DEBUG: Product sellerId: "${product['sellerId']}"');
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SellerDetailsScreen(
+                                    sellerId: product['sellerId'],
+                                    sellerInfo: null,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  product['sellerName'],
+                                  style: const TextStyle(
+                                    color: Color.fromARGB(255, 0, 0, 0),
+                                    fontSize: 10,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (hasStock) ...[
+                                const SizedBox(width: 2),
+                                Icon(Icons.star, color: Colors.grey.shade400, size: 10),
+                                const SizedBox(width: 1),
+                                Text(
+                                  '0.0',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 6), // Reduced from 8
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      const Spacer(),
+                      // View Button - full width and bold
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: hasStock
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ProductDetailsScreen(
+                                        product: product,
+                                        productId: productId,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: hasStock ? Colors.green : Colors.grey,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                          ),
+                          child: const Text(
+                            'View',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

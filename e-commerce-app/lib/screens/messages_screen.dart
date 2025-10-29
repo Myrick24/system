@@ -327,12 +327,7 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
+          automaticallyImplyLeading: false,
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -350,12 +345,7 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
+          automaticallyImplyLeading: false,
         ),
         body: Center(
           child: Column(
@@ -402,12 +392,7 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        automaticallyImplyLeading: false,
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
@@ -452,13 +437,7 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: chatsQuery.snapshots().timeout(
-        const Duration(seconds: 10),
-        onTimeout: (sink) {
-          print('DEBUG: Query timeout after 10 seconds');
-          sink.addError('Query timeout. Please check your internet connection.');
-        },
-      ),
+      stream: chatsQuery.snapshots(),
       builder: (context, snapshot) {
         print('DEBUG: StreamBuilder state: ${snapshot.connectionState}');
         if (snapshot.hasError) {
@@ -485,47 +464,6 @@ class _MessagesScreenState extends State<MessagesScreen> with TickerProviderStat
                 style: const TextStyle(color: Colors.grey),
               ),
             ],
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 60,
-                  color: Colors.red[300],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Error loading messages',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${snapshot.error}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      // Trigger rebuild to retry
-                    });
-                  },
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
           );
         }
 

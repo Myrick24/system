@@ -141,16 +141,38 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       List<Map<String, dynamic>> orders = [];
 
       for (String status in statuses) {
-        final query = await _firestore
+        // Query by buyerId (primary field)
+        final buyerIdQuery = await _firestore
             .collection('orders')
             .where('buyerId', isEqualTo: userId)
             .where('status', isEqualTo: status)
             .get();
 
-        for (var doc in query.docs) {
+        for (var doc in buyerIdQuery.docs) {
           final orderData = doc.data();
           orderData['id'] = doc.id;
           orders.add(orderData);
+        }
+
+        // Also query by userId (fallback for old orders)
+        try {
+          final userIdQuery = await _firestore
+              .collection('orders')
+              .where('userId', isEqualTo: userId)
+              .where('status', isEqualTo: status)
+              .get();
+
+          for (var doc in userIdQuery.docs) {
+            // Check if this order is not already in the list (avoid duplicates)
+            if (!orders.any((order) => order['id'] == doc.id)) {
+              final orderData = doc.data();
+              orderData['id'] = doc.id;
+              orders.add(orderData);
+            }
+          }
+        } catch (e) {
+          print('Error querying by userId: $e');
+          // Continue even if this query fails
         }
       }
 
@@ -409,7 +431,12 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         title: const Text('My Orders'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
