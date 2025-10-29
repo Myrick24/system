@@ -460,6 +460,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             ],
                                           ),
                                         ),
+                                      if (order['deliveryMethod'] ==
+                                              'Pickup at Coop' &&
+                                          order['pickupLocation'] != null)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 4),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.store,
+                                                  size: 14,
+                                                  color: Colors.green),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: Text(
+                                                  'Pickup at: ${order['pickupLocation']}',
+                                                  style: TextStyle(
+                                                    color:
+                                                        Colors.green.shade800,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       if (isReservation &&
                                           order['pickupDate'] != null)
                                         Padding(

@@ -497,21 +497,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             color: Colors.grey.shade600,
                           ),
                         ),
-                        const SizedBox(width: 16),
                       ],
-                      Icon(
-                        Icons.schedule,
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatAvailableDate(availableDate),
-                        style: TextStyle(
-                          fontSize: 14,
+                      // Only show availability date for Pre Order products
+                      if (widget.product['orderType'] == 'Pre Order') ...[
+                        if (currentStock != null) const SizedBox(width: 16),
+                        Icon(
+                          Icons.schedule,
+                          size: 16,
                           color: Colors.grey.shade600,
                         ),
-                      ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatAvailableDate(availableDate),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
 
@@ -567,51 +570,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Pickup Location
-                  if (widget.product['pickupLocation'] != null &&
-                      widget.product['pickupLocation']
-                          .toString()
-                          .isNotEmpty) ...[
-                    const Text(
-                      'Pickup Location',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            color: Colors.blue.shade700,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              widget.product['pickupLocation'],
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.blue.shade800,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
                   // Delivery Options
                   if (widget.product['deliveryOptions'] != null &&
                       (widget.product['deliveryOptions'] as List)
@@ -663,21 +621,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               IconData iconData;
                               Color chipColor;
                               Color textColor;
+                              String displayText = option.toString();
+
                               switch (option.toString().toLowerCase()) {
                                 case 'delivery':
+                                case 'cooperative delivery':
                                   iconData = Icons.delivery_dining;
                                   chipColor = Colors.blue;
                                   textColor = Colors.blue.shade700;
+                                  displayText = 'Cooperative Delivery';
                                   break;
                                 case 'pick up':
                                   iconData = Icons.storefront;
                                   chipColor = Colors.green;
                                   textColor = Colors.green.shade700;
-                                  break;
-                                case 'meet up':
-                                  iconData = Icons.handshake;
-                                  chipColor = Colors.orange;
-                                  textColor = Colors.orange.shade700;
+                                  displayText = 'Pick Up';
                                   break;
                                 default:
                                   iconData = Icons.local_shipping;
@@ -704,7 +662,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      option.toString(),
+                                      displayText,
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: textColor,

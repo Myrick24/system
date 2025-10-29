@@ -22,7 +22,8 @@ import {
   ReloadOutlined,
   DeleteOutlined,
   InfoCircleOutlined,
-  PlusOutlined
+  PlusOutlined,
+  EditOutlined
 } from '@ant-design/icons';
 import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
@@ -39,6 +40,7 @@ interface CooperativeUser {
   status: string;
   createdAt?: any;
   phone?: string;
+  location?: string;
 }
 
 interface CreateCoopFormValues {
@@ -46,13 +48,18 @@ interface CreateCoopFormValues {
   email: string;
   password: string;
   phone?: string;
+  location?: string;
 }
 
 export const CooperativeManagement: React.FC = () => {
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [cooperativeUsers, setCooperativeUsers] = useState<CooperativeUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingCoop, setEditingCoop] = useState<CooperativeUser | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     loadCooperativeUsers();
@@ -85,7 +92,7 @@ export const CooperativeManagement: React.FC = () => {
   const createNewCooperativeAccount = async (values: CreateCoopFormValues) => {
     setLoading(true);
     try {
-      const { name, email, password, phone } = values;
+      const { name, email, password, phone, location } = values;
       const emailLower = email.toLowerCase().trim();
 
       // Check if user already exists in Firestore
@@ -109,6 +116,7 @@ export const CooperativeManagement: React.FC = () => {
         name: name.trim(),
         email: emailLower,
         phone: phone?.trim() || '',
+        location: location?.trim() || '',
         role: 'cooperative',
         status: 'active',
         createdAt: new Date(),
@@ -160,6 +168,46 @@ export const CooperativeManagement: React.FC = () => {
     });
   };
 
+  const openEditModal = (coop: CooperativeUser) => {
+    setEditingCoop(coop);
+    editForm.setFieldsValue({
+      name: coop.name,
+      phone: coop.phone || '',
+      location: coop.location || ''
+    });
+    setEditModalVisible(true);
+  };
+
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setEditingCoop(null);
+    editForm.resetFields();
+  };
+
+  const handleEditCooperative = async (values: any) => {
+    if (!editingCoop) return;
+
+    setEditLoading(true);
+    try {
+      const userRef = doc(db, 'users', editingCoop.id);
+      await updateDoc(userRef, {
+        name: values.name.trim(),
+        phone: values.phone?.trim() || '',
+        location: values.location?.trim() || '',
+        updatedAt: new Date()
+      });
+
+      message.success(`Successfully updated ${values.name}!`);
+      closeEditModal();
+      loadCooperativeUsers();
+    } catch (error: any) {
+      console.error('Error updating cooperative:', error);
+      message.error(`Failed to update: ${error.message}`);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const columns = [
     {
       title: 'Cooperative Name',
@@ -182,6 +230,12 @@ export const CooperativeManagement: React.FC = () => {
       dataIndex: 'phone',
       key: 'phone',
       render: (phone: string) => phone || 'N/A'
+    },
+    {
+      title: 'Pickup Location',
+      dataIndex: 'location',
+      key: 'location',
+      render: (location: string) => location || 'Not set'
     },
     {
       title: 'Role',
@@ -217,14 +271,24 @@ export const CooperativeManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: CooperativeUser) => (
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => removeCooperativeRole(record.id, record.name)}
-        >
-          Remove Role
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            ghost
+            icon={<EditOutlined />}
+            onClick={() => openEditModal(record)}
+          >
+            Edit
+          </Button>
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => removeCooperativeRole(record.id, record.name)}
+          >
+            Remove Role
+          </Button>
+        </Space>
       )
     }
   ];
@@ -319,6 +383,22 @@ export const CooperativeManagement: React.FC = () => {
             />
           </Form.Item>
 
+          <Form.Item
+            label="Pickup Location"
+            name="location"
+            rules={[
+              { required: true, message: 'Please enter the pickup location' },
+              { min: 5, message: 'Location must be at least 5 characters' }
+            ]}
+            extra="Enter the full address where buyers can pick up their orders"
+          >
+            <Input.TextArea
+              placeholder="Enter complete pickup address (e.g., 123 Main St, Barangay Centro, City, Province)"
+              size="large"
+              rows={3}
+            />
+          </Form.Item>
+
           <Form.Item>
             <Space>
               <Button
@@ -396,6 +476,94 @@ export const CooperativeManagement: React.FC = () => {
           browse products, or place orders. This role is specifically for managing cooperative deliveries and payments.
         </Paragraph>
       </Card>
+
+      {/* Edit Cooperative Modal */}
+      <Modal
+        title={
+          <Space>
+            <EditOutlined />
+            <span>Edit Cooperative Information</span>
+          </Space>
+        }
+        open={editModalVisible}
+        onCancel={closeEditModal}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={editForm}
+          layout="vertical"
+          onFinish={handleEditCooperative}
+        >
+          <Alert
+            message="Update Cooperative Information"
+            description="You can update the cooperative name, contact phone, and pickup location. Email cannot be changed."
+            type="info"
+            icon={<InfoCircleOutlined />}
+            showIcon
+            style={{ marginBottom: '24px' }}
+          />
+
+          <Form.Item
+            label="Cooperative Name"
+            name="name"
+            rules={[
+              { required: true, message: 'Please enter the cooperative name' },
+              { min: 2, message: 'Name must be at least 2 characters' }
+            ]}
+          >
+            <Input
+              placeholder="Enter cooperative name"
+              size="large"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="Contact Phone Number"
+            name="phone"
+          >
+            <Input
+              placeholder="Enter contact number (e.g., +639123456789)"
+              size="large"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="Pickup Location"
+            name="location"
+            rules={[
+              { required: true, message: 'Please enter the pickup location' },
+              { min: 5, message: 'Location must be at least 5 characters' }
+            ]}
+          >
+            <Input.TextArea
+              placeholder="Enter complete pickup address"
+              size="large"
+              rows={3}
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Space>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<EditOutlined />}
+                loading={editLoading}
+                size="large"
+              >
+                Update Cooperative
+              </Button>
+              <Button
+                onClick={closeEditModal}
+                disabled={editLoading}
+              >
+                Cancel
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

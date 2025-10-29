@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class OrderStatusScreen extends StatefulWidget {
   final String orderId;
-  
+
   const OrderStatusScreen({
     Key? key,
     required this.orderId,
@@ -17,42 +17,43 @@ class OrderStatusScreen extends StatefulWidget {
 class _OrderStatusScreenState extends State<OrderStatusScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   bool _isLoading = true;
   Map<String, dynamic>? _orderData;
   String _errorMessage = '';
   bool _isSeller = false;
-  
+
   @override
   void initState() {
     super.initState();
     _loadOrderData();
   }
-  
+
   Future<void> _loadOrderData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
-    
+
     try {
       // First check if the current user is a seller
       final currentUser = _auth.currentUser;
       if (currentUser != null) {
         final sellerQuery = await _firestore
-          .collection('sellers')
-          .where('email', isEqualTo: currentUser.email)
-          .limit(1)
-          .get();
-          
+            .collection('sellers')
+            .where('email', isEqualTo: currentUser.email)
+            .limit(1)
+            .get();
+
         setState(() {
           _isSeller = sellerQuery.docs.isNotEmpty;
         });
       }
-      
+
       // Get the order data
-      final orderDoc = await _firestore.collection('orders').doc(widget.orderId).get();
-      
+      final orderDoc =
+          await _firestore.collection('orders').doc(widget.orderId).get();
+
       if (!orderDoc.exists) {
         setState(() {
           _errorMessage = 'Order not found';
@@ -60,11 +61,14 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
         });
         return;
       }
-      
+
       // Get product image if available
       final orderData = orderDoc.data() as Map<String, dynamic>;
       if (orderData.containsKey('productId')) {
-        final productDoc = await _firestore.collection('products').doc(orderData['productId']).get();
+        final productDoc = await _firestore
+            .collection('products')
+            .doc(orderData['productId'])
+            .get();
         if (productDoc.exists) {
           final productData = productDoc.data() as Map<String, dynamic>;
           if (productData.containsKey('imageUrl')) {
@@ -72,29 +76,45 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
           }
         }
       }
-      
+
       // Get comprehensive customer info if seller is viewing
       if (_isSeller && orderData.containsKey('userId')) {
         try {
-          final userDoc = await _firestore.collection('users').doc(orderData['userId']).get();
+          final userDoc = await _firestore
+              .collection('users')
+              .doc(orderData['userId'])
+              .get();
           if (userDoc.exists) {
             final userData = userDoc.data() as Map<String, dynamic>;
-            
+
             // Get all available customer information
-            orderData['customerName'] = userData['name'] ?? userData['fullName'] ?? 'Unknown Customer';
-            orderData['customerContact'] = userData['phone'] ?? userData['phoneNumber'] ?? userData['contact'] ?? 'No contact info';
-            orderData['customerEmail'] = userData['email'] ?? orderData['userEmail'] ?? 'No email provided';
-            orderData['customerAddress'] = userData['address'] ?? userData['location'] ?? 'No address provided';
-            
+            orderData['customerName'] =
+                userData['name'] ?? userData['fullName'] ?? 'Unknown Customer';
+            orderData['customerContact'] = userData['phone'] ??
+                userData['phoneNumber'] ??
+                userData['contact'] ??
+                'No contact info';
+            orderData['customerEmail'] = userData['email'] ??
+                orderData['userEmail'] ??
+                'No email provided';
+            orderData['customerAddress'] = userData['address'] ??
+                userData['location'] ??
+                'No address provided';
+
             // Try to get additional profile information if available
             if (userData.containsKey('profile')) {
               final profileData = userData['profile'] as Map<String, dynamic>?;
               if (profileData != null) {
-                if (!orderData.containsKey('customerAddress') || orderData['customerAddress'] == 'No address provided') {
-                  orderData['customerAddress'] = profileData['address'] ?? 'No address provided';
+                if (!orderData.containsKey('customerAddress') ||
+                    orderData['customerAddress'] == 'No address provided') {
+                  orderData['customerAddress'] =
+                      profileData['address'] ?? 'No address provided';
                 }
-                if (!orderData.containsKey('customerContact') || orderData['customerContact'] == 'No contact info') {
-                  orderData['customerContact'] = profileData['phone'] ?? profileData['phoneNumber'] ?? 'No contact info';
+                if (!orderData.containsKey('customerContact') ||
+                    orderData['customerContact'] == 'No contact info') {
+                  orderData['customerContact'] = profileData['phone'] ??
+                      profileData['phoneNumber'] ??
+                      'No contact info';
                 }
               }
             }
@@ -104,7 +124,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
           // Continue with existing order data even if user fetch fails
         }
       }
-      
+
       setState(() {
         _orderData = orderData;
         _isLoading = false;
@@ -116,21 +136,21 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
       });
     }
   }
-  
+
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return 'N/A';
-    
+
     try {
-      final DateTime dateTime = timestamp is Timestamp 
-          ? timestamp.toDate() 
+      final DateTime dateTime = timestamp is Timestamp
+          ? timestamp.toDate()
           : DateTime.fromMillisecondsSinceEpoch(timestamp);
-          
+
       return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
     } catch (e) {
       return 'Invalid date';
     }
   }
-  
+
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'approved':
@@ -166,10 +186,13 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
         return Icons.hourglass_empty;
     }
   }
-  
-  Widget _buildStatusStep(String title, String status, bool isActive, bool isCompleted) {
-    final color = isCompleted ? Colors.green : (isActive ? _getStatusColor(status) : Colors.grey);
-    
+
+  Widget _buildStatusStep(
+      String title, String status, bool isActive, bool isCompleted) {
+    final color = isCompleted
+        ? Colors.green
+        : (isActive ? _getStatusColor(status) : Colors.grey);
+
     return Expanded(
       child: Column(
         children: [
@@ -210,17 +233,19 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
 
   Widget _buildOrderTimeline() {
     if (_orderData == null) return const SizedBox();
-    
+
     final status = _orderData!['status']?.toLowerCase() ?? 'pending';
-    
+
     // Determine which steps are active/completed
     final isPending = true; // Always show first step
-    final isApproved = ['approved', 'processing', 'shipped', 'delivered'].contains(status);
-    final isProcessing = ['processing', 'shipped', 'delivered'].contains(status);
+    final isApproved =
+        ['approved', 'processing', 'shipped', 'delivered'].contains(status);
+    final isProcessing =
+        ['processing', 'shipped', 'delivered'].contains(status);
     final isShipped = ['shipped', 'delivered'].contains(status);
     final isDelivered = ['delivered'].contains(status);
     final isCancelled = ['cancelled'].contains(status);
-    
+
     if (isCancelled) {
       return Column(
         children: [
@@ -229,7 +254,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -256,7 +282,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
         ],
       );
     }
-    
+
     return Column(
       children: [
         const Divider(),
@@ -264,13 +290,17 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Row(
             children: [
-              _buildStatusStep('Pending', 'pending', !isApproved && !isCancelled, isApproved),
+              _buildStatusStep('Pending', 'pending',
+                  !isApproved && !isCancelled, isApproved),
               _buildDivider(isApproved),
-              _buildStatusStep('Approved', 'approved', isApproved && !isProcessing, isProcessing),
+              _buildStatusStep('Approved', 'approved',
+                  isApproved && !isProcessing, isProcessing),
               _buildDivider(isProcessing),
-              _buildStatusStep('Processing', 'processing', isProcessing && !isShipped, isShipped),
+              _buildStatusStep('Processing', 'processing',
+                  isProcessing && !isShipped, isShipped),
               _buildDivider(isShipped),
-              _buildStatusStep('Shipped', 'shipped', isShipped && !isDelivered, isDelivered),
+              _buildStatusStep(
+                  'Shipped', 'shipped', isShipped && !isDelivered, isDelivered),
               _buildDivider(isDelivered),
               _buildStatusStep('Delivered', 'delivered', isDelivered, false),
             ],
@@ -280,7 +310,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
       ],
     );
   }
-  
+
   Widget _buildDivider(bool isActive) {
     return Container(
       height: 2,
@@ -288,7 +318,7 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
       color: isActive ? Colors.green : Colors.grey.shade300,
     );
   }
-  
+
   Widget _buildInfoRow(String label, String value, {bool isBold = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -378,7 +408,8 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                             children: [
                               // Order ID and Date
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Order #${widget.orderId.substring(0, 8)}',
@@ -388,13 +419,16 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: _getStatusColor(_orderData?['status'] ?? 'pending'),
+                                      color: _getStatusColor(
+                                          _orderData?['status'] ?? 'pending'),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
-                                      (_orderData?['status'] ?? 'PENDING').toUpperCase(),
+                                      (_orderData?['status'] ?? 'PENDING')
+                                          .toUpperCase(),
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -412,10 +446,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   fontSize: 14,
                                 ),
                               ),
-                              
+
                               // Order Timeline
                               _buildOrderTimeline(),
-                              
+
                               // Product Details
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,26 +462,30 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                       image: _orderData?['productImage'] != null
                                           ? DecorationImage(
-                                              image: NetworkImage(_orderData!['productImage']),
+                                              image: NetworkImage(
+                                                  _orderData!['productImage']),
                                               fit: BoxFit.cover,
                                             )
                                           : null,
                                       color: Colors.grey.shade200,
                                     ),
                                     child: _orderData?['productImage'] == null
-                                        ? const Icon(Icons.image_not_supported, color: Colors.grey)
+                                        ? const Icon(Icons.image_not_supported,
+                                            color: Colors.grey)
                                         : null,
                                   ),
-                                  
+
                                   const SizedBox(width: 16),
-                                  
+
                                   // Product Info
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          _orderData?['productName'] ?? 'Unknown Product',
+                                          _orderData?['productName'] ??
+                                              'Unknown Product',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
@@ -470,10 +508,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   ),
                                 ],
                               ),
-                              
+
                               const SizedBox(height: 16),
                               const Divider(),
-                              
+
                               // Order Details
                               const SizedBox(height: 8),
                               const Text(
@@ -484,13 +522,31 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              _buildInfoRow('Total Amount', '₱${(_orderData?['totalAmount'] ?? 0).toStringAsFixed(2)}', isBold: true),
-                              _buildInfoRow('Payment Method', _orderData?['paymentMethod'] ?? 'Cash on Delivery'),
-                              _buildInfoRow('Delivery Method', _orderData?['deliveryMethod'] ?? 'Pick-up'),
-                              
-                              if (_orderData?['deliveryMethod'] == 'Meet-up' && _orderData?['meetupLocation'] != null)
-                                _buildInfoRow('Meet-up Location', _orderData!['meetupLocation']),
-                                
+                              _buildInfoRow('Total Amount',
+                                  '₱${(_orderData?['totalAmount'] ?? 0).toStringAsFixed(2)}',
+                                  isBold: true),
+                              _buildInfoRow('Payment Method',
+                                  _orderData?['paymentMethod'] ?? 'Cash'),
+                              _buildInfoRow('Delivery Method',
+                                  _orderData?['deliveryMethod'] ?? 'Pick-up'),
+
+                              if (_orderData?['deliveryMethod'] == 'Meet-up' &&
+                                  _orderData?['meetupLocation'] != null)
+                                _buildInfoRow('Meet-up Location',
+                                    _orderData!['meetupLocation']),
+
+                              if (_orderData?['deliveryMethod'] ==
+                                      'Cooperative Delivery' &&
+                                  _orderData?['deliveryAddress'] != null)
+                                _buildInfoRow('Delivery Address',
+                                    _orderData!['deliveryAddress']),
+
+                              if (_orderData?['deliveryMethod'] ==
+                                      'Pickup at Coop' &&
+                                  _orderData?['pickupLocation'] != null)
+                                _buildInfoRow('Pickup Location',
+                                    _orderData!['pickupLocation']),
+
                               // Only show customer info to sellers
                               if (_isSeller) ...[
                                 const SizedBox(height: 16),
@@ -504,14 +560,26 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 12),
-                                _buildInfoRow('Name', _orderData?['customerName'] ?? 'Unknown'),
-                                _buildInfoRow('Contact', _orderData?['customerContact'] ?? 'No contact info'),
-                                _buildInfoRow('Email', _orderData?['customerEmail'] ?? _orderData?['userEmail'] ?? 'No email provided'),
-                                _buildInfoRow('Address', _orderData?['customerAddress'] ?? 'No address provided'),
+                                _buildInfoRow('Name',
+                                    _orderData?['customerName'] ?? 'Unknown'),
+                                _buildInfoRow(
+                                    'Contact',
+                                    _orderData?['customerContact'] ??
+                                        'No contact info'),
+                                _buildInfoRow(
+                                    'Email',
+                                    _orderData?['customerEmail'] ??
+                                        _orderData?['userEmail'] ??
+                                        'No email provided'),
+                                _buildInfoRow(
+                                    'Address',
+                                    _orderData?['customerAddress'] ??
+                                        'No address provided'),
                               ],
-                              
+
                               // Show updates log if any
-                              if (_orderData != null && _orderData!.containsKey('statusUpdates')) ...[
+                              if (_orderData != null &&
+                                  _orderData!.containsKey('statusUpdates')) ...[
                                 const SizedBox(height: 16),
                                 const Divider(),
                                 const SizedBox(height: 8),
@@ -526,24 +594,31 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                 ListView.builder(
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: (_orderData!['statusUpdates'] as List).length,
+                                  itemCount:
+                                      (_orderData!['statusUpdates'] as List)
+                                          .length,
                                   itemBuilder: (context, index) {
-                                    final update = (_orderData!['statusUpdates'] as List)[index];
+                                    final update = (_orderData!['statusUpdates']
+                                        as List)[index];
                                     return Padding(
-                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 8.0),
                                       child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Container(
                                             width: 20,
                                             height: 20,
                                             decoration: BoxDecoration(
-                                              color: _getStatusColor(update['status']),
+                                              color: _getStatusColor(
+                                                  update['status']),
                                               shape: BoxShape.circle,
                                             ),
                                             child: Center(
                                               child: Icon(
-                                                _getStatusIcon(update['status']),
+                                                _getStatusIcon(
+                                                    update['status']),
                                                 color: Colors.white,
                                                 size: 12,
                                               ),
@@ -552,16 +627,19 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  update['status'].toUpperCase(),
+                                                  update['status']
+                                                      .toUpperCase(),
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                                 Text(
-                                                  _formatTimestamp(update['timestamp']),
+                                                  _formatTimestamp(
+                                                      update['timestamp']),
                                                   style: TextStyle(
                                                     color: Colors.grey.shade600,
                                                     fontSize: 12,
@@ -587,9 +665,11 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                           ),
                         ),
                       ),
-                      
+
                       // Action button for buyers to cancel if the order is still pending
-                      if (!_isSeller && (_orderData?['status']?.toLowerCase() == 'pending')) ...[
+                      if (!_isSeller &&
+                          (_orderData?['status']?.toLowerCase() ==
+                              'pending')) ...[
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -600,49 +680,63 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                 context: context,
                                 builder: (context) => AlertDialog(
                                   title: const Text('Cancel Order'),
-                                  content: const Text('Are you sure you want to cancel this order?'),
+                                  content: const Text(
+                                      'Are you sure you want to cancel this order?'),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
                                       child: const Text('No'),
                                     ),
                                     TextButton(
-                                      onPressed: () => Navigator.pop(context, true),
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
                                       child: const Text('Yes'),
                                     ),
                                   ],
                                 ),
                               );
-                              
+
                               if (confirm == true) {
                                 // Cancel the order
                                 try {
-                                  await _firestore.collection('orders').doc(widget.orderId).update({
+                                  await _firestore
+                                      .collection('orders')
+                                      .doc(widget.orderId)
+                                      .update({
                                     'status': 'cancelled',
                                     'updatedAt': FieldValue.serverTimestamp(),
                                   });
-                                  
+
                                   // Return quantity to inventory
-                                  if (_orderData!.containsKey('productId') && _orderData!.containsKey('quantity')) {
-                                    await _firestore.collection('products').doc(_orderData!['productId']).update({
-                                      'quantity': FieldValue.increment(_orderData!['quantity']),
-                                      'currentStock': FieldValue.increment(_orderData!['quantity']),
+                                  if (_orderData!.containsKey('productId') &&
+                                      _orderData!.containsKey('quantity')) {
+                                    await _firestore
+                                        .collection('products')
+                                        .doc(_orderData!['productId'])
+                                        .update({
+                                      'quantity': FieldValue.increment(
+                                          _orderData!['quantity']),
+                                      'currentStock': FieldValue.increment(
+                                          _orderData!['quantity']),
                                     });
                                   }
-                                  
+
                                   // Reload order data to show updated status
                                   _loadOrderData();
-                                  
+
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Order cancelled successfully'),
+                                      content:
+                                          Text('Order cancelled successfully'),
                                       duration: Duration(seconds: 5),
                                     ),
                                   );
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Failed to cancel order: $e'),
+                                      content:
+                                          Text('Failed to cancel order: $e'),
                                       duration: const Duration(seconds: 5),
                                     ),
                                   );
@@ -658,9 +752,11 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                           ),
                         ),
                       ],
-                      
+
                       // Contact Seller button for buyers
-                      if (!_isSeller && _orderData != null && _orderData!.containsKey('sellerId')) ...[
+                      if (!_isSeller &&
+                          _orderData != null &&
+                          _orderData!.containsKey('sellerId')) ...[
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -687,8 +783,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                     ],
                   ),
                 ),
-      floatingActionButton: _orderData != null && _isSeller && (_orderData?['status']?.toLowerCase() == 'approved' ||
-                        _orderData?['status']?.toLowerCase() == 'processing')
+      floatingActionButton: _orderData != null &&
+              _isSeller &&
+              (_orderData?['status']?.toLowerCase() == 'approved' ||
+                  _orderData?['status']?.toLowerCase() == 'processing')
           ? FloatingActionButton.extended(
               onPressed: () {
                 // Show dialog to update order status
@@ -705,7 +803,10 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                           onTap: () async {
                             Navigator.pop(context);
                             try {
-                              await _firestore.collection('orders').doc(widget.orderId).update({
+                              await _firestore
+                                  .collection('orders')
+                                  .doc(widget.orderId)
+                                  .update({
                                 'status': 'processing',
                                 'updatedAt': FieldValue.serverTimestamp(),
                                 'statusUpdates': FieldValue.arrayUnion([
@@ -715,19 +816,20 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   }
                                 ]),
                               });
-                              
+
                               // Create notification for buyer
                               await _firestore.collection('notifications').add({
                                 'userId': _orderData!['userId'],
                                 'orderId': widget.orderId,
                                 'type': 'order_status',
                                 'status': 'processing',
-                                'message': 'Your order for ${_orderData!['productName']} is now being processed',
+                                'message':
+                                    'Your order for ${_orderData!['productName']} is now being processed',
                                 'productName': _orderData!['productName'],
                                 'timestamp': FieldValue.serverTimestamp(),
                                 'isRead': false,
                               });
-                              
+
                               _loadOrderData();
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -740,12 +842,16 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                           },
                         ),
                         ListTile(
-                          leading: const Icon(Icons.local_shipping, color: Colors.indigo),
+                          leading: const Icon(Icons.local_shipping,
+                              color: Colors.indigo),
                           title: const Text('Shipped'),
                           onTap: () async {
                             Navigator.pop(context);
                             try {
-                              await _firestore.collection('orders').doc(widget.orderId).update({
+                              await _firestore
+                                  .collection('orders')
+                                  .doc(widget.orderId)
+                                  .update({
                                 'status': 'shipped',
                                 'updatedAt': FieldValue.serverTimestamp(),
                                 'statusUpdates': FieldValue.arrayUnion([
@@ -755,19 +861,20 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   }
                                 ]),
                               });
-                              
+
                               // Create notification for buyer
                               await _firestore.collection('notifications').add({
                                 'userId': _orderData!['userId'],
                                 'orderId': widget.orderId,
                                 'type': 'order_status',
                                 'status': 'shipped',
-                                'message': 'Your order for ${_orderData!['productName']} has been shipped',
+                                'message':
+                                    'Your order for ${_orderData!['productName']} has been shipped',
                                 'productName': _orderData!['productName'],
                                 'timestamp': FieldValue.serverTimestamp(),
                                 'isRead': false,
                               });
-                              
+
                               _loadOrderData();
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -780,12 +887,16 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                           },
                         ),
                         ListTile(
-                          leading: const Icon(Icons.done_all, color: Colors.teal),
+                          leading:
+                              const Icon(Icons.done_all, color: Colors.teal),
                           title: const Text('Delivered'),
                           onTap: () async {
                             Navigator.pop(context);
                             try {
-                              await _firestore.collection('orders').doc(widget.orderId).update({
+                              await _firestore
+                                  .collection('orders')
+                                  .doc(widget.orderId)
+                                  .update({
                                 'status': 'delivered',
                                 'updatedAt': FieldValue.serverTimestamp(),
                                 'statusUpdates': FieldValue.arrayUnion([
@@ -795,23 +906,26 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
                                   }
                                 ]),
                               });
-                              
+
                               // Create notification for buyer
                               await _firestore.collection('notifications').add({
                                 'userId': _orderData!['userId'],
                                 'orderId': widget.orderId,
                                 'type': 'order_status',
                                 'status': 'delivered',
-                                'message': 'Your order for ${_orderData!['productName']} has been delivered',
+                                'message':
+                                    'Your order for ${_orderData!['productName']} has been delivered',
                                 'productName': _orderData!['productName'],
                                 'timestamp': FieldValue.serverTimestamp(),
                                 'isRead': false,
                               });
-                              
+
                               _loadOrderData();
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to update status: $e')),
+                                SnackBar(
+                                    content:
+                                        Text('Failed to update status: $e')),
                               );
                             }
                           },

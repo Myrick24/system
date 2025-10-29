@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selector.dart';
 import 'checkout_screen.dart';
+import 'paymongo_gcash_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({Key? key}) : super(key: key);
@@ -16,22 +18,25 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   final _auth = FirebaseAuth.instance;
   bool _isLoading = false;
-  String? _selectedPaymentOption = 'Cash on Delivery';
+  String? _selectedPaymentOption = 'Cash';
   String? _selectedDeliveryOption = 'Pickup at Coop';
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   Map<String, String> _deliveryAddress = {};
+  String? _coopPickupLocation;
+  bool _isLoadingLocation = false;
 
   final List<String> _deliveryOptions = [
     'Cooperative Delivery',
     'Pickup at Coop'
   ];
-  final List<String> _paymentOptions = ['Cash on Delivery', 'GCash'];
+  final List<String> _paymentOptions = ['Cash', 'GCash'];
 
   @override
   void initState() {
     super.initState();
     _loadCartItems();
+    _loadCooperativeLocation();
   }
 
   @override
@@ -52,6 +57,34 @@ class _CartScreenState extends State<CartScreen> {
 
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadCooperativeLocation() async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+
+    try {
+      // Query for a cooperative user to get the pickup location
+      final coopQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'cooperative')
+          .limit(1)
+          .get();
+
+      if (coopQuery.docs.isNotEmpty) {
+        final coopData = coopQuery.docs.first.data();
+        setState(() {
+          _coopPickupLocation = coopData['location'] as String?;
+        });
+      }
+    } catch (e) {
+      print('Error loading cooperative location: $e');
+    } finally {
+      setState(() {
+        _isLoadingLocation = false;
       });
     }
   }
@@ -216,6 +249,56 @@ class _CartScreenState extends State<CartScreen> {
                         _deliveryAddress = address;
                       });
                     },
+                  ),
+                ],
+
+                // Pickup Location (show only for Pickup at Coop)
+                if (_selectedDeliveryOption == 'Pickup at Coop') ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Pickup Location',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          color: Colors.green.shade700,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _isLoadingLocation
+                              ? const Text(
+                                  'Loading location...',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                )
+                              : Text(
+                                  _coopPickupLocation ??
+                                      'Pickup location not set',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.green.shade900,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
 
@@ -622,9 +705,29 @@ class _CartScreenState extends State<CartScreen> {
     });
 
     try {
+      final cartService = Provider.of<CartService>(context, listen: false);
+
+      // Get cart items first to calculate total for GCash
+      final cartItems = cartService.cartItems;
+      double totalAmount = 0;
+      String productDescription = '';
+
+      for (var item in cartItems) {
+        totalAmount += item.price * item.quantity;
+
+        if (productDescription.isEmpty) {
+          productDescription = item.productName;
+        }
+      }
+
+      // If multiple items, show count
+      if (cartItems.length > 1) {
+        productDescription = '${cartItems.length} items';
+      }
+
       final success = await cartService.processCart(
         _auth.currentUser!.uid,
-        paymentMethod: _selectedPaymentOption ?? 'Cash on Delivery',
+        paymentMethod: _selectedPaymentOption ?? 'Cash',
         deliveryMethod: _selectedDeliveryOption ?? 'Pickup at Coop',
         meetupLocation: null, // Not needed anymore
         deliveryAddress: _selectedDeliveryOption == 'Cooperative Delivery'
@@ -633,21 +736,63 @@ class _CartScreenState extends State<CartScreen> {
       );
 
       if (success) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Order placed successfully!'),
-              duration: Duration(seconds: 5),
-            ),
-          );
+        // If GCash payment is selected, navigate to PayMongo GCash payment screen
+        if (_selectedPaymentOption == 'GCash') {
+          if (mounted) {
+            // Generate order ID
+            final orderId =
+                'cart_${DateTime.now().millisecondsSinceEpoch}_${_auth.currentUser!.uid}';
 
-          // Navigate to checkout screen instead of just popping back
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CheckoutScreen(),
-            ),
-          );
+            // Navigate to PayMongo GCash payment screen
+            final paymentCompleted = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PayMongoGCashScreen(
+                  amount: totalAmount,
+                  orderId: orderId,
+                  userId: _auth.currentUser!.uid,
+                  orderDetails: {
+                    'productName': productDescription,
+                    'quantity': cartItems.length,
+                    'unit': 'items',
+                    'deliveryMethod': _selectedDeliveryOption,
+                    'deliveryAddress':
+                        _selectedDeliveryOption == 'Cooperative Delivery'
+                            ? _deliveryAddress['fullAddress']
+                            : null,
+                  },
+                ),
+              ),
+            );
+
+            // After returning from GCash payment, go to orders screen
+            if (paymentCompleted == true && mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CheckoutScreen(),
+                ),
+              );
+            }
+          }
+        } else {
+          // For Cash payment, show success and navigate
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Order placed successfully!'),
+                duration: Duration(seconds: 5),
+              ),
+            );
+
+            // Navigate to checkout screen
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CheckoutScreen(),
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {

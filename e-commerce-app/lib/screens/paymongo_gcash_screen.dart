@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'dart:async';
 import '../services/paymongo_service.dart';
 import 'checkout_screen.dart';
+import 'unified_main_dashboard.dart';
 
 /// PayMongo GCash Payment Screen with Deep Linking
-/// 
+///
 /// This opens the ACTUAL GCash app on user's phone (like Shopee, Lazada)
 /// User completes payment in GCash app, then returns here
 class PayMongoGCashScreen extends StatefulWidget {
@@ -26,7 +28,8 @@ class PayMongoGCashScreen extends StatefulWidget {
   State<PayMongoGCashScreen> createState() => _PayMongoGCashScreenState();
 }
 
-class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsBindingObserver {
+class _PayMongoGCashScreenState extends State<PayMongoGCashScreen>
+    with WidgetsBindingObserver {
   final PayMongoService _payMongoService = PayMongoService();
   bool _isLoading = true;
   bool _hasError = false;
@@ -68,7 +71,7 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
 
     try {
       print('Initializing PayMongo GCash payment...');
-      
+
       // Create GCash payment source via PayMongo
       final result = await _payMongoService.createGCashSource(
         amount: widget.amount,
@@ -83,7 +86,7 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
           _sourceId = result['sourceId'];
           _isLoading = false;
         });
-        
+
         print('Payment source created: $_sourceId');
         print('Checkout URL: $_checkoutUrl');
       } else {
@@ -104,7 +107,15 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
 
   /// Open GCash app with payment link
   Future<void> _openGCashApp() async {
-    if (_checkoutUrl == null) return;
+    if (_checkoutUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment URL not ready. Please wait...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _paymentInProgress = true;
@@ -112,22 +123,43 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
 
     try {
       final Uri gcashUri = Uri.parse(_checkoutUrl!);
-      
-      print('Opening GCash app with URL: $_checkoutUrl');
-      
-      // Try to launch the URL (this will open GCash app if installed)
-      final bool launched = await launchUrl(
-        gcashUri,
-        mode: LaunchMode.externalApplication, // Open in external app (GCash)
-      );
+
+      print('Opening GCash payment with URL: $_checkoutUrl');
+
+      // Try to launch the URL in external browser/app
+      // This will open GCash app if installed, or browser if not
+      bool launched = false;
+
+      try {
+        // First try: Open in external application (preferred)
+        launched = await launchUrl(
+          gcashUri,
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (e) {
+        print(
+            'External app launch failed, trying external non-browser mode: $e');
+        // Second try: Open in external non-browser mode
+        try {
+          launched = await launchUrl(
+            gcashUri,
+            mode: LaunchMode.externalNonBrowserApplication,
+          );
+        } catch (e2) {
+          print(
+              'External non-browser launch failed, trying platform default: $e2');
+          // Third try: Use platform default
+          launched = await launchUrl(gcashUri);
+        }
+      }
 
       if (launched) {
-        print('GCash app opened successfully');
-        
+        print('Payment page opened successfully');
+
         // Start checking payment status periodically
         _startPaymentStatusCheck();
-        
-        // Show instructions dialog
+
+        // Show instructions dialog after a short delay
         if (mounted) {
           Future.delayed(Duration(milliseconds: 500), () {
             if (mounted) {
@@ -136,32 +168,50 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
           });
         }
       } else {
-        print('Failed to open GCash app');
+        print('Failed to open payment page');
         setState(() {
           _paymentInProgress = false;
         });
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Could not open GCash app. Please install GCash.'),
-              backgroundColor: Colors.red,
+              content: Text(
+                  'Could not open payment page. Please try scanning the QR code instead.'),
+              backgroundColor: Colors.orange,
               duration: Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
             ),
           );
         }
       }
     } catch (e) {
-      print('Error opening GCash app: $e');
+      print('Error opening payment page: $e');
       setState(() {
         _paymentInProgress = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Error opening payment page'),
+                SizedBox(height: 4),
+                Text(
+                  'Please scan the QR code with your GCash app instead',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
             backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
           ),
         );
       }
@@ -284,13 +334,14 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
 
     try {
       print('Checking payment status for source: $_sourceId');
-      
-      final statusResult = await _payMongoService.checkPaymentStatus(_sourceId!);
-      
+
+      final statusResult =
+          await _payMongoService.checkPaymentStatus(_sourceId!);
+
       if (statusResult['success'] == true) {
         final status = statusResult['status'];
         print('Payment status: $status');
-        
+
         if (status == 'chargeable') {
           // Payment successful!
           _statusCheckTimer?.cancel();
@@ -310,12 +361,13 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
   /// Handle successful payment
   void _handlePaymentSuccess() {
     _statusCheckTimer?.cancel();
-    
+
     if (!mounted) return;
-    
+
     // Close any open dialogs
-    Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/paymongo_gcash');
-      
+    Navigator.of(context).popUntil(
+        (route) => route.isFirst || route.settings.name == '/paymongo_gcash');
+
     // Show success dialog
     showDialog(
       context: context,
@@ -393,10 +445,31 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () {
+              // Close dialog and all payment screens, go to main dashboard
+              Navigator.of(context).pop(); // Close success dialog
+              Navigator.of(context)
+                  .popUntil((route) => route.isFirst); // Pop all routes
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UnifiedMainDashboard(),
+                ),
+              );
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.blue,
+            ),
+            child: Text('Continue Shopping'),
+          ),
+          SizedBox(width: 8),
           ElevatedButton(
             onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(true); // Return to previous screen
+              // Close dialog and navigate to orders screen
+              Navigator.of(context).pop(); // Close success dialog
+              Navigator.of(context)
+                  .popUntil((route) => route.isFirst); // Pop all routes
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
@@ -419,12 +492,13 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
   /// Handle failed payment
   void _handlePaymentFailed(String status) {
     _statusCheckTimer?.cancel();
-    
+
     if (!mounted) return;
-    
+
     // Close any open dialogs
-    Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/paymongo_gcash');
-      
+    Navigator.of(context).popUntil(
+        (route) => route.isFirst || route.settings.name == '/paymongo_gcash');
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -455,6 +529,21 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () {
+              // Close dialog and go back to main dashboard
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context)
+                  .popUntil((route) => route.isFirst); // Pop all routes
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UnifiedMainDashboard(),
+                ),
+              );
+            },
+            child: Text('Continue Shopping'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog
@@ -613,9 +702,9 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
               ],
             ),
           ),
-          
+
           SizedBox(height: 24),
-          
+
           // Amount
           Container(
             padding: EdgeInsets.all(20),
@@ -664,9 +753,100 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
               ],
             ),
           ),
-          
+
           SizedBox(height: 24),
-          
+
+          // QR Code Section
+          if (_checkoutUrl != null) ...[
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Scan QR Code with GCash',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade900,
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200, width: 2),
+                    ),
+                    child: QrImageView(
+                      data: _checkoutUrl!,
+                      version: QrVersions.auto,
+                      size: 250.0,
+                      backgroundColor: Colors.white,
+                      errorCorrectionLevel: QrErrorCorrectLevel.H,
+                      embeddedImage: null,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.qr_code_scanner,
+                            size: 20, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Open GCash and scan this QR code',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.blue.shade900),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+
+            // OR Divider
+            Row(
+              children: [
+                Expanded(child: Divider(thickness: 1)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'OR',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(thickness: 1)),
+              ],
+            ),
+            SizedBox(height: 24),
+          ],
+
           // Instructions
           Container(
             padding: EdgeInsets.all(16),
@@ -694,60 +874,74 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
                 SizedBox(height: 16),
                 _buildInstructionStep(
                   '1',
-                  'Click "Open GCash" button below',
+                  'Scan the QR code above with GCash app',
                 ),
                 _buildInstructionStep(
                   '2',
-                  'GCash app will open automatically',
+                  'Or click "Open Payment Page" button to pay via browser/app',
                 ),
                 _buildInstructionStep(
                   '3',
-                  'Log in to your GCash account',
+                  'Log in to your GCash account on the payment page',
                 ),
                 _buildInstructionStep(
                   '4',
-                  'Review and confirm payment',
+                  'Review and confirm the payment amount',
                 ),
                 _buildInstructionStep(
                   '5',
-                  'Return to this app after payment',
+                  'Return to this app after completing payment',
                 ),
               ],
             ),
           ),
-          
+
           SizedBox(height: 24),
-          
+
           // Open GCash Button
           ElevatedButton(
             onPressed: _paymentInProgress ? null : _openGCashApp,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
+              backgroundColor: _paymentInProgress ? Colors.grey : Colors.blue,
               foregroundColor: Colors.white,
               padding: EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              elevation: 3,
+              elevation: _paymentInProgress ? 0 : 3,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.account_balance_wallet, size: 28),
+                if (_paymentInProgress)
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                else
+                  Icon(Icons.account_balance_wallet, size: 28),
                 SizedBox(width: 12),
-                Text(
-                  _paymentInProgress ? 'Payment in Progress...' : 'Open GCash App',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Flexible(
+                  child: Text(
+                    _paymentInProgress
+                        ? 'Opening Payment...'
+                        : 'Open Payment Page',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          
+
           SizedBox(height: 16),
-          
+
           // Note
           Container(
             padding: EdgeInsets.all(12),
@@ -763,7 +957,7 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen> with WidgetsB
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Make sure GCash app is installed on your phone',
+                    'The button will open the GCash payment page in your browser or app. Complete the payment there and return here.',
                     style: TextStyle(fontSize: 12, color: Colors.grey[800]),
                   ),
                 ),

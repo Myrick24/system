@@ -39,21 +39,24 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
   int _quantity = 1;
   bool _isLoading = false;
   String? _selectedDeliveryOption = 'Pickup at Coop';
-  String? _selectedPaymentOption = 'Cash on Delivery';
+  String? _selectedPaymentOption = 'Cash';
   // Store delivery address (informational only, actual validation in cart screen)
   // ignore: unused_field
   Map<String, String> _deliveryAddress = {};
+  String? _coopPickupLocation;
+  bool _isLoadingLocation = false;
 
   final List<String> _deliveryOptions = [
     'Cooperative Delivery',
     'Pickup at Coop'
   ];
-  final List<String> _paymentOptions = ['Cash on Delivery', 'GCash'];
+  final List<String> _paymentOptions = ['Cash', 'GCash'];
 
   @override
   void initState() {
     super.initState();
     _loadSellerInfo();
+    _loadCooperativeLocation();
   }
 
   @override
@@ -87,6 +90,34 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
       setState(() {
         _isLoadingSeller = false;
         _isLoadingRating = false;
+      });
+    }
+  }
+
+  Future<void> _loadCooperativeLocation() async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+
+    try {
+      // Query for a cooperative user to get the pickup location
+      final coopQuery = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'cooperative')
+          .limit(1)
+          .get();
+
+      if (coopQuery.docs.isNotEmpty) {
+        final coopData = coopQuery.docs.first.data();
+        setState(() {
+          _coopPickupLocation = coopData['location'] as String?;
+        });
+      }
+    } catch (e) {
+      print('Error loading cooperative location: $e');
+    } finally {
+      setState(() {
+        _isLoadingLocation = false;
       });
     }
   }
@@ -287,7 +318,7 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
       // Process the order directly
       final success = await cartService.processCart(
         _auth.currentUser!.uid,
-        paymentMethod: _selectedPaymentOption ?? 'Cash on Delivery',
+        paymentMethod: _selectedPaymentOption ?? 'Cash',
         deliveryMethod: _selectedDeliveryOption ?? 'Pickup at Coop',
         meetupLocation: null,
         deliveryAddress: _selectedDeliveryOption == 'Cooperative Delivery'
@@ -299,14 +330,14 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
 
       if (success) {
         print('DEBUG: Order placed successfully!');
-        
+
         // If GCash payment is selected, navigate to PayMongo GCash payment screen
         if (_selectedPaymentOption == 'GCash') {
           if (mounted) {
             // Get the order ID that was just created
             final orderId =
                 'order_${DateTime.now().millisecondsSinceEpoch}_${widget.productId}';
-            
+
             // Navigate to PayMongo GCash payment screen
             final paymentCompleted = await Navigator.push(
               context,
@@ -323,9 +354,10 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                     'quantity': _quantity,
                     'unit': widget.product['unit'] ?? 'pc',
                     'deliveryMethod': _selectedDeliveryOption,
-                    'deliveryAddress': _selectedDeliveryOption == 'Cooperative Delivery'
-                        ? _deliveryAddress['fullAddress']
-                        : null,
+                    'deliveryAddress':
+                        _selectedDeliveryOption == 'Cooperative Delivery'
+                            ? _deliveryAddress['fullAddress']
+                            : null,
                   },
                 ),
               ),
@@ -342,7 +374,7 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
             }
           }
         } else {
-          // For Cash on Delivery, show success dialog
+          // For Cash payment, show success dialog
           if (mounted) {
             _showSuccessDialog();
           }
@@ -945,6 +977,56 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                           _deliveryAddress = address;
                         });
                       },
+                    ),
+                  ],
+
+                  // Pickup Location (show only for Pickup at Coop)
+                  if (_selectedDeliveryOption == 'Pickup at Coop') ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Pickup Location',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            color: Colors.green.shade700,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _isLoadingLocation
+                                ? const Text(
+                                    'Loading location...',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  )
+                                : Text(
+                                    _coopPickupLocation ??
+                                        'Pickup location not set',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.green.shade900,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
 

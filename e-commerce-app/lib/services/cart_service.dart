@@ -371,6 +371,27 @@ class CartService extends ChangeNotifier {
       final batch = _firestore.batch();
       final orderTime = DateTime.now();
 
+      // Fetch cooperative pickup location if delivery method is "Pickup at Coop"
+      String? pickupLocation;
+      if (deliveryMethod == 'Pickup at Coop') {
+        try {
+          // Query for a cooperative user to get the pickup location
+          final coopQuery = await _firestore
+              .collection('users')
+              .where('role', isEqualTo: 'cooperative')
+              .limit(1)
+              .get();
+
+          if (coopQuery.docs.isNotEmpty) {
+            final coopData = coopQuery.docs.first.data();
+            pickupLocation = coopData['location'] as String?;
+            print('Found cooperative pickup location: $pickupLocation');
+          }
+        } catch (e) {
+          print('Error fetching cooperative location: $e');
+        }
+      }
+
       // Create separate transactions for purchases and reservations
       final purchaseItems =
           _cartItems.where((item) => !item.isReservation).toList();
@@ -434,6 +455,11 @@ class CartService extends ChangeNotifier {
                 deliveryAddress != null &&
                 deliveryAddress.isNotEmpty)
               'deliveryAddress': deliveryAddress,
+            // Add pickup location if delivery method is Pickup at Coop
+            if (deliveryMethod == 'Pickup at Coop' &&
+                pickupLocation != null &&
+                pickupLocation.isNotEmpty)
+              'pickupLocation': pickupLocation,
             // Add customer info
             'customerName': userData['name'] ??
                 userData['fullName'] ??

@@ -29,9 +29,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _estimatedDateController = TextEditingController();
 
   String _selectedOrderType = 'Available Now';
-  String _selectedUnit = 'kg';
+  String _selectedUnit = 'Kilo (kg)';
   String _selectedCategory = 'Vegetables';
-  File? _selectedImage;
+  List<File> _selectedImages = [];
   DateTime? _harvestDate;
   DateTime? _estimatedAvailabilityDate;
   bool _isLoading = false;
@@ -40,28 +40,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _cooperatives = [];
   String? _selectedCoopId;
   String? _selectedCoopName;
+  String? _selectedCoopLocation;
   bool _loadingCoops = false;
 
-  // Multiple delivery options - simplified to 3 choices
-  final List<String> _deliveryOptions = ['Delivery', 'Pick Up', 'Meet up'];
+  // Multiple delivery options - only 2 choices
+  final List<String> _deliveryOptions = ['Cooperative Delivery', 'Pick Up'];
 
   // Track which delivery options are selected
   Map<String, bool> _selectedDeliveryOptions = {
-    'Delivery': false,
+    'Cooperative Delivery': false,
     'Pick Up': true, // Default to Pick Up
-    'Meet up': false,
   };
 
   final List<String> _orderTypes = ['Available Now', 'Pre Order'];
 
   final List<String> _units = [
-    'kg',
-    'g',
-    'lbs',
-    'pieces',
-    'bunches',
-    'liters',
-    'dozens'
+    'Kilo (kg)',
+    'Bunch (Tali)',
+    'Piece (Per Piece / Piraso)',
+    'Sack (Sako)',
   ];
 
   final List<String> _categories = ['Vegetables', 'Fruits', 'Grains', 'Others'];
@@ -99,11 +96,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
               setState(() {
                 _selectedCoopId = cooperativeId;
                 _selectedCoopName = coopData['name'] ?? 'Unnamed Cooperative';
+                _selectedCoopLocation = coopData['location'] as String?;
+                // Set pickup location if available
+                if (_selectedCoopLocation != null &&
+                    _selectedCoopLocation!.isNotEmpty) {
+                  _pickupLocationController.text = _selectedCoopLocation!;
+                }
                 _cooperatives = [
                   {
                     'id': cooperativeId,
                     'name': coopData['name'] ?? 'Unnamed Cooperative',
                     'email': coopData['email'] ?? '',
+                    'location': coopData['location'] ?? '',
                   }
                 ];
               });
@@ -123,6 +127,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   'id': doc.id,
                   'name': data['name'] ?? 'Unnamed Cooperative',
                   'email': data['email'] ?? '',
+                  'location': data['location'] ?? '',
                 };
               }).toList();
             });
@@ -153,51 +158,70 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _pickImage() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
+      final List<XFile> images = await picker.pickMultiImage(
         maxWidth: 1024,
         maxHeight: 1024,
         imageQuality: 80,
       );
 
-      if (image != null) {
+      if (images.isNotEmpty) {
         setState(() {
-          _selectedImage = File(image.path);
+          // Limit to maximum 5 images
+          if (_selectedImages.length + images.length <= 5) {
+            _selectedImages.addAll(images.map((xfile) => File(xfile.path)));
+          } else {
+            // Add only up to the limit
+            int remaining = 5 - _selectedImages.length;
+            _selectedImages.addAll(
+                images.take(remaining).map((xfile) => File(xfile.path)));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Maximum 5 images allowed'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
         });
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error picking image: $e'),
+          content: Text('Error picking images: $e'),
           duration: const Duration(seconds: 5),
         ),
       );
     }
   }
 
-  // Upload image to Firebase Storage
-  Future<String?> _uploadProductImage(String productId) async {
-    if (_selectedImage == null) return null;
+  // Upload images to Firebase Storage
+  Future<List<String>> _uploadProductImages(String productId) async {
+    if (_selectedImages.isEmpty) return [];
 
     try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('product_images')
-          .child(productId)
-          .child('product_image.jpg');
+      List<String> imageUrls = [];
 
-      final uploadTask = ref.putFile(_selectedImage!);
+      for (int i = 0; i < _selectedImages.length; i++) {
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('product_images')
+            .child(productId)
+            .child('product_image_$i.jpg');
 
-      // Wait for the upload to complete
-      final snapshot = await uploadTask;
+        final uploadTask = ref.putFile(_selectedImages[i]);
 
-      // Get the download URL
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+        // Wait for the upload to complete
+        final snapshot = await uploadTask;
 
-      print('Image uploaded successfully. URL: $downloadUrl');
-      return downloadUrl;
+        // Get the download URL
+        final downloadUrl = await snapshot.ref.getDownloadURL();
+        imageUrls.add(downloadUrl);
+
+        print('Image $i uploaded successfully. URL: $downloadUrl');
+      }
+
+      return imageUrls;
     } catch (e) {
-      print('Error uploading product image: $e');
+      print('Error uploading product images: $e');
 
       // Show more specific error message to user
       if (mounted) {
@@ -209,7 +233,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
         );
       }
-      return null;
+      return [];
     }
   }
 
@@ -236,20 +260,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
         const SnackBar(
           content: Text('Please select at least one delivery method'),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 5),
-        ),
-      );
-      return;
-    }
-
-    // Additional validation for Pre Order type
-    if (_selectedOrderType == 'Pre Order' &&
-        _estimatedAvailabilityDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Please select an estimated availability date for pre-order products'),
-          backgroundColor: Colors.orange,
           duration: Duration(seconds: 5),
         ),
       );
@@ -287,16 +297,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Generate a unique product ID first
       String productId = _firestore.collection('products').doc().id;
 
-      // Upload product image if selected
-      String? imageUrl;
-      if (_selectedImage != null) {
+      // Upload product images if selected
+      List<String> imageUrls = [];
+      if (_selectedImages.isNotEmpty) {
         // Show uploading feedback
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Row(
                 children: [
-                  SizedBox(
+                  const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
@@ -304,26 +314,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   ),
-                  SizedBox(width: 16),
-                  Text('Uploading product image...'),
+                  const SizedBox(width: 16),
+                  Text('Uploading ${_selectedImages.length} image(s)...'),
                 ],
               ),
-              duration: const Duration(seconds: 5),
+              duration: const Duration(seconds: 10),
             ),
           );
         }
-        imageUrl = await _uploadProductImage(productId);
-        if (imageUrl == null) {
-          throw Exception('Failed to upload product image. Please try again.');
+        imageUrls = await _uploadProductImages(productId);
+        if (imageUrls.isEmpty) {
+          throw Exception('Failed to upload product images. Please try again.');
         } else {
           // Hide the uploading message and show success
           if (mounted) {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Image uploaded successfully! ✅'),
+              SnackBar(
+                content: Text(
+                    '${imageUrls.length} image(s) uploaded successfully! ✅'),
                 backgroundColor: Colors.green,
-                duration: const Duration(seconds: 5),
+                duration: const Duration(seconds: 3),
               ),
             );
           }
@@ -354,7 +365,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'createdAt': FieldValue.serverTimestamp(),
         'reserved': 0,
         'sold': 0,
-        'imageUrl': imageUrl, // Now properly set with uploaded image URL
+        'imageUrl': imageUrls.isNotEmpty
+            ? imageUrls[0]
+            : null, // First image as primary
+        'imageUrls': imageUrls, // All images
         'cooperativeId': _selectedCoopId, // Link to cooperative
         'cooperativeName':
             _selectedCoopName, // Store cooperative name for display
@@ -440,118 +454,177 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Product Image Section
-                    Center(
-                      child: GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          height: 200,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: _selectedImage != null
-                              ? Stack(
-                                  children: [
-                                    ClipRRect(
+                    // Product Images Section (Multiple)
+                    const Text(
+                      'Product Images (Max 5)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Display selected images
+                    if (_selectedImages.isNotEmpty)
+                      SizedBox(
+                        height: 120,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _selectedImages.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == _selectedImages.length) {
+                              // Add more button
+                              if (_selectedImages.length < 5) {
+                                return GestureDetector(
+                                  onTap: _pickImage,
+                                  child: Container(
+                                    width: 120,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[200],
                                       borderRadius: BorderRadius.circular(12),
-                                      child: Image.file(
-                                        _selectedImage!,
-                                        width: double.infinity,
-                                        height: 200,
-                                        fit: BoxFit.cover,
-                                      ),
+                                      border:
+                                          Border.all(color: Colors.grey[300]!),
                                     ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setState(() {
-                                            _selectedImage = null;
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(6),
-                                          decoration: BoxDecoration(
-                                            color: Colors.red.withOpacity(0.8),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            color: Colors.white,
-                                            size: 18,
-                                          ),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_photo_alternate,
+                                            size: 40, color: Colors.grey[400]),
+                                        const SizedBox(height: 4),
+                                        Text('Add More',
+                                            style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return const SizedBox.shrink();
+                              }
+                            }
+
+                            // Display image
+                            return Container(
+                              width: 120,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[300]!),
+                              ),
+                              child: Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.file(
+                                      _selectedImages[index],
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  // Remove button
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedImages.removeAt(index);
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withOpacity(0.8),
+                                          shape: BoxShape.circle,
                                         ),
+                                        child: const Icon(Icons.close,
+                                            color: Colors.white, size: 16),
                                       ),
                                     ),
+                                  ),
+                                  // Primary badge for first image
+                                  if (index == 0)
                                     Positioned(
-                                      bottom: 8,
-                                      left: 8,
+                                      bottom: 4,
+                                      left: 4,
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
+                                            horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: Colors.green.withOpacity(0.8),
                                           borderRadius:
-                                              BorderRadius.circular(12),
+                                              BorderRadius.circular(8),
                                         ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.check_circle,
+                                        child: const Text(
+                                          'Main',
+                                          style: TextStyle(
                                               color: Colors.white,
-                                              size: 16,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            const Text(
-                                              'Image Selected',
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     ),
-                                  ],
-                                )
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_a_photo,
-                                      size: 50,
-                                      color: Colors.grey[400],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Add Product Photo',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Tap to select from gallery',
-                                      style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ),
-                    ),
+
+                    // Add photos button (when no images)
+                    if (_selectedImages.isEmpty)
+                      Center(
+                        child: GestureDetector(
+                          onTap: _pickImage,
+                          child: Container(
+                            height: 200,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_photo_alternate,
+                                    size: 50, color: Colors.grey[400]),
+                                const SizedBox(height: 8),
+                                Text('Add Product Photos',
+                                    style: TextStyle(
+                                        color: Colors.grey[600], fontSize: 16)),
+                                const SizedBox(height: 4),
+                                Text('Tap to select from gallery',
+                                    style: TextStyle(
+                                        color: Colors.grey[500], fontSize: 12)),
+                                const SizedBox(height: 4),
+                                Text('You can add up to 5 images',
+                                    style: TextStyle(
+                                        color: Colors.grey[400], fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 8),
+                    // Image count indicator
+                    if (_selectedImages.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${_selectedImages.length}/5 photos selected',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
 
                     const SizedBox(height: 24),
 
@@ -865,22 +938,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           items: _cooperatives.map((coop) {
                             return DropdownMenuItem<String>(
                               value: coop['id'] as String,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    coop['name'] as String,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  Text(
-                                    coop['email'] as String,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600,
+                                  Expanded(
+                                    child: Text(
+                                      coop['name'] as String,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
@@ -892,10 +959,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               _selectedCoopId = value;
                               final selectedCoop = _cooperatives.firstWhere(
                                 (coop) => coop['id'] == value,
-                                orElse: () => {'name': ''},
+                                orElse: () => {'name': '', 'location': ''},
                               );
                               _selectedCoopName =
                                   selectedCoop['name'] as String?;
+                              _selectedCoopLocation =
+                                  selectedCoop['location'] as String?;
+
+                              // Automatically set pickup location if available
+                              if (_selectedCoopLocation != null &&
+                                  _selectedCoopLocation!.isNotEmpty) {
+                                _pickupLocationController.text =
+                                    _selectedCoopLocation!;
+                              }
                             });
                           },
                           validator: (value) {
@@ -905,6 +981,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             return null;
                           },
                           isExpanded: true,
+                        ),
+                      ),
+
+                    // Show cooperative location info if available
+                    if (_selectedCoopLocation != null &&
+                        _selectedCoopLocation!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, left: 16),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline,
+                                size: 16, color: Colors.blue.shade600),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Pickup location: $_selectedCoopLocation',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.blue.shade700,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 
@@ -921,10 +1021,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         controller: _pickupLocationController,
                         decoration: InputDecoration(
                           labelText: 'Pick-up Location*',
-                          hintText:
-                              'e.g., Green Valley Farm, Barangay San Jose',
+                          hintText: _selectedCoopLocation != null &&
+                                  _selectedCoopLocation!.isNotEmpty
+                              ? 'Auto-filled from cooperative'
+                              : 'e.g., Green Valley Farm, Barangay San Jose',
                           prefixIcon: Icon(Icons.location_on,
-                              color: Colors.grey.shade600),
+                              color: _selectedCoopLocation != null &&
+                                      _selectedCoopLocation!.isNotEmpty
+                                  ? Colors.green.shade600
+                                  : Colors.grey.shade600),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
@@ -1098,12 +1203,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               )
                             : null,
                         onTap: () async {
+                          final DateTime now = DateTime.now();
                           final DateTime? picked = await showDatePicker(
                             context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime.now()
-                                .subtract(const Duration(days: 365)),
-                            lastDate: DateTime.now(),
+                            initialDate: _harvestDate ?? now,
+                            firstDate:
+                                DateTime(now.year - 1, now.month, now.day),
+                            lastDate:
+                                DateTime(now.year + 1, now.month, now.day),
+                            helpText: 'Select Harvest Date',
+                            errorFormatText: 'Enter valid date',
+                            errorInvalidText: 'Please select a valid date',
                           );
                           if (picked != null) {
                             setState(() {
@@ -1152,58 +1262,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     ),
 
                     const SizedBox(height: 16),
-
-                    // Estimated Availability Date (only show if Pre Order is selected)
-                    if (_selectedOrderType == 'Pre Order')
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.shade300),
-                        ),
-                        child: ListTile(
-                          leading: Icon(Icons.schedule,
-                              color: Colors.orange.shade700),
-                          title: Text(
-                            _estimatedAvailabilityDate == null
-                                ? 'Estimated Availability Date*'
-                                : 'Available: ${_estimatedAvailabilityDate!.day}/${_estimatedAvailabilityDate!.month}/${_estimatedAvailabilityDate!.year}',
-                            style: TextStyle(
-                              color: _estimatedAvailabilityDate == null
-                                  ? Colors.orange.shade700
-                                  : Colors.orange.shade800,
-                            ),
-                          ),
-                          trailing: _estimatedAvailabilityDate != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    setState(() {
-                                      _estimatedAvailabilityDate = null;
-                                    });
-                                  },
-                                )
-                              : null,
-                          onTap: () async {
-                            final DateTime? picked = await showDatePicker(
-                              context: context,
-                              initialDate:
-                                  DateTime.now().add(const Duration(days: 1)),
-                              firstDate: DateTime.now(),
-                              lastDate:
-                                  DateTime.now().add(const Duration(days: 365)),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                _estimatedAvailabilityDate = picked;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-
-                    if (_selectedOrderType == 'Pre Order')
-                      const SizedBox(height: 16),
 
                     // Submit Button
                     SizedBox(
