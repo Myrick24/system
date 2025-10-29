@@ -103,7 +103,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   {
                     'id': cooperativeId,
                     'name': coopData['name'] ?? 'Unnamed Cooperative',
-                    'email': coopData['email'] ?? '',
                   }
                 ];
               });
@@ -122,7 +121,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 return {
                   'id': doc.id,
                   'name': data['name'] ?? 'Unnamed Cooperative',
-                  'email': data['email'] ?? '',
                 };
               }).toList();
             });
@@ -865,25 +863,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           items: _cooperatives.map((coop) {
                             return DropdownMenuItem<String>(
                               value: coop['id'] as String,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    coop['name'] as String,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  Text(
-                                    coop['email'] as String,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                coop['name'] as String,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             );
                           }).toList(),

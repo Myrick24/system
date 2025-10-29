@@ -198,7 +198,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _buildNotificationCard(
       Map<String, dynamic> notification, String notificationId) {
-    final isRead = notification['read'] ?? notification['isRead'] ?? false;
+    // Check both 'read' and 'isRead' fields
+    final isRead = (notification['read'] == true) || (notification['isRead'] == true);
     final type = notification['type'] ?? 'general';
     final title = notification['title'] ?? 'Notification';
     final message = notification['message'] ?? '';
@@ -322,12 +323,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ],
           ),
-          onTap: () {
+          onTap: () async {
+            // Mark as read first and wait for completion
             if (!isRead) {
-              _markAsRead(notificationId);
+              await _markAsRead(notificationId);
+              // Give a small delay to ensure Firestore updates
+              await Future.delayed(const Duration(milliseconds: 200));
             }
-            // If this is a product notification, you could navigate to the product details
-            _handleNotificationTap(notification);
+            // Show popup with notification details
+            if (mounted) {
+              _showNotificationPopup(notification);
+            }
           },
         ),
       ),
@@ -406,12 +412,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markAsRead(String notificationId) async {
     try {
-      await _firestore.collection('notifications').doc(notificationId).update({
-        'read': true,
-        'readAt': FieldValue.serverTimestamp(),
-      });
+      // Update both 'read' and 'isRead' fields for compatibility
+      await _firestore
+          .collection('notifications')
+          .doc(notificationId)
+          .set({
+            'read': true,
+            'isRead': true,
+            'readAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      
+      print('✓ Notification $notificationId marked as read');
     } catch (e) {
       print('Error marking notification as read: $e');
+      // Retry with update method
+      try {
+        await _firestore
+            .collection('notifications')
+            .doc(notificationId)
+            .update({
+              'read': true,
+              'isRead': true,
+              'readAt': FieldValue.serverTimestamp(),
+            });
+      } catch (retryError) {
+        print('Retry failed: $retryError');
+      }
     }
   }
 
@@ -470,27 +496,175 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  void _handleNotificationTap(Map<String, dynamic> notification) {
+  void _showNotificationPopup(Map<String, dynamic> notification) {
     final type = notification['type'] ?? '';
+    final title = notification['title'] ?? 'Notification';
+    final message = notification['message'] ?? '';
     final productId = notification['productId'];
+    final productName = notification['productName'];
+    final createdAt = notification['createdAt'] ?? notification['timestamp'];
 
-    // Handle different notification types
-    switch (type) {
-      case 'product_approved':
-      case 'product_rejected':
-        if (productId != null) {
-          // You could navigate to product details or seller products screen
-          // For now, just show a message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Product ID: $productId'),
-              backgroundColor: AppTheme.primaryGreen,
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          titlePadding: EdgeInsets.zero,
+          title: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _getNotificationColor(type),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
             ),
-          );
-        }
-        break;
-      default:
-        break;
-    }
+            child: Row(
+              children: [
+                Icon(
+                  _getNotificationIcon(type),
+                  color: Colors.white,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black87,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (productName != null) ...[
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.inventory_2, 
+                        size: 18, 
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Product: ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          productName,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (productId != null) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.tag, 
+                        size: 18, 
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Product ID: ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          productId,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.access_time, 
+                      size: 16, 
+                      color: Colors.grey.shade500,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatDate(createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (productId != null && (type == 'product_approved' || type == 'product_rejected'))
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Navigate to product details or seller products screen
+                  Navigator.pushNamed(context, '/seller-products');
+                },
+                icon: const Icon(Icons.visibility),
+                label: const Text('View Products'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primaryGreen,
+                ),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade700,
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

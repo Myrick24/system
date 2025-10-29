@@ -1,4 +1,4 @@
-import 'push_notification_service.dart';
+import 'realtime_notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum NotificationType {
@@ -23,7 +23,7 @@ class NotificationManager {
     String? payload,
   }) async {
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: payload,
@@ -51,7 +51,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'order_update|$orderId|$status',
@@ -79,7 +79,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'new_product|$productId|$sellerName',
@@ -109,7 +109,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'product_approval|$productName|$isApproved',
@@ -135,7 +135,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'payment|$orderId|$amount|$isReceived',
@@ -160,7 +160,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'low_stock|$productName|$currentStock',
@@ -195,7 +195,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'welcome|$userName|$userRole',
@@ -217,7 +217,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: message,
         payload: 'reminder|$reminderType',
@@ -239,7 +239,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: notificationTitle,
         body: message,
         payload: 'announcement|$title|${targetRole ?? "all"}',
@@ -260,7 +260,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: tip,
         payload: 'farming_tip|${season ?? "general"}',
@@ -287,7 +287,7 @@ class NotificationManager {
 
     // Use direct local notification for immediate floating popup
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'market_price|$productName|$newPrice|$oldPrice',
@@ -301,23 +301,23 @@ class NotificationManager {
 
   // Subscribe user to relevant notification topics based on their role
   static Future<void> subscribeToRoleBasedTopics(String userRole) async {
-    await PushNotificationService.subscribeToTopic('all_users');
-    await PushNotificationService.subscribeToTopic(userRole);
+    await RealtimeNotificationService.subscribeToTopic('all_users');
+    await RealtimeNotificationService.subscribeToTopic(userRole);
 
     switch (userRole) {
       case 'farmer':
-        await PushNotificationService.subscribeToTopic('farmers');
-        await PushNotificationService.subscribeToTopic('market_updates');
-        await PushNotificationService.subscribeToTopic('farming_tips');
+        await RealtimeNotificationService.subscribeToTopic('farmers');
+        await RealtimeNotificationService.subscribeToTopic('market_updates');
+        await RealtimeNotificationService.subscribeToTopic('farming_tips');
         break;
       case 'buyer':
-        await PushNotificationService.subscribeToTopic('buyers');
-        await PushNotificationService.subscribeToTopic('new_products');
-        await PushNotificationService.subscribeToTopic('deals');
+        await RealtimeNotificationService.subscribeToTopic('buyers');
+        await RealtimeNotificationService.subscribeToTopic('new_products');
+        await RealtimeNotificationService.subscribeToTopic('deals');
         break;
       case 'cooperative':
-        await PushNotificationService.subscribeToTopic('cooperatives');
-        await PushNotificationService.subscribeToTopic('admin_updates');
+        await RealtimeNotificationService.subscribeToTopic('cooperatives');
+        await RealtimeNotificationService.subscribeToTopic('admin_updates');
         break;
     }
   }
@@ -340,7 +340,7 @@ class NotificationManager {
     ];
 
     for (String topic in topics) {
-      await PushNotificationService.unsubscribeFromTopic(topic);
+      await RealtimeNotificationService.unsubscribeFromTopic(topic);
     }
   }
 
@@ -361,7 +361,7 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'checkout|seller|$orderId|$productName',
@@ -405,7 +405,7 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'checkout|buyer|$orderId|$productName',
@@ -452,7 +452,7 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'seller_registration|$isApproved',
@@ -494,7 +494,7 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'product_update|$productId|$updateType',
@@ -532,7 +532,7 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'new_product_seller|$productId|$category',
@@ -574,23 +574,43 @@ class NotificationManager {
 
     // Send push notification
     try {
-      await PushNotificationService.sendTestNotification(
+      await RealtimeNotificationService.sendTestNotification(
         title: title,
         body: body,
         payload: 'new_product_buyer|$productId|$category',
       );
 
-      // Store notification in Firestore for buyers
-      await _firestore.collection('buyer_product_alerts').add({
-        'productId': productId,
-        'productName': productName,
-        'sellerName': sellerName,
-        'category': category,
-        'price': price,
-        'type': 'new_product_alert',
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // Get all buyers and send individual notifications
+      final usersSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'buyer')
+          .get();
+
+      // Create individual notifications for each buyer
+      final batch = _firestore.batch();
+      for (var userDoc in usersSnapshot.docs) {
+        final notificationRef = _firestore.collection('notifications').doc();
+        batch.set(notificationRef, {
+          'userId': userDoc.id,
+          'title': title,
+          'message': body,
+          'type': 'new_product_buyer',
+          'productId': productId,
+          'productName': productName,
+          'sellerName': sellerName,
+          'category': category,
+          'price': price,
+          'read': false,
+          'timestamp': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'priority': 'normal',
+        });
+      }
+      
+      // Commit all notifications at once
+      await batch.commit();
+      
+      print('Sent new product notification to ${usersSnapshot.docs.length} buyers');
 
       return true;
     } catch (e) {

@@ -86,21 +86,56 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
               doc.data()['status'] == 'approved' &&
               doc.data()['isActive'] == true)
           .length;
-      int lowStockProducts = productsQuery.docs
-          .where((doc) => (doc.data()['stock'] ?? 0) < 10)
-          .length;
+      
+      // Check for low stock products - consider both 'stock' and 'quantity' fields
+      // Low stock threshold: less than or equal to 5 units
+      int lowStockProducts = 0;
+      for (var doc in productsQuery.docs) {
+        final data = doc.data();
+        final productName = data['name'] ?? data['productName'] ?? 'Unknown';
+        final stock = data['stock'] ?? data['quantity'] ?? data['currentStock'] ?? 0;
+        
+        int stockValue = 0;
+        if (stock is int) {
+          stockValue = stock;
+        } else if (stock is double) {
+          stockValue = stock.toInt();
+        } else if (stock is String) {
+          try {
+            stockValue = int.parse(stock);
+          } catch (e) {
+            print('Error parsing stock for product $productName: $e');
+            continue;
+          }
+        }
+        
+        // Debug: Print stock levels
+        print('Product: $productName, Stock: $stockValue');
+        
+        // Only count as low stock if 5 or less
+        if (stockValue <= 5) {
+          lowStockProducts++;
+          print('LOW STOCK: $productName has only $stockValue units');
+        }
+      }
 
       int pendingOrders = ordersQuery.docs
           .where((doc) => doc.data()['status'] == 'pending')
           .length;
       int completedOrders = ordersQuery.docs
-          .where((doc) => doc.data()['status'] == 'completed')
+          .where((doc) => 
+              doc.data()['status'] == 'completed' || 
+              doc.data()['status'] == 'delivered')
           .length;
 
       double totalRevenue = 0.0;
       for (var order in ordersQuery.docs) {
-        if (order.data()['status'] == 'completed') {
-          totalRevenue += (order.data()['totalAmount'] ?? 0.0).toDouble();
+        final status = order.data()['status'];
+        if (status == 'completed' || status == 'delivered') {
+          final amount = order.data()['totalAmount'];
+          if (amount != null) {
+            totalRevenue += (amount is int ? amount.toDouble() : amount.toDouble());
+          }
         }
       }
 
@@ -374,61 +409,163 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
 
                       // Alerts Section (if any)
                       if (_dashboardStats['lowStockProducts'] > 0) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.errorColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: AppTheme.errorColor.withOpacity(0.3)),
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const SellerInventoryManagement(),
+                              ),
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.errorColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: AppTheme.errorColor.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Colors.red.shade600,
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Low Stock Alert',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red.shade800,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${_dashboardStats['lowStockProducts']} ${_dashboardStats['lowStockProducts'] == 1 ? 'product has' : 'products have'} low stock (5 units or less)',
+                                        style: TextStyle(
+                                          color: Colors.red.shade700,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Tap to view and restock',
+                                        style: TextStyle(
+                                          color: Colors.red.shade600,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Colors.red.shade600,
+                                  size: 16,
+                                ),
+                              ],
+                            ),
                           ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.warning,
-                                color: Colors.red.shade600,
-                                size: 24,
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      
+                      // Pending Orders Alert
+                      if (_dashboardStats['pendingOrders'] > 0) ...[
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const SellerOrderManagement(),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Low Stock Alert',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.red.shade800,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${_dashboardStats['lowStockProducts']} products have low stock levels',
-                                      style: TextStyle(
-                                        color: Colors.red.shade700,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentOrange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: AppTheme.accentOrange.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.pending_actions,
+                                    color: Colors.orange.shade700,
+                                    size: 24,
+                                  ),
                                 ),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          const SellerInventoryManagement(),
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  'View',
-                                  style: TextStyle(color: Colors.red.shade700),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Pending Orders',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange.shade800,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'You have ${_dashboardStats['pendingOrders']} ${_dashboardStats['pendingOrders'] == 1 ? 'order' : 'orders'} waiting for processing',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade700,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Tap to review and process',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade600,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Colors.orange.shade600,
+                                  size: 16,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -444,7 +581,7 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
   Widget _buildStatCard(
       String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -461,7 +598,7 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
@@ -469,26 +606,35 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
             child: Icon(
               icon,
               color: color,
-              size: 24,
+              size: 20,
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
+          const SizedBox(height: 8),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
+          Flexible(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

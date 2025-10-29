@@ -109,6 +109,27 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
             padding: const EdgeInsets.all(16.0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                // Back button (only show when not in main navigation)
+                if (ModalRoute.of(context)?.canPop ?? false)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => Navigator.pop(context),
+                          color: Colors.green,
+                        ),
+                        const Text(
+                          'Browse Products',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // Search Bar
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),

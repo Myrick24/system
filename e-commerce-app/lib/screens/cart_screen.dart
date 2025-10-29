@@ -91,7 +91,7 @@ class _CartScreenState extends State<CartScreen> {
           Icon(
             Icons.shopping_cart_outlined,
             size: 80,
-            color: Colors.grey[400],
+            color: const Color.fromARGB(255, 255, 255, 255),
           ),
           const SizedBox(height: 16),
           Text(
@@ -113,9 +113,9 @@ class _CartScreenState extends State<CartScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pushNamed(context, '/buyer-browse');
             },
-            icon: const Icon(Icons.shopping_bag),
+            icon: const Icon(Icons.shopping_bag, color: Colors.white),
             label: const Text('Browse Products'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,

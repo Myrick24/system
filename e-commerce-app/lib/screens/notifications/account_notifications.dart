@@ -144,6 +144,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
           tabs: [
             Tab(
               icon: const Icon(Icons.notifications),
@@ -380,7 +382,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     final type = data['type'] ?? '';
     final title = data['title'] ?? 'Notification';
     final message = data['message'] ?? '';
-    final isRead = data['read'] ?? data['isRead'] ?? false;
+    // Check both 'read' and 'isRead' fields
+    final isRead = (data['read'] == true) || (data['isRead'] == true);
     final timestamp = (data['timestamp'] ?? data['createdAt']) as Timestamp?;
     final priority = data['priority'] ?? 'normal';
 
@@ -476,7 +479,18 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
                   shape: BoxShape.circle,
                 ),
               ),
-        onTap: () => _handleNotificationTap(notificationId, data),
+        onTap: () async {
+          // Mark as read first and wait for completion
+          if (!isRead) {
+            await _markAsRead(notificationId);
+            // Give a small delay to ensure Firestore updates
+            await Future.delayed(const Duration(milliseconds: 200));
+          }
+          // Show popup with notification details
+          if (mounted) {
+            _showNotificationPopup(data);
+          }
+        },
       ),
     );
   }
@@ -501,93 +515,34 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     }
   }
 
-  Future<void> _handleNotificationTap(String notificationId, Map<String, dynamic> data) async {
-    // Mark as read
-    await _markAsRead(notificationId);
-
-    final type = data['type'];
-
-    // Handle navigation based on notification type
-    switch (type) {
-      case 'checkout_seller':
-      case 'checkout_buyer':
-        final orderId = data['orderId'];
-        if (orderId != null) {
-          // Navigate to order details
-          // You can implement this based on your app's navigation
-          _showNotificationDetails(data);
-        }
-        break;
-      case 'product_approval':
-      case 'product_rejection':
-        // Navigate to product management or show details
-        _showNotificationDetails(data);
-        break;
-      case 'seller_approved':
-      case 'seller_rejected':
-        _showNotificationDetails(data);
-        break;
-      default:
-        _showNotificationDetails(data);
-        break;
-    }
-  }
-
-  void _showNotificationDetails(Map<String, dynamic> data) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(data['title'] ?? 'Notification'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(data['message'] ?? ''),
-              const SizedBox(height: 16),
-              if (data['orderId'] != null) ...[
-                Text('Order ID: ${data['orderId']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-              ],
-              if (data['productName'] != null) ...[
-                Text('Product: ${data['productName']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-              ],
-              if (data['quantity'] != null) ...[
-                Text('Quantity: ${data['quantity']} ${data['unit'] ?? ''}'),
-                const SizedBox(height: 8),
-              ],
-              if (data['totalAmount'] != null) ...[
-                Text('Amount: \$${data['totalAmount'].toStringAsFixed(2)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                const SizedBox(height: 8),
-              ],
-              if (data['buyerName'] != null) ...[
-                Text('Buyer: ${data['buyerName']}'),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _markAsRead(String notificationId) async {
     try {
+      // Update both 'read' and 'isRead' fields for compatibility
       await _firestore
           .collection('notifications')
           .doc(notificationId)
-          .update({'read': true});
+          .set({
+            'read': true,
+            'isRead': true,
+            'readAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      
+      print('✓ Notification $notificationId marked as read');
     } catch (e) {
       print('Error marking notification as read: $e');
+      // Retry with update method
+      try {
+        await _firestore
+            .collection('notifications')
+            .doc(notificationId)
+            .update({
+              'read': true,
+              'isRead': true,
+              'readAt': FieldValue.serverTimestamp(),
+            });
+      } catch (retryError) {
+        print('Retry failed: $retryError');
+      }
     }
   }
 
@@ -660,5 +615,243 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
         }
       }
     }
+  }
+
+  void _showNotificationPopup(Map<String, dynamic> data) {
+    final type = data['type'] ?? '';
+    final title = data['title'] ?? 'Notification';
+    final message = data['message'] ?? '';
+    final timestamp = (data['timestamp'] ?? data['createdAt']) as Timestamp?;
+    final priority = data['priority'] ?? 'normal';
+    
+    // Extract additional details
+    final orderId = data['orderId'];
+    final productName = data['productName'];
+    final quantity = data['quantity'];
+    final totalAmount = data['totalAmount'];
+    final buyerName = data['buyerName'];
+    final sellerName = data['sellerName'];
+
+    // Get icon and color based on notification type
+    IconData icon = Icons.notifications;
+    Color iconColor = Colors.blue;
+
+    if (type.contains('checkout') || type.contains('order')) {
+      icon = Icons.shopping_cart;
+      iconColor = Colors.green;
+    } else if (type.contains('product')) {
+      icon = Icons.inventory_2;
+      iconColor = Colors.orange;
+    } else if (type.contains('seller')) {
+      icon = Icons.store;
+      iconColor = Colors.purple;
+    } else if (type.contains('payment')) {
+      icon = Icons.payment;
+      iconColor = Colors.teal;
+    } else if (type.contains('low_stock')) {
+      icon = Icons.warning;
+      iconColor = Colors.red;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          titlePadding: EdgeInsets.zero,
+          contentPadding: const EdgeInsets.all(20),
+          title: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: iconColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (priority == 'high')
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade700,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'HIGH',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Message
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black87,
+                    height: 1.5,
+                  ),
+                ),
+                
+                // Only show details section if there are any details
+                if (orderId != null || productName != null || quantity != null || 
+                    totalAmount != null || buyerName != null || sellerName != null) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Order details
+                        if (orderId != null) ...[
+                          _buildDetailRow(Icons.receipt_long, 'Order ID', orderId),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        // Product details
+                        if (productName != null) ...[
+                          _buildDetailRow(Icons.inventory_2, 'Product', productName),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        if (quantity != null) ...[
+                          _buildDetailRow(Icons.shopping_basket, 'Quantity', quantity.toString()),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        if (totalAmount != null) ...[
+                          _buildDetailRow(
+                            Icons.payments, 
+                            'Total Amount', 
+                            '₱${totalAmount.toStringAsFixed(2)}',
+                            valueColor: Colors.green.shade700,
+                            valueFontWeight: FontWeight.bold,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        // Buyer/Seller details
+                        if (buyerName != null) ...[
+                          _buildDetailRow(Icons.person, 'Buyer', buyerName),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        if (sellerName != null) ...[
+                          _buildDetailRow(Icons.store, 'Seller', sellerName),
+                          const SizedBox(height: 12),
+                        ],
+                        
+                        // Remove the last SizedBox
+                        const SizedBox(height: 0),
+                      ],
+                    ),
+                  ),
+                ],
+                
+                const SizedBox(height: 16),
+                
+                // Timestamp
+                Row(
+                  children: [
+                    Icon(Icons.access_time, size: 16, color: Colors.grey.shade500),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTimestamp(timestamp),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+              style: TextButton.styleFrom(
+                foregroundColor: iconColor,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value, {Color? valueColor, FontWeight? valueFontWeight}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.grey.shade600),
+        const SizedBox(width: 12),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black87,
+              ),
+              children: [
+                TextSpan(
+                  text: '$label: ',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                TextSpan(
+                  text: value,
+                  style: TextStyle(
+                    color: valueColor ?? Colors.black87,
+                    fontWeight: valueFontWeight ?? FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

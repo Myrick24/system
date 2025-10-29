@@ -26,7 +26,8 @@ export interface Product {
   sellerName: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: any;
-  images: string[];
+  images?: string[];
+  imageUrl?: string; // Support for single image URL from Flutter app
 }
 
 export interface Transaction {

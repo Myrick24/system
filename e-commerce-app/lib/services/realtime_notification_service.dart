@@ -559,6 +559,93 @@ class RealtimeNotificationService {
     }
   }
 
+  /// Send a direct test notification (shows immediately without FCM)
+  static Future<void> sendTestNotification({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'harvest_notifications',
+      'Harvest App Notifications',
+      channelDescription: 'Real-time notifications',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      enableLights: true,
+      ledColor: Color.fromARGB(255, 76, 175, 80),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher',
+      ticker: 'New notification',
+      fullScreenIntent: true,
+      autoCancel: true,
+    );
+
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      badgeNumber: 1,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch % 100000,
+      title,
+      body,
+      details,
+      payload: payload,
+    );
+
+    print('🔔 Test notification sent: $title');
+
+    // Also save to Firestore for history
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _firestore.collection('notifications').add({
+          'userId': user.uid,
+          'title': title,
+          'message': body,
+          'type': 'test',
+          'read': false,
+          'timestamp': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'payload': payload ?? '',
+        });
+      }
+    } catch (e) {
+      print('⚠️  Error saving test notification: $e');
+    }
+  }
+
+  /// Subscribe to a notification topic
+  static Future<void> subscribeToTopic(String topic) async {
+    try {
+      await _firebaseMessaging.subscribeToTopic(topic);
+      print('✅ Subscribed to topic: $topic');
+    } catch (e) {
+      print('❌ Error subscribing to topic $topic: $e');
+    }
+  }
+
+  /// Unsubscribe from a notification topic
+  static Future<void> unsubscribeFromTopic(String topic) async {
+    try {
+      await _firebaseMessaging.unsubscribeFromTopic(topic);
+      print('✅ Unsubscribed from topic: $topic');
+    } catch (e) {
+      print('❌ Error unsubscribing from topic $topic: $e');
+    }
+  }
+
   /// Dispose resources
   static Future<void> dispose() async {
     await _notificationStreamController.close();

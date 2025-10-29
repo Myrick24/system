@@ -4,11 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'registration_screen.dart';
-import 'virtual_wallet_screen.dart'; // Import the digital wallet screen
 import 'notifications/account_notifications.dart';
 import '../services/notification_service.dart'; // Import our notification service
 import '../theme/app_theme.dart'; // Import the app theme
 import 'cooperative/coop_dashboard.dart'; // Import Coop Dashboard
+import 'buyer/buyer_main_dashboard.dart'; // Import BuyerOrdersScreen
+import 'seller/seller_profile_management.dart'; // Import Seller Profile Management
+import 'help_support/help_support_screen.dart'; // Import Help & Support
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({Key? key}) : super(key: key);
@@ -994,9 +996,13 @@ class _AccountScreenState extends State<AccountScreen>
                         const SizedBox(height: 12),
                         ElevatedButton(
                           onPressed: () {
-                            // Navigate to buyer dashboard (orders screen)
-                            Navigator.pushNamed(
-                                context, '/buyer-main-dashboard');
+                            // Navigate to buyer orders screen
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const BuyerOrdersScreen(),
+                              ),
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
@@ -1117,37 +1123,24 @@ class _AccountScreenState extends State<AccountScreen>
 
             // Settings options
             _buildSettingsItem(
-              icon: Icons.account_balance_wallet,
-              title: 'Digital Wallet',
+              icon: Icons.person_outline,
+              title: 'Profile Settings',
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const VirtualWalletScreen(),
-                  ),
-                );
+                // Navigate to profile settings - different screens for seller vs buyer
+                if (_isRegisteredSeller && _isSellerApproved) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SellerProfileManagement(),
+                    ),
+                  );
+                } else {
+                  // For buyers, show a profile editing screen
+                  _showProfileDialog();
+                }
               },
             ),
-            _buildSettingsItem(
-              icon: Icons.security,
-              title: 'Security Settings',
-              onTap: () {
-                // Navigate to security settings
-              },
-            ),
-            _buildSettingsItem(
-              icon: Icons.notifications,
-              title: 'Notifications',
-              onTap: () {
-                // Navigate to notifications screen
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AccountNotifications(),
-                  ),
-                );
-              },
-            ),
+            _buildNotificationsSettingsItem(),
 
             // Only show status update check for registered sellers
             if (_isRegisteredSeller)
@@ -1217,7 +1210,12 @@ class _AccountScreenState extends State<AccountScreen>
               icon: Icons.help_outline,
               title: 'Help & Support',
               onTap: () {
-                // Navigate to help and support
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const HelpSupportScreen(),
+                  ),
+                );
               },
             ),
 
@@ -1257,6 +1255,85 @@ class _AccountScreenState extends State<AccountScreen>
       title: Text(title),
       trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: onTap,
+    );
+  }
+
+  Widget _buildNotificationsSettingsItem() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return _buildSettingsItem(
+        icon: Icons.notifications,
+        title: 'Notifications',
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AccountNotifications(),
+            ),
+          );
+        },
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .where('read', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        int unreadCount = 0;
+        
+        if (snapshot.hasData) {
+          unreadCount = snapshot.data?.docs.length ?? 0;
+        }
+
+        return ListTile(
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.notifications, color: Colors.grey),
+              if (unreadCount > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Center(
+                      child: Text(
+                        unreadCount > 99 ? '99+' : unreadCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          title: const Text('Notifications'),
+          trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AccountNotifications(),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1301,6 +1378,140 @@ class _AccountScreenState extends State<AccountScreen>
           ),
         ),
       ],
+    );
+  }
+
+  void _showProfileDialog() {
+    final TextEditingController nameController =
+        TextEditingController(text: _userName);
+    final TextEditingController emailController =
+        TextEditingController(text: _currentUser?.email);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.person, color: Colors.green.shade600),
+              const SizedBox(width: 8),
+              const Text('Profile Settings'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Update your profile information',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: const Icon(Icons.person_outline),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailController,
+                  enabled: false,
+                  decoration: InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Email cannot be changed',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                nameController.dispose();
+                emailController.dispose();
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newName = nameController.text.trim();
+                if (newName.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Name cannot be empty'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  // Update user name in Firestore
+                  await _firestore
+                      .collection('users')
+                      .doc(_currentUser!.uid)
+                      .update({'name': newName});
+
+                  // Update local state
+                  setState(() {
+                    _userName = newName;
+                  });
+
+                  nameController.dispose();
+                  emailController.dispose();
+                  Navigator.pop(context);
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Profile updated successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error updating profile: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save Changes'),
+            ),
+          ],
+        );
+      },
     );
   }
 
