@@ -18,6 +18,7 @@ import 'screens/buyer/buyer_product_browse.dart';
 import 'screens/notification_screen.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'screens/unified_main_dashboard.dart';
+import 'screens/cooperative/coop_dashboard.dart';
 import 'theme/app_theme.dart';
 
 // Create a global singleton instance of CartService that can be accessed from anywhere
@@ -66,6 +67,7 @@ class MyApp extends StatelessWidget {
           '/guest': (context) => const GuestMainDashboard(),
           '/unified': (context) => const UnifiedMainDashboard(),
           '/admin': (context) => const AdminDashboard(),
+          '/coop': (context) => const CoopDashboard(),
         },
         home: const SplashScreen(),
       ),
@@ -90,17 +92,20 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _initializeApp() async {
     // Wait for a minimum splash duration
     await Future.delayed(const Duration(seconds: 2));
-    
+
     if (!mounted) return;
 
     try {
       // Check if user is logged in and get appropriate route
       if (AuthService.isLoggedIn) {
         final homeRoute = await AuthService.getHomeRoute();
-        
+
         switch (homeRoute) {
           case '/admin':
             Navigator.pushReplacementNamed(context, '/admin');
+            break;
+          case '/coop':
+            Navigator.pushReplacementNamed(context, '/coop');
             break;
           case '/unified':
             Navigator.pushReplacementNamed(context, '/unified');

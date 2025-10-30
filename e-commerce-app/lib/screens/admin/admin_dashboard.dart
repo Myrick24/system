@@ -3,11 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/admin_service.dart';
 import '../../services/user_service.dart';
 import 'dashboard_home.dart';
-import 'user_management.dart';
-import 'product_listings_fixed_final.dart'; // Updated to use the fixed version
+import 'cooperative_management.dart';
 import 'transaction_monitoring.dart';
+import 'user_feedback.dart';
 import 'announcements.dart';
-import 'admin_settings.dart';
+import 'product_view_screen.dart';
 import '../login_screen.dart'; // Import for login screen
 
 class AdminDashboard extends StatefulWidget {
@@ -42,20 +42,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   final List<Widget> _adminPages = [
     const DashboardHome(),
-    const UserManagement(),
-    const ProductListings(),
+    const CooperativeManagement(),
+    const ProductViewScreen(),
     const TransactionMonitoring(),
+    const UserFeedback(),
     const AnnouncementsScreen(),
-    const AdminSettings(),
   ];
 
   final List<String> _pageTitles = [
-    'Dashboard',
-    'User Management',
-    'Products',
-    'Transactions',
+    'Data Overview',
+    'Cooperative Accounts',
+    'Product Listings',
+    'System Activities',
+    'User Issues & Feedback',
     'Announcements',
-    'Settings',
   ];
 
   @override
@@ -137,7 +137,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ),
                   ),
                   FutureBuilder<Map<String, dynamic>?>(
-                    future: _userService.getUserData(_userService.currentUser?.uid ?? ''),
+                    future: _userService
+                        .getUserData(_userService.currentUser?.uid ?? ''),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const SizedBox();
@@ -157,47 +158,39 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             _buildDrawerItem(
               icon: Icons.dashboard,
-              title: 'Dashboard',
+              title: 'Data Overview',
               index: 0,
             ),
             _buildDrawerItem(
-              icon: Icons.people,
-              title: 'User Management',
+              icon: Icons.business,
+              title: 'Cooperative Accounts',
               index: 1,
             ),
             _buildDrawerItem(
-              icon: Icons.inventory,
-              title: 'Products',
+              icon: Icons.inventory_2,
+              title: 'Product Listings',
               index: 2,
             ),
             _buildDrawerItem(
-              icon: Icons.receipt_long,
-              title: 'Transactions',
+              icon: Icons.monitor_heart,
+              title: 'System Activities',
               index: 3,
+            ),
+            _buildDrawerItem(
+              icon: Icons.feedback,
+              title: 'User Issues & Feedback',
+              index: 4,
             ),
             _buildDrawerItem(
               icon: Icons.announcement,
               title: 'Announcements',
-              index: 4,
-            ),
-            _buildDrawerItem(
-              icon: Icons.settings,
-              title: 'Settings',
               index: 5,
-            ),            const Divider(),            ListTile(
-              leading: const Icon(Icons.data_array),
-              title: const Text(
-                'Generate Sample Data',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-              onTap: () {
-                Navigator.pushNamed(context, '/sample-data');
-              },
-            ),            ListTile(
+            ),
+            const Divider(),
+            ListTile(
               leading: const Icon(Icons.exit_to_app, color: Colors.red),
               title: const Text(
-                'Exit Admin', 
+                'Exit Admin',
                 style: TextStyle(color: Colors.red),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
@@ -213,7 +206,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     backgroundColor: Colors.white,
                     content: Row(
                       children: [
-                        const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.green)),
+                        const CircularProgressIndicator(
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.green)),
                         const SizedBox(width: 20),
                         const Text("Signing out..."),
                       ],
@@ -229,7 +224,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   if (mounted) {
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      MaterialPageRoute(
+                          builder: (context) => const LoginScreen()),
                       (route) => false,
                     );
                   }
@@ -249,6 +245,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
     );
   }
+
   Widget _buildDrawerItem({
     required IconData icon,
     required String title,

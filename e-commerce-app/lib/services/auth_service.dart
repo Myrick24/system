@@ -17,10 +17,7 @@ class AuthService {
     if (user == null) return null;
 
     try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
@@ -50,7 +47,7 @@ class AuthService {
       if (sellerQuery.docs.isNotEmpty) {
         final sellerData = sellerQuery.docs.first.data();
         String status = sellerData['status'] ?? 'approved';
-        
+
         return {
           'isSeller': true,
           'isApproved': status == 'active' || status == 'approved',
@@ -72,7 +69,7 @@ class AuthService {
     }
 
     final userRole = await getCurrentUserRole();
-    
+
     switch (userRole) {
       case 'admin':
         return '/admin';
@@ -84,8 +81,9 @@ class AuthService {
         }
         return '/unified'; // Default to unified dashboard
       case 'buyer':
+      case 'cooperative':
       default:
-        return '/unified'; // Unified dashboard for buyers and default
+        return '/unified'; // Unified dashboard for buyers, cooperatives, and default
     }
   }
 
@@ -100,10 +98,7 @@ class AuthService {
     if (user == null) return null;
 
     try {
-      final userDoc = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;

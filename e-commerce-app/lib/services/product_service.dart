@@ -310,4 +310,65 @@ class ProductService {
       return 0;
     }
   }
+
+  // Get stock statistics
+  Future<Map<String, dynamic>> getStockStats() async {
+    try {
+      QuerySnapshot allProducts = await _firestore
+          .collection('products')
+          .where('status', isEqualTo: 'approved')
+          .get();
+
+      int totalStock = 0;
+      int totalReserved = 0;
+      int totalSold = 0;
+      int lowStockItems = 0;
+      int outOfStockItems = 0;
+
+      for (var doc in allProducts.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+
+        final currentStock = (data['currentStock'] ?? 0) as num;
+        final reserved = (data['reserved'] ?? 0) as num;
+        final sold = (data['sold'] ?? 0) as num;
+
+        totalStock += currentStock.toInt();
+        totalReserved += reserved.toInt();
+        totalSold += sold.toInt();
+
+        final available = currentStock - reserved;
+
+        // Count low stock items (available < 10)
+        if (available > 0 && available < 10) {
+          lowStockItems++;
+        }
+
+        // Count out of stock items
+        if (available <= 0) {
+          outOfStockItems++;
+        }
+      }
+
+      final totalAvailable = totalStock - totalReserved;
+
+      return {
+        'totalStock': totalStock,
+        'totalAvailable': totalAvailable,
+        'totalReserved': totalReserved,
+        'totalSold': totalSold,
+        'lowStockItems': lowStockItems,
+        'outOfStockItems': outOfStockItems,
+      };
+    } catch (e) {
+      print('Error getting stock stats: $e');
+      return {
+        'totalStock': 0,
+        'totalAvailable': 0,
+        'totalReserved': 0,
+        'totalSold': 0,
+        'lowStockItems': 0,
+        'outOfStockItems': 0,
+      };
+    }
+  }
 }

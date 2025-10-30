@@ -10,8 +10,9 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BellOutlined,
-  ToolOutlined,
-  TeamOutlined
+  TeamOutlined,
+  FileTextOutlined,
+  CommentOutlined
 } from '@ant-design/icons';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,10 +24,9 @@ import { AnnouncementManagement } from './AnnouncementManagement';
 import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
-import { SellerStatusFixer } from './SellerStatusFixer';
 import { CooperativeManagement } from './CooperativeManagement';
-import { AnalyticsReports } from './AnalyticsReports';
-import { AuditLogs } from './AuditLogs';
+import { UserFeedbackReports } from './UserFeedbackReports';
+import { ReportsAnalytics } from './ReportsAnalytics';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -50,32 +50,27 @@ const AdminLayout: React.FC = () => {
     {
       key: '/',
       icon: <DashboardOutlined />,
-      label: 'Dashboard',
+      label: 'System Overview',
     },
     {
       key: '/cooperative',
       icon: <TeamOutlined />,
-      label: 'Cooperatives',
+      label: 'Cooperative Management',
     },
     {
       key: '/users',
       icon: <UserOutlined />,
-      label: 'Users',
+      label: 'User Monitoring',
     },
     {
       key: '/products',
       icon: <ShopOutlined />,
-      label: 'Products',
+      label: 'Product Listings',
     },
     {
       key: '/transactions',
       icon: <TransactionOutlined />,
-      label: 'Transactions',
-    },
-    {
-      key: '/analytics',
-      icon: <DashboardOutlined />,
-      label: 'Analytics',
+      label: 'Order Monitoring',
     },
     {
       key: '/announcements',
@@ -83,19 +78,19 @@ const AdminLayout: React.FC = () => {
       label: 'Announcements',
     },
     {
-      key: '/audit-logs',
-      icon: <ToolOutlined />,
-      label: 'Audit Logs',
+      key: '/feedback',
+      icon: <CommentOutlined />,
+      label: 'User Feedback',
     },
     {
-      key: '/seller-fixer',
-      icon: <ToolOutlined />,
-      label: 'Status Tools',
+      key: '/reports',
+      icon: <FileTextOutlined />,
+      label: 'Reports',
     },
     {
       key: '/settings',
       icon: <SettingOutlined />,
-      label: 'Settings',
+      label: 'System Settings',
     },
   ];
 
@@ -125,6 +120,12 @@ const AdminLayout: React.FC = () => {
         collapsible 
         collapsed={collapsed}
         style={{
+          overflow: 'auto',
+          height: '100vh',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          bottom: 0,
           background: '#001529'
         }}
       >
@@ -157,14 +158,17 @@ const AdminLayout: React.FC = () => {
         />
       </Sider>
       
-      <Layout>
+      <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'all 0.2s' }}>
         <Header style={{ 
           padding: '0 24px', 
           background: '#fff', 
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between',
-          borderBottom: '1px solid #f0f0f0'
+          borderBottom: '1px solid #f0f0f0',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1
         }}>
           <Button
             type="text"
@@ -194,11 +198,10 @@ const AdminLayout: React.FC = () => {
             <Route path="/users" element={<UserManagement />} />
             <Route path="/cooperative" element={<CooperativeManagement />} />
             <Route path="/products" element={<ProductManagement />} />
-            <Route path="/analytics" element={<AnalyticsReports />} />
             <Route path="/transactions" element={<TransactionMonitoring />} />
-            <Route path="/seller-fixer" element={<SellerStatusFixer />} />
             <Route path="/announcements" element={<AnnouncementManagement />} />
-            <Route path="/audit-logs" element={<AuditLogs />} />
+            <Route path="/feedback" element={<UserFeedbackReports />} />
+            <Route path="/reports" element={<ReportsAnalytics />} />
             <Route path="/settings" element={<AdminSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

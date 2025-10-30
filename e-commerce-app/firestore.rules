@@ -355,6 +355,26 @@ service cloud.firestore {
       }
     }
     
+    // User Feedback collection
+    match /user_feedback/{feedbackId} {
+      // Users can create feedback
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+      
+      // Users can read their own feedback
+      allow read: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // Admins can read all feedback
+      allow read: if request.auth != null && isAdmin();
+      
+      // Admins can update feedback (add responses, change status)
+      allow update: if request.auth != null && isAdmin();
+      
+      // Admins can delete feedback if needed
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
     match /{document=**} {
       allow read, write: if false;
     }

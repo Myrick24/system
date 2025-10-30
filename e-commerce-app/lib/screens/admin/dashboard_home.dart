@@ -16,9 +16,10 @@ class _DashboardHomeState extends State<DashboardHome> {
   final AdminService _adminService = AdminService();
   final ProductService _productService = ProductService();
   final TransactionService _transactionService = TransactionService();
-  
+
   bool _isLoading = true;
   Map<String, dynamic> _dashboardStats = {};
+  Map<String, dynamic> _stockStats = {};
   List<Map<String, dynamic>> _recentActivity = [];
   Map<String, int> _weeklyProductActivity = {};
   Map<String, double> _weeklyTransactionActivity = {};
@@ -33,16 +34,21 @@ class _DashboardHomeState extends State<DashboardHome> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       Map<String, dynamic> stats = await _adminService.getDashboardStats();
-      List<Map<String, dynamic>> activity = await _adminService.getRecentActivity();
-      Map<String, int> productActivity = await _productService.getWeeklyProductActivity();
-      Map<String, double> transactionActivity = await _transactionService.getWeeklyTransactionActivity();
-      
+      Map<String, dynamic> stockStats = await _productService.getStockStats();
+      List<Map<String, dynamic>> activity =
+          await _adminService.getRecentActivity();
+      Map<String, int> productActivity =
+          await _productService.getWeeklyProductActivity();
+      Map<String, double> transactionActivity =
+          await _transactionService.getWeeklyTransactionActivity();
+
       if (mounted) {
         setState(() {
           _dashboardStats = stats;
+          _stockStats = stockStats;
           _recentActivity = activity;
           _weeklyProductActivity = productActivity;
           _weeklyTransactionActivity = transactionActivity;
@@ -74,13 +80,18 @@ class _DashboardHomeState extends State<DashboardHome> {
         children: [
           _buildSummaryCards(),
           const SizedBox(height: 24),
+          _buildStockOverview(),
+          const SizedBox(height: 24),
           _buildActivityChart(),
           const SizedBox(height: 24),
           _buildRecentActivity(),
         ],
       ),
     );
-  }  Widget _buildSummaryCards() {    return GridView.count(
+  }
+
+  Widget _buildSummaryCards() {
+    return GridView.count(
       crossAxisCount: 2,
       crossAxisSpacing: 16.0,
       mainAxisSpacing: 16.0,
@@ -124,7 +135,9 @@ class _DashboardHomeState extends State<DashboardHome> {
         ),
       ],
     );
-  }  Widget _buildSummaryCard({
+  }
+
+  Widget _buildSummaryCard({
     required String title,
     required String value,
     required IconData icon,
@@ -141,7 +154,8 @@ class _DashboardHomeState extends State<DashboardHome> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0), // Increased vertical padding
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16.0, vertical: 18.0), // Increased vertical padding
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min, // Use minimum space needed
@@ -189,7 +203,127 @@ class _DashboardHomeState extends State<DashboardHome> {
     );
   }
 
-  Widget _buildActivityChart(){
+  Widget _buildStockOverview() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.inventory_2, color: Colors.green, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Inventory Overview',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 3,
+              crossAxisSpacing: 12.0,
+              mainAxisSpacing: 12.0,
+              shrinkWrap: true,
+              childAspectRatio: 1.2,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildStockCard(
+                  title: 'Total Stock',
+                  value: _stockStats['totalStock']?.toString() ?? '0',
+                  icon: Icons.inventory,
+                  color: Colors.blue,
+                ),
+                _buildStockCard(
+                  title: 'Available',
+                  value: _stockStats['totalAvailable']?.toString() ?? '0',
+                  icon: Icons.check_circle,
+                  color: Colors.green,
+                ),
+                _buildStockCard(
+                  title: 'Reserved',
+                  value: _stockStats['totalReserved']?.toString() ?? '0',
+                  icon: Icons.lock_clock,
+                  color: Colors.orange,
+                ),
+                _buildStockCard(
+                  title: 'Sold',
+                  value: _stockStats['totalSold']?.toString() ?? '0',
+                  icon: Icons.shopping_cart,
+                  color: Colors.purple,
+                ),
+                _buildStockCard(
+                  title: 'Low Stock',
+                  value: _stockStats['lowStockItems']?.toString() ?? '0',
+                  icon: Icons.warning,
+                  color: Colors.amber.shade700,
+                ),
+                _buildStockCard(
+                  title: 'Out of Stock',
+                  value: _stockStats['outOfStockItems']?.toString() ?? '0',
+                  icon: Icons.remove_circle,
+                  color: Colors.red,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStockCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityChart() {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -219,7 +353,8 @@ class _DashboardHomeState extends State<DashboardHome> {
                 BarChartData(
                   titlesData: FlTitlesData(
                     leftTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: true, reservedSize: 30),
+                      sideTitles:
+                          SideTitles(showTitles: true, reservedSize: 30),
                     ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
@@ -227,7 +362,8 @@ class _DashboardHomeState extends State<DashboardHome> {
                         getTitlesWidget: (value, meta) {
                           if (value.toInt() >= 0 && value.toInt() < 7) {
                             final now = DateTime.now();
-                            final day = now.subtract(Duration(days: 6 - value.toInt()));
+                            final day =
+                                now.subtract(Duration(days: 6 - value.toInt()));
                             return Padding(
                               padding: const EdgeInsets.only(top: 8.0),
                               child: Text(
@@ -261,16 +397,16 @@ class _DashboardHomeState extends State<DashboardHome> {
 
   List<BarChartGroupData> _generateBarGroups() {
     List<BarChartGroupData> barGroups = [];
-    
+
     // Create dates for the last 7 days (including today)
     final now = DateTime.now();
     for (int i = 0; i < 7; i++) {
       final date = now.subtract(Duration(days: 6 - i));
       final dateString = '${date.year}-${date.month}-${date.day}';
-      
+
       // Get activity data for this date
       final productCount = _weeklyProductActivity[dateString] ?? 0;
-      
+
       barGroups.add(
         BarChartGroupData(
           x: i,
@@ -288,7 +424,7 @@ class _DashboardHomeState extends State<DashboardHome> {
         ),
       );
     }
-    
+
     return barGroups;
   }
 
@@ -339,7 +475,7 @@ class _DashboardHomeState extends State<DashboardHome> {
     String title = '';
     String subtitle = '';
     Color color;
-    
+
     switch (activity['type']) {
       case 'user_registration':
         icon = Icons.person_add;
@@ -371,7 +507,7 @@ class _DashboardHomeState extends State<DashboardHome> {
         subtitle = '';
         color = Colors.grey;
     }
-      return ListTile(
+    return ListTile(
       leading: CircleAvatar(
         backgroundColor: color.withOpacity(0.2),
         child: Icon(icon, color: color, size: 20),
@@ -402,12 +538,12 @@ class _DashboardHomeState extends State<DashboardHome> {
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return '';
-    
+
     DateTime dateTime = timestamp.toDate();
     DateTime now = DateTime.now();
-    
+
     Duration difference = now.difference(dateTime);
-    
+
     if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
