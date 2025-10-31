@@ -16,19 +16,25 @@ class BuyerMainDashboard extends StatefulWidget {
 class _BuyerMainDashboardState extends State<BuyerMainDashboard>
     with AutomaticKeepAliveClientMixin {
   int _selectedIndex = 0;
+  final GlobalKey<_BuyerOrdersScreenState> _ordersKey = GlobalKey();
 
   @override
   bool get wantKeepAlive => true;
 
-  final List<Widget> _pages = [
-    const BuyerHomeContent(), // Home products
-    const BuyerOrdersScreen(), // Order history
-    const CartScreen(), // Shopping cart
-    const MessagesScreen(), // Chat with sellers
-    const AccountScreen(
-        key:
-            PageStorageKey('AccountScreen')), // Account and seller registration
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      const BuyerHomeContent(), // Home products
+      BuyerOrdersScreen(key: _ordersKey), // Order history with key
+      const CartScreen(), // Shopping cart
+      const MessagesScreen(), // Chat with sellers
+      const AccountScreen(
+          key: PageStorageKey('AccountScreen')), // Account and seller registration
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,8 +55,14 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
           setState(() {
             _selectedIndex = index;
           });
-          print(
-              '=== BuyerMainDashboard: _selectedIndex set to: $_selectedIndex ===');
+          
+          // When Orders tab (index 1) is selected, refresh the orders
+          if (index == 1) {
+            print('=== Orders tab selected, refreshing orders ===');
+            _ordersKey.currentState?._loadOrdersByTab(_ordersKey.currentState!._tabController.index);
+          }
+          
+          print('=== BuyerMainDashboard: _selectedIndex set to: $_selectedIndex ===');
         },
         items: const [
           BottomNavigationBarItem(
@@ -80,14 +92,16 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
 }
 
 class BuyerOrdersScreen extends StatefulWidget {
-  const BuyerOrdersScreen({Key? key}) : super(key: key);
+  final bool showBackButton;
+  
+  const BuyerOrdersScreen({super.key, this.showBackButton = false});
 
   @override
   State<BuyerOrdersScreen> createState() => _BuyerOrdersScreenState();
 }
 
 class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -96,6 +110,9 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   List<Map<String, dynamic>> _activeOrders = [];
   List<Map<String, dynamic>> _completedOrders = [];
   List<Map<String, dynamic>> _cancelledOrders = [];
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -107,14 +124,32 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     _loadOrdersByTab(0);
   }
 
+  // This method is called every time the widget rebuilds
+  @override
+  void didUpdateWidget(BuyerOrdersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload orders when widget updates
+    print('BuyerOrdersScreen: Widget updated, refreshing orders');
+    _loadOrdersByTab(_tabController.index);
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
 
+  // Public method to refresh orders from outside
+  void refreshOrders() {
+    print('🔄 BuyerOrdersScreen: Public refresh called');
+    _loadOrdersByTab(_tabController.index);
+  }
+
   Future<void> _loadOrdersByTab(int tabIndex) async {
-    if (_auth.currentUser == null) return;
+    if (_auth.currentUser == null) {
+      print('❌ BuyerOrdersScreen: No current user logged in');
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -122,6 +157,12 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
     try {
       final userId = _auth.currentUser!.uid;
+      print('');
+      print('=====================================');
+      print('🔍 LOADING ORDERS FOR TAB $tabIndex');
+      print('👤 User ID: $userId');
+      print('=====================================');
+      
       List<String> statuses;
 
       switch (tabIndex) {
@@ -138,9 +179,33 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
           statuses = ['pending'];
       }
 
+      print('📋 Looking for statuses: $statuses');
+
+      // FIRST: Check ALL orders in Firestore
+      print('');
+      print('--- CHECKING ALL ORDERS IN DATABASE ---');
+      final allOrdersSnapshot = await _firestore.collection('orders').get();
+      print('📦 Total orders in Firestore: ${allOrdersSnapshot.docs.length}');
+      
+      if (allOrdersSnapshot.docs.isNotEmpty) {
+        print('');
+        print('Sample of ALL orders:');
+        for (var doc in allOrdersSnapshot.docs.take(5)) {
+          final data = doc.data();
+          print('  • Order ${doc.id.substring(0, 15)}...');
+          print('    buyerId: ${data['buyerId']}');
+          print('    status: ${data['status']}');
+          print('    product: ${data['productName']}');
+          print('    timestamp: ${data['timestamp']}');
+        }
+      }
+
       List<Map<String, dynamic>> orders = [];
 
       for (String status in statuses) {
+        print('');
+        print('--- Querying status: "$status" ---');
+        
         // Query by buyerId (primary field)
         final buyerIdQuery = await _firestore
             .collection('orders')
@@ -148,10 +213,13 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             .where('status', isEqualTo: status)
             .get();
 
+        print('✅ Found ${buyerIdQuery.docs.length} orders with buyerId="$userId" AND status="$status"');
+
         for (var doc in buyerIdQuery.docs) {
           final orderData = doc.data();
           orderData['id'] = doc.id;
           orders.add(orderData);
+          print('  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
         }
 
         // Also query by userId (fallback for old orders)
@@ -162,19 +230,30 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
               .where('status', isEqualTo: status)
               .get();
 
+          print('✅ Found ${userIdQuery.docs.length} orders with userId="$userId" AND status="$status"');
+
           for (var doc in userIdQuery.docs) {
             // Check if this order is not already in the list (avoid duplicates)
             if (!orders.any((order) => order['id'] == doc.id)) {
               final orderData = doc.data();
               orderData['id'] = doc.id;
               orders.add(orderData);
+              print('  ➕ Added (via userId): ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
+            } else {
+              print('  ⏭️ Skipped (duplicate): ${doc.id.substring(0, 15)}...');
             }
           }
         } catch (e) {
-          print('Error querying by userId: $e');
+          print('⚠️ Error querying by userId: $e');
           // Continue even if this query fails
         }
       }
+
+      print('');
+      print('=====================================');
+      print('📊 TOTAL ORDERS FOUND: ${orders.length}');
+      print('=====================================');
+      print('');
 
       // Sort by timestamp
       orders.sort((a, b) {
@@ -273,36 +352,60 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             ),
             const SizedBox(height: 20),
 
-            // Order Details
-            Expanded(
-              child: SingleChildScrollView(
+            // Product Info
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildDetailCard('Product Information', [
-                      _buildDetailRow(
-                          'Product', order['productName'] ?? 'Unknown'),
-                      _buildDetailRow('Quantity',
-                          '${order['quantity'] ?? 1} ${order['unit'] ?? ''}'),
-                      _buildDetailRow('Price per unit',
-                          '₱${(order['price'] ?? 0).toStringAsFixed(2)}'),
-                      _buildDetailRow('Total Amount',
-                          '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}'),
-                    ]),
-                    _buildDetailCard('Delivery Information', [
-                      _buildDetailRow('Payment Method',
-                          order['paymentMethod'] ?? 'Cash on Delivery'),
-                      _buildDetailRow('Delivery Method',
-                          order['deliveryMethod'] ?? 'Pick-up'),
-                      if (order['meetupLocation'] != null)
-                        _buildDetailRow(
-                            'Meet-up Location', order['meetupLocation']),
-                      _buildDetailRow(
-                          'Order Date', _formatTimestamp(order['timestamp'])),
-                    ]),
+                    const Text(
+                      'Product Details',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                        'Product', order['productName'] ?? 'Unknown'),
+                    _buildDetailRow('Quantity',
+                        '${order['quantity'] ?? 1} ${order['unit'] ?? ''}'),
+                    _buildDetailRow('Price',
+                        '₱${(order['price'] ?? 0).toStringAsFixed(2)}'),
+                    _buildDetailRow('Total',
+                        '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}'),
                   ],
                 ),
               ),
             ),
+
+            // Order Info
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Order Information',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow('Payment Method',
+                        order['paymentMethod'] ?? 'Cash on Delivery'),
+                    _buildDetailRow('Delivery Method',
+                        order['deliveryMethod'] ?? 'Pick-up'),
+                    if (order['meetupLocation'] != null)
+                      _buildDetailRow(
+                          'Meet-up Location', order['meetupLocation']),
+                    _buildDetailRow(
+                        'Order Date', _formatTimestamp(order['timestamp'])),
+                  ],
+                ),
+              ),
+            ),
+
+            const Spacer(),
 
             // Action Buttons
             if (order['status'] == 'pending') ...[
@@ -351,29 +454,6 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     );
   }
 
-  Widget _buildDetailCard(String title, List<Widget> children) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -381,13 +461,15 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 100,
             child: Text(
               '$label:',
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
-          Expanded(child: Text(value)),
+          Expanded(
+            child: Text(value),
+          ),
         ],
       ),
     );
@@ -425,18 +507,16 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Orders'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        automaticallyImplyLeading: widget.showBackButton,
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,

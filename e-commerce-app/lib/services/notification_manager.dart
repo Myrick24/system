@@ -130,8 +130,8 @@ class NotificationManager {
   }) async {
     String title = isReceived ? '💰 Payment Received' : '💳 Payment Sent';
     String body = isReceived
-        ? 'You received a payment of \$${amount.toStringAsFixed(2)} for order #$orderId'
-        : 'Payment of \$${amount.toStringAsFixed(2)} sent for order #$orderId';
+        ? 'You received a payment of ₱${amount.toStringAsFixed(2)} for order #$orderId'
+        : 'Payment of ₱${amount.toStringAsFixed(2)} sent for order #$orderId';
 
     // Use direct local notification for immediate floating popup
     try {
@@ -283,7 +283,7 @@ class NotificationManager {
     String changeDirection = changePercent > 0 ? 'increased' : 'decreased';
 
     String body =
-        '$productName price has $changeDirection by ${changePercent.abs().toStringAsFixed(1)}% to \$${newPrice.toStringAsFixed(2)}';
+        '$productName price has $changeDirection by ${changePercent.abs().toStringAsFixed(1)}% to ₱${newPrice.toStringAsFixed(2)}';
 
     // Use direct local notification for immediate floating popup
     try {
@@ -357,7 +357,7 @@ class NotificationManager {
     required String orderId,
   }) async {
     String title = '🛒 New Purchase!';
-    String body = '$buyerName just purchased $quantity $unit of "$productName" (\$${totalAmount.toStringAsFixed(2)})';
+    String body = '$buyerName just purchased $quantity $unit of "$productName" (₱${totalAmount.toStringAsFixed(2)})';
 
     // Send push notification
     try {
@@ -401,7 +401,7 @@ class NotificationManager {
     required String orderId,
   }) async {
     String title = '✅ Order Confirmed!';
-    String body = 'Your order for $quantity $unit of "$productName" has been confirmed (\$${totalAmount.toStringAsFixed(2)})';
+    String body = 'Your order for $quantity $unit of "$productName" has been confirmed (₱${totalAmount.toStringAsFixed(2)})';
 
     // Send push notification
     try {
@@ -569,7 +569,7 @@ class NotificationManager {
     String body = 'Check out "$productName" from $sellerName in $category';
     
     if (price != null) {
-      body += ' - \$${price.toStringAsFixed(2)}';
+      body += ' - ₱${price.toStringAsFixed(2)}';
     }
 
     // Send push notification

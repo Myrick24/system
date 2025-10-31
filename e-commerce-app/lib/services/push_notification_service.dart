@@ -501,7 +501,7 @@ class PushNotificationService {
       body = '$customerName\'s order #$orderId: $status';
     }
     if (totalAmount != null) {
-      body += ' (\$${totalAmount.toStringAsFixed(2)})';
+      body += ' (₱${totalAmount.toStringAsFixed(2)})';
     }
 
     await sendTestNotification(
@@ -540,7 +540,7 @@ class PushNotificationService {
       body += ' in $category';
     }
     if (price != null) {
-      body += ' - \$${price.toStringAsFixed(2)}';
+      body += ' - ₱${price.toStringAsFixed(2)}';
     }
 
     await sendTestNotification(
@@ -595,8 +595,8 @@ class PushNotificationService {
   }) async {
     String title = isReceived ? '💰 Payment Received' : '💳 Payment Sent';
     String body = isReceived
-        ? 'Received \$${amount.toStringAsFixed(2)} for order #$orderId'
-        : 'Paid \$${amount.toStringAsFixed(2)} for order #$orderId';
+        ? 'Received ₱${amount.toStringAsFixed(2)} for order #$orderId'
+        : 'Paid ₱${amount.toStringAsFixed(2)} for order #$orderId';
 
     if (paymentMethod != null) {
       body += ' via $paymentMethod';
@@ -703,7 +703,7 @@ class PushNotificationService {
     required String buyerName,
   }) async {
     String title = '🛒 New Purchase!';
-    String body = '$buyerName bought $quantity $unit of "$productName" (\$${totalAmount.toStringAsFixed(2)})';
+    String body = '$buyerName bought $quantity $unit of "$productName" (₱${totalAmount.toStringAsFixed(2)})';
 
     await sendTestNotification(
       title: title,
@@ -739,7 +739,7 @@ class PushNotificationService {
     String? sellerName,
   }) async {
     String title = '✅ Order Confirmed!';
-    String body = 'Your order for $quantity $unit of "$productName" (\$${totalAmount.toStringAsFixed(2)})';
+    String body = 'Your order for $quantity $unit of "$productName" (₱${totalAmount.toStringAsFixed(2)})';
     
     if (sellerName != null) {
       body += ' from $sellerName';
@@ -867,7 +867,7 @@ class PushNotificationService {
     String emoji = changePercent > 0 ? '📈' : '📉';
 
     String title = '$emoji Market Price Update';
-    String body = '$productName $changeDirection by ${changePercent.abs().toStringAsFixed(1)}% to \$${newPrice.toStringAsFixed(2)}';
+    String body = '$productName $changeDirection by ${changePercent.abs().toStringAsFixed(1)}% to ₱${newPrice.toStringAsFixed(2)}';
 
     await sendTestNotification(
       title: title,

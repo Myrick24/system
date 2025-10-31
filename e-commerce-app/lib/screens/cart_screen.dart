@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
-import 'checkout_screen.dart';
+import 'cart_checkout_screen.dart';
 import 'buyer/product_details_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -999,11 +999,13 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
-    // Navigate to checkout screen where delivery and payment options will be handled
+    // Navigate to cart checkout screen where delivery and payment options will be handled
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const CheckoutScreen(),
+        builder: (context) => CartCheckoutScreen(
+          selectedItemIds: _selectedItems,
+        ),
       ),
     );
   }

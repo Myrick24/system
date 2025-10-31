@@ -170,13 +170,16 @@ class _SellerOrderManagementState extends State<SellerOrderManagement>
   Future<void> _updateOrderStatus(
       Map<String, dynamic> order, String newStatus) async {
     try {
+      // Get the current server timestamp
+      final now = DateTime.now();
+      
       await _firestore.collection('orders').doc(order['id']).update({
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
         'statusUpdates': FieldValue.arrayUnion([
           {
             'status': newStatus,
-            'timestamp': FieldValue.serverTimestamp(),
+            'timestamp': Timestamp.fromDate(now),
           }
         ]),
       });
@@ -210,6 +213,15 @@ class _SellerOrderManagementState extends State<SellerOrderManagement>
     }
   }
 
+  String _getOrderNumber(String orderId) {
+    // Extract a clean order number from the Firebase document ID
+    // Take the last 6 characters and convert to uppercase for readability
+    if (orderId.length > 6) {
+      return orderId.substring(orderId.length - 6).toUpperCase();
+    }
+    return orderId.toUpperCase();
+  }
+
   void _showOrderDetails(Map<String, dynamic> order) {
     showModalBottomSheet(
       context: context,
@@ -228,7 +240,7 @@ class _SellerOrderManagementState extends State<SellerOrderManagement>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Order #${order['id'].toString().substring(0, 8)}',
+                  'Order #${_getOrderNumber(order['id'])}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -548,7 +560,7 @@ class _SellerOrderManagementState extends State<SellerOrderManagement>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Order #${order['id'].toString().substring(0, 8)}',
+                          'Order #${_getOrderNumber(order['id'])}',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
