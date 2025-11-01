@@ -26,7 +26,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   // Form controllers
   final _fullNameController = TextEditingController();
 
-  final _gcashNumberController = TextEditingController();
   File? _governmentIdImage;
   bool _isLoading = false;
   // Image handling
@@ -49,7 +48,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _fullNameController.dispose();
     _contactNumberController.dispose();
     _vegetableListController.dispose();
-    _gcashNumberController.dispose();
     _sitioController.dispose();
     super.dispose();
   }
@@ -69,7 +67,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   // Load available cooperatives
   Future<void> _loadCooperatives() async {
     if (!mounted) return;
-    
+
     setState(() {
       _loadingCoops = true;
     });
@@ -77,14 +75,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     try {
       print('🔍 Loading cooperatives from Firestore...');
       print('📱 Current user: ${_auth.currentUser?.email ?? "NOT LOGGED IN"}');
-      
+
       // Query for users with role='cooperative' (single where to avoid composite index)
       final coopsSnapshot = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'cooperative')
           .get();
 
-      print('📊 Found ${coopsSnapshot.docs.length} users with role=cooperative');
+      print(
+          '📊 Found ${coopsSnapshot.docs.length} users with role=cooperative');
 
       if (coopsSnapshot.docs.isEmpty) {
         print('⚠️  No users found with role="cooperative"');
@@ -298,10 +297,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           'fullAddress': fullAddress,
         },
         'vegetableList': _vegetableListController.text.trim(),
-        'payoutInfo': {
-          'gcashNumber': _gcashNumberController.text.trim(),
-          'method': 'GCash',
-        },
         'email': userEmail,
         'governmentIdUrl': governmentIdUrl,
         'createdAt': FieldValue.serverTimestamp(),
@@ -779,38 +774,29 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       border: Border.all(color: Colors.grey.shade300),
                     ),
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: DropdownButtonFormField<String>(
                       value: _selectedCoopId,
+                      isExpanded: true,
                       decoration: InputDecoration(
                         labelText: 'Choose Cooperative*',
                         prefixIcon:
                             Icon(Icons.business, color: Colors.grey.shade600),
                         border: InputBorder.none,
                         labelStyle: TextStyle(color: Colors.grey.shade700),
+                        contentPadding: EdgeInsets.zero,
                       ),
                       items: _cooperatives.map((coop) {
                         return DropdownMenuItem<String>(
                           value: coop['id'] as String,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                coop['name'] as String,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              Text(
-                                coop['email'] as String,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            '${coop['name']} (${coop['email']})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
                           ),
                         );
                       }).toList(),
@@ -827,13 +813,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       },
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please select a cooperative to handle your application';
+                          return 'Please select a cooperative';
                         }
                         return null;
                       },
-                      hint: const Text(
-                          'Select a cooperative that will handle your products'),
-                      isExpanded: true,
+                      hint: const Text('Select a cooperative'),
                     ),
                   ),
                 if (_selectedCoopName != null && _selectedCoopName!.isNotEmpty)
@@ -862,70 +846,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ],
                     ),
                   ),
-                const SizedBox(height: 24),
-
-                // Payout Information Section
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.purple.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.payment,
-                        color: Colors.purple.shade700,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Payout Information',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.purple.shade800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // GCash Number
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: TextFormField(
-                    controller: _gcashNumberController,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(
-                      labelText: 'GCash Number*',
-                      hintText: '09XXXXXXXXX',
-                      prefixIcon: Icon(Icons.account_balance_wallet,
-                          color: Colors.grey.shade600),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      labelStyle: TextStyle(color: Colors.grey.shade700),
-                      hintStyle: TextStyle(color: Colors.grey.shade500),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your GCash number';
-                      }
-                      if (!RegExp(r'^09\d{9}$').hasMatch(value)) {
-                        return 'Please enter a valid GCash number (09XXXXXXXXX)';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
                 const SizedBox(height: 24),
 
                 // Government ID Upload Section
