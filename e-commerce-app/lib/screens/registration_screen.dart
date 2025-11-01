@@ -790,7 +790,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         return DropdownMenuItem<String>(
                           value: coop['id'] as String,
                           child: Text(
-                            '${coop['name']} (${coop['email']})',
+                            coop['name'] as String,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
