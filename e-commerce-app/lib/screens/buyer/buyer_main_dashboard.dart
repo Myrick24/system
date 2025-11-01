@@ -119,9 +119,6 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   bool get wantKeepAlive => true;
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -247,31 +244,6 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       }
 
       print('=== TOTAL orders found: ${orders.length} ===');
-
-          print('✅ Found ${userIdQuery.docs.length} orders with userId="$userId" AND status="$status"');
-
-          for (var doc in userIdQuery.docs) {
-            // Check if this order is not already in the list (avoid duplicates)
-            if (!orders.any((order) => order['id'] == doc.id)) {
-              final orderData = doc.data();
-              orderData['id'] = doc.id;
-              orders.add(orderData);
-              print('  ➕ Added (via userId): ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
-            } else {
-              print('  ⏭️ Skipped (duplicate): ${doc.id.substring(0, 15)}...');
-            }
-          }
-        } catch (e) {
-          print('⚠️ Error querying by userId: $e');
-          // Continue even if this query fails
-        }
-      }
-
-      print('');
-      print('=====================================');
-      print('📊 TOTAL ORDERS FOUND: ${orders.length}');
-      print('=====================================');
-      print('');
 
       // Sort by timestamp
       orders.sort((a, b) {
