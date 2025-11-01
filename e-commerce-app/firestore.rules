@@ -22,6 +22,9 @@ service cloud.firestore {
       // Any authenticated user can read other users
       allow read: if request.auth != null;
       
+      // Unauthenticated users can read cooperatives only (for seller registration)
+      allow read: if request.auth == null && resource.data.role == 'cooperative';
+      
       // Self create
       allow create: if request.auth != null && request.auth.uid == userId;
       

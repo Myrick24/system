@@ -58,38 +58,74 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   void initState() {
     super.initState();
     _fillCurrentUserInfo();
-    _loadCooperatives();
+    // Load cooperatives with a small delay to ensure widget is mounted
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _loadCooperatives();
+      }
+    });
   }
 
   // Load available cooperatives
   Future<void> _loadCooperatives() async {
+    if (!mounted) return;
+    
     setState(() {
       _loadingCoops = true;
     });
 
     try {
+      print('🔍 Loading cooperatives from Firestore...');
+      print('📱 Current user: ${_auth.currentUser?.email ?? "NOT LOGGED IN"}');
+      
+      // Query for users with role='cooperative' (single where to avoid composite index)
       final coopsSnapshot = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'cooperative')
-          .where('status', isEqualTo: 'active')
           .get();
 
-      setState(() {
-        _cooperatives = coopsSnapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'id': doc.id,
-            'name': data['name'] ?? 'Unnamed Cooperative',
-            'email': data['email'] ?? '',
-          };
-        }).toList();
-        _loadingCoops = false;
-      });
+      print('📊 Found ${coopsSnapshot.docs.length} users with role=cooperative');
+
+      if (coopsSnapshot.docs.isEmpty) {
+        print('⚠️  No users found with role="cooperative"');
+        print('   Possible issues:');
+        print('   1. No cooperatives created in Firestore');
+        print('   2. Cooperatives have different role value');
+        print('   3. Firestore security rules blocking query');
+      }
+
+      // Filter for active cooperatives in-memory
+      final activeCoops = coopsSnapshot.docs.where((doc) {
+        final data = doc.data();
+        final status = data['status'] as String?;
+        final name = data['name'] ?? 'Unknown';
+        print('   • Cooperative: $name | Status: "$status" | ID: ${doc.id}');
+        return status == 'active' || status == null || status.isEmpty;
+      }).toList();
+
+      print('✅ ${activeCoops.length} active cooperatives ready to use');
+
+      if (mounted) {
+        setState(() {
+          _cooperatives = activeCoops.map((doc) {
+            final data = doc.data();
+            return {
+              'id': doc.id,
+              'name': data['name'] ?? 'Unnamed Cooperative',
+              'email': data['email'] ?? '',
+            };
+          }).toList();
+          _loadingCoops = false;
+        });
+      }
     } catch (e) {
-      print('Error loading cooperatives: $e');
-      setState(() {
-        _loadingCoops = false;
-      });
+      print('❌ Error loading cooperatives: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
+      if (mounted) {
+        setState(() {
+          _loadingCoops = false;
+        });
+      }
     }
   }
 
@@ -683,7 +719,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   const Center(
                     child: Padding(
                       padding: EdgeInsets.all(16.0),
-                      child: CircularProgressIndicator(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text('Loading cooperatives...'),
+                        ],
+                      ),
                     ),
                   )
                 else if (_cooperatives.isEmpty)
@@ -694,18 +737,35 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.orange.shade300),
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        Icon(Icons.warning_amber,
-                            color: Colors.orange.shade700),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'No active cooperatives available at the moment. Please try again later.',
-                            style: TextStyle(
-                              color: Colors.orange.shade900,
-                              fontSize: 14,
+                        Row(
+                          children: [
+                            Icon(Icons.warning_amber,
+                                color: Colors.orange.shade700),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'No active cooperatives available. Contact admin to create one.',
+                                style: TextStyle(
+                                  color: Colors.orange.shade900,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _loadCooperatives,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade700,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                          ),
+                          child: const Text(
+                            'Retry Loading',
+                            style: TextStyle(color: Colors.white),
                           ),
                         ),
                       ],
