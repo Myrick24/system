@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, Table, Button, Tag, Space, Tabs, message, Modal, Image, Input } from 'antd';
 import { 
   CheckOutlined, 
   CloseOutlined, 
   DeleteOutlined,
-  ReloadOutlined,
-  EyeOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
 import { ProductService } from '../services/productService';
 import { Product } from '../types';
@@ -22,13 +21,11 @@ export const ProductManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const productService = new ProductService();
+  
+  // Memoize productService to avoid creating new instances
+  const productService = React.useMemo(() => new ProductService(), []);
 
-  useEffect(() => {
-    loadProductData();
-  }, []);
-
-  const loadProductData = async () => {
+  const loadProductData = useCallback(async () => {
     try {
       setLoading(true);
       const [all, pending, approved, rejected] = await Promise.all([
@@ -48,7 +45,11 @@ export const ProductManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [productService]);
+
+  useEffect(() => {
+    loadProductData();
+  }, [loadProductData]);
 
   const handleApproveProduct = async (productId: string, productName: string) => {
     try {
@@ -121,6 +122,8 @@ export const ProductManagement: React.FC = () => {
   };
 
   const handleRowClick = (record: Product) => {
+    console.log('Product record clicked:', record);
+    console.log('Images in product:', record.images);
     setSelectedProduct(record);
     setDetailModalVisible(true);
   };
@@ -184,9 +187,35 @@ export const ProductManagement: React.FC = () => {
     },
     {
       title: 'Inventory',
-      dataIndex: 'inventory',
-      key: 'inventory',
-      sorter: (a: Product, b: Product) => a.inventory - b.inventory
+      dataIndex: 'currentStock',
+      key: 'currentStock',
+      render: (currentStock: number | undefined, record: Product) => {
+        // Handle cases where currentStock is undefined or null
+        const stockCount = currentStock ?? record.inventory ?? 0;
+        console.log('Rendering inventory - Value:', stockCount, 'currentStock:', currentStock, 'inventory:', record.inventory);
+        
+        let color = 'green';
+        let status = 'In Stock';
+        
+        if (stockCount <= 0) {
+          color = 'red';
+          status = 'Out of Stock';
+        } else if (stockCount < 5) {
+          color = 'orange';
+          status = 'Low Stock';
+        } else if (stockCount >= 100) {
+          color = 'blue';
+          status = 'Well Stocked';
+        }
+        
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Tag color={color}>{status}</Tag>
+            <span style={{ fontSize: '12px', color: '#666' }}>({stockCount} units)</span>
+          </div>
+        );
+      },
+      sorter: (a: Product, b: Product) => (a.currentStock ?? a.inventory ?? 0) - (b.currentStock ?? b.inventory ?? 0)
     },
     {
       title: 'Seller',
@@ -211,12 +240,15 @@ export const ProductManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       render: (record: Product) => (
-        <Space>
+        <Space onClick={(e) => e.stopPropagation()}>
           <Button
             type="primary"
             icon={<CheckOutlined />}
             size="small"
-            onClick={() => handleApproveProduct(record.id, record.name)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleApproveProduct(record.id, record.name);
+            }}
           >
             Approve
           </Button>
@@ -224,7 +256,10 @@ export const ProductManagement: React.FC = () => {
             danger
             icon={<CloseOutlined />}
             size="small"
-            onClick={() => handleRejectProduct(record.id, record.name)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRejectProduct(record.id, record.name);
+            }}
           >
             Reject
           </Button>
@@ -239,12 +274,15 @@ export const ProductManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       render: (record: Product) => (
-        <Space>
+        <Space onClick={(e) => e.stopPropagation()}>
           <Button
             danger
             icon={<DeleteOutlined />}
             size="small"
-            onClick={() => handleDeleteProduct(record.id, record.name)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteProduct(record.id, record.name);
+            }}
           >
             Delete
           </Button>
@@ -330,9 +368,9 @@ export const ProductManagement: React.FC = () => {
         </Tabs>
       </Card>
 
-      {/* Product Details Modal */}
+      {/* Product Details Modal - Modern Redesign */}
       <Modal
-        title="Product Details"
+        title={null}
         open={detailModalVisible}
         onCancel={handleCloseDetailModal}
         footer={[
@@ -385,115 +423,335 @@ export const ProductManagement: React.FC = () => {
             </Button>
           )
         ]}
-        width={800}
+        width={1100}
+        bodyStyle={{ padding: '32px' }}
       >
         {selectedProduct && (
-          <div style={{ padding: '16px 0' }}>
-            {/* Product Images */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3 style={{ marginBottom: '12px', fontSize: '16px', fontWeight: 600 }}>Product Images</h3>
-              {(() => {
-                // Support both 'images' array and 'imageUrl' string
-                const productImages = selectedProduct.images || 
-                  (selectedProduct.imageUrl ? [selectedProduct.imageUrl] : []);
-                
-                return productImages.length > 0 ? (
-                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                    <Image.PreviewGroup>
-                      {productImages.map((image, index) => (
-                        <Image
-                          key={index}
-                          width={150}
-                          height={150}
-                          src={image}
-                          style={{ objectFit: 'cover', borderRadius: '8px' }}
-                          fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgeHANwDrkl1AuO+pmgAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAwqADAAQAAAABAAAAwwAAAAD9b/HnAAAHlklEQVR4Ae3dP3Ik1RnG4W+FgYxN"
-                        />
-                      ))}
-                    </Image.PreviewGroup>
-                  </div>
-                ) : (
-                  <div style={{ 
-                    width: '100%', 
-                    height: 150, 
-                    backgroundColor: '#f0f0f0', 
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#999'
-                  }}>
-                    No images available
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Product Information */}
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: '1fr 1fr', 
-              gap: '16px',
-              marginBottom: '24px' 
+          <div style={{ padding: '0' }}>
+            {/* Hero Section with Title and Status */}
+            <div style={{
+              marginBottom: '32px',
+              paddingBottom: '24px',
+              borderBottom: '2px solid #f0f0f0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start'
             }}>
               <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Product Name</p>
-                <p style={{ margin: 0, fontSize: '16px', fontWeight: 500 }}>{selectedProduct.name}</p>
+                <h1 style={{ 
+                  margin: '0 0 8px 0',
+                  fontSize: '28px', 
+                  fontWeight: 700, 
+                  color: '#1f1f1f',
+                  lineHeight: '1.2'
+                }}>
+                  {selectedProduct.name}
+                </h1>
+                <p style={{ 
+                  margin: 0,
+                  fontSize: '13px',
+                  color: '#8c8c8c',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Product ID: {selectedProduct.id}
+                </p>
               </div>
+              <Tag 
+                color={getStatusColor(selectedProduct.status)} 
+                style={{ 
+                  fontSize: '12px', 
+                  padding: '8px 16px', 
+                  margin: 0,
+                  fontWeight: 600,
+                  textTransform: 'uppercase'
+                }}
+              >
+                {selectedProduct.status}
+              </Tag>
+            </div>
+
+            {/* Main Content Grid - 3 Columns */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px', marginBottom: '32px' }}>
               
-              <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Category</p>
-                <Tag color="blue" style={{ margin: 0 }}>{selectedProduct.category}</Tag>
+              {/* Gallery Card */}
+              <div style={{
+                gridColumn: '1 / 2',
+                backgroundColor: '#fafafa',
+                borderRadius: '12px',
+                padding: '24px',
+                border: '1px solid #e8e8e8',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 16px 0', 
+                  fontSize: '12px', 
+                  fontWeight: 700, 
+                  color: '#595959',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  📸 Gallery
+                </h3>
+                {(() => {
+                  let productImages: string[] = [];
+                  
+                  if (Array.isArray(selectedProduct.images) && selectedProduct.images.length > 0) {
+                    productImages = selectedProduct.images;
+                  } else if (Array.isArray(selectedProduct.imageUrls) && selectedProduct.imageUrls.length > 0) {
+                    productImages = selectedProduct.imageUrls;
+                  } else if (selectedProduct.imageUrl) {
+                    productImages = [selectedProduct.imageUrl];
+                  }
+                  
+                  return productImages.length > 0 ? (
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flex: 1, alignContent: 'flex-start' }}>
+                      <Image.PreviewGroup>
+                        {productImages.map((image, index) => (
+                          <Image
+                            key={index}
+                            width={100}
+                            height={100}
+                            src={image}
+                            style={{ 
+                              objectFit: 'cover', 
+                              borderRadius: '8px', 
+                              cursor: 'pointer', 
+                              border: '2px solid #d9d9d9',
+                              transition: 'all 0.3s ease'
+                            }}
+                            fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMIAAADDCAYAAADQvc6UAAABRWlDQ1BJQ0MgUHJvZmlsZQAAKJFjYGASSSwoyGFhYGDIzSspCnJ3UoiIjFJgf8LAwSDCIMogwMCcmFxc4BgQ4ANUwgCjUcG3awyMIPqyLsis7PPOq3QdDFcvjV3jOD1boQVTPQrgSkktTgbSf4A4LbmgqISBgTEFyFYuLykAsTuAbJEioKOA7DkgdjqEvQHEToKwj4DVhAQ5A9k3gGyB5IxEoBmML4BsnSQk8XQkNtReEOBxcfXxUQg1Mjc0dyHgXNJBSWpFCYh2zi+oLMpMzyhRcASGUqqCZ16yno6CkYGRAQMDKMwhqj/fAIcloxgHQqxAjIHBEugw5sUIsSQpBobtQPdLciLEVJYzMPBHMDBsayhILEqEO4DxG0txmrERhM29nYGBddr//5/DGRjYNRkY/l7////39v///y4Dmn+LgeHANwDrkl1AuO+pmgAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAwqADAAQAAAABAAAAwwAAAAD9b/HnAAAHlklEQVR4Ae3dP3Ik1RnG4W+FgYxN"
+                          />
+                        ))}
+                      </Image.PreviewGroup>
+                    </div>
+                  ) : (
+                    <div style={{ 
+                      width: '100%', 
+                      height: 150, 
+                      backgroundColor: '#fff',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#999',
+                      border: '2px dashed #e8e8e8',
+                      fontSize: '12px'
+                    }}>
+                      No images
+                    </div>
+                  );
+                })()}
               </div>
 
-              <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Price</p>
-                <p style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#52c41a' }}>
-                  ₱{selectedProduct.price.toFixed(2)}
-                </p>
+              {/* Pricing & Stock Card */}
+              <div style={{
+                gridColumn: '2 / 3',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
+              }}>
+                {/* Price Card */}
+                <div style={{
+                  backgroundColor: '#f6ffed',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  border: '2px solid #b7eb8f'
+                }}>
+                  <p style={{ 
+                    margin: '0 0 8px 0', 
+                    fontSize: '11px', 
+                    fontWeight: 700, 
+                    color: '#595959', 
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    💰 Price
+                  </p>
+                  <p style={{ 
+                    margin: 0, 
+                    fontSize: '32px', 
+                    fontWeight: 800, 
+                    color: '#52c41a',
+                    lineHeight: '1'
+                  }}>
+                    ₱{selectedProduct.price.toFixed(2)}
+                  </p>
+                </div>
+
+                {/* Stock Card */}
+                <div style={{
+                  backgroundColor: '#e6f7ff',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  border: '2px solid #91d5ff'
+                }}>
+                  <p style={{ 
+                    margin: '0 0 12px 0', 
+                    fontSize: '11px', 
+                    fontWeight: 700, 
+                    color: '#595959',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📦 Inventory Status
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {(() => {
+                      const stockCount = selectedProduct?.currentStock ?? selectedProduct?.inventory ?? 0;
+                      let color = 'green';
+                      let status = 'In Stock';
+                      let bgColor = '#f6ffed';
+                      let borderColor = '#b7eb8f';
+                      
+                      if (stockCount <= 0) {
+                        color = 'red';
+                        status = 'Out of Stock';
+                        bgColor = '#fff1f0';
+                        borderColor = '#ffccc7';
+                      } else if (stockCount < 5) {
+                        color = 'orange';
+                        status = 'Low Stock';
+                        bgColor = '#fffbe6';
+                        borderColor = '#ffe58f';
+                      } else if (stockCount >= 100) {
+                        color = 'blue';
+                        status = 'Well Stocked';
+                        bgColor = '#e6f7ff';
+                        borderColor = '#91d5ff';
+                      }
+                      
+                      return (
+                        <>
+                          <Tag color={color} style={{ margin: 0, fontSize: '11px', fontWeight: 600 }}>
+                            {status}
+                          </Tag>
+                          <p style={{ 
+                            margin: 0, 
+                            fontSize: '20px', 
+                            fontWeight: 700, 
+                            color: '#1f1f1f'
+                          }}>
+                            {stockCount}
+                          </p>
+                          <p style={{ 
+                            margin: 0, 
+                            fontSize: '12px', 
+                            color: '#8c8c8c'
+                          }}>
+                            units available
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Inventory</p>
-                <p style={{ margin: 0, fontSize: '16px', fontWeight: 500 }}>
-                  {selectedProduct.inventory} units
-                </p>
-              </div>
+              {/* Seller Info & Category Card */}
+              <div style={{
+                gridColumn: '3 / 4',
+                backgroundColor: '#f5f5f5',
+                borderRadius: '12px',
+                padding: '20px',
+                border: '1px solid #e8e8e8',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
+              }}>
+                <div>
+                  <p style={{ 
+                    margin: '0 0 8px 0', 
+                    fontSize: '11px', 
+                    fontWeight: 700, 
+                    color: '#8c8c8c',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    👤 Seller
+                  </p>
+                  <p style={{ 
+                    margin: 0, 
+                    fontSize: '16px', 
+                    fontWeight: 600, 
+                    color: '#1f1f1f'
+                  }}>
+                    {selectedProduct.sellerName}
+                  </p>
+                </div>
 
-              <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Seller</p>
-                <p style={{ margin: 0, fontSize: '16px', fontWeight: 500 }}>{selectedProduct.sellerName}</p>
-              </div>
+                <div style={{ borderTop: '1px solid #e8e8e8', paddingTop: '16px' }}>
+                  <p style={{ 
+                    margin: '0 0 8px 0', 
+                    fontSize: '11px', 
+                    fontWeight: 700, 
+                    color: '#8c8c8c',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    🏷️ Category
+                  </p>
+                  <Tag color="blue" style={{ margin: 0, fontSize: '12px', fontWeight: 600 }}>
+                    {selectedProduct.category}
+                  </Tag>
+                </div>
 
-              <div>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Status</p>
-                <Tag color={getStatusColor(selectedProduct.status)} style={{ margin: 0 }}>
-                  {selectedProduct.status.toUpperCase()}
-                </Tag>
-              </div>
-
-              <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ margin: '8px 0', color: '#666', fontSize: '14px' }}>Created At</p>
-                <p style={{ margin: 0, fontSize: '16px' }}>
-                  {selectedProduct.createdAt?.toDate ? 
-                    new Date(selectedProduct.createdAt.toDate()).toLocaleString() : 
-                    'N/A'}
-                </p>
+                <div style={{ borderTop: '1px solid #e8e8e8', paddingTop: '16px' }}>
+                  <p style={{ 
+                    margin: '0 0 8px 0', 
+                    fontSize: '11px', 
+                    fontWeight: 700, 
+                    color: '#8c8c8c',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    📅 Created
+                  </p>
+                  <p style={{ 
+                    margin: 0, 
+                    fontSize: '12px', 
+                    color: '#1f1f1f'
+                  }}>
+                    {selectedProduct.createdAt?.toDate ? 
+                      new Date(selectedProduct.createdAt.toDate()).toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric'
+                      }) : 
+                      'N/A'}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Product Description */}
-            <div>
-              <h3 style={{ marginBottom: '12px', fontSize: '16px', fontWeight: 600 }}>Description</h3>
-              <div style={{ 
-                padding: '12px', 
-                backgroundColor: '#f5f5f5', 
-                borderRadius: '8px',
-                fontSize: '14px',
-                lineHeight: '1.6'
+            {/* Description Section - Full Width */}
+            <div style={{
+              backgroundColor: '#fafafa',
+              borderRadius: '12px',
+              padding: '24px',
+              border: '1px solid #e8e8e8'
+            }}>
+              <h3 style={{ 
+                margin: '0 0 16px 0', 
+                fontSize: '12px', 
+                fontWeight: 700, 
+                color: '#595959',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                📝 Product Description
+              </h3>
+              <p style={{ 
+                margin: 0, 
+                fontSize: '14px', 
+                lineHeight: '1.8',
+                color: '#1f1f1f',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
               }}>
                 {selectedProduct.description || 'No description available'}
-              </div>
+              </p>
             </div>
           </div>
         )}

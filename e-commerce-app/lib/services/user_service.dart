@@ -13,7 +13,8 @@ class UserService {
   // Get user data from Firestore
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     try {
-      DocumentSnapshot doc = await _firestore.collection('users').doc(uid).get();
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(uid).get();
       return doc.exists ? doc.data() as Map<String, dynamic> : null;
     } catch (e) {
       print('Error getting user data: $e');
@@ -26,10 +27,11 @@ class UserService {
     try {
       User? user = _auth.currentUser;
       if (user == null) return false;
-      
-      DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
+
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(user.uid).get();
       if (!doc.exists) return false;
-      
+
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
       return data['role'] == 'admin';
     } catch (e) {
@@ -37,34 +39,36 @@ class UserService {
       return false;
     }
   }
+
   // Get all users sorted by ID, then by role (buyers first, then sellers)
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     try {
       QuerySnapshot querySnapshot = await _firestore.collection('users').get();
-      
+
       // Convert to list and add document ID
       List<Map<String, dynamic>> users = querySnapshot.docs.map((doc) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
         return data;
       }).toList();
-      
+
       // First sort by ID
       users.sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
-      
+
       // Then sort by role (buyers first, then sellers)
       users.sort((a, b) {
         String roleA = a['role'] as String? ?? '';
         String roleB = b['role'] as String? ?? '';
         return roleA.compareTo(roleB);
       });
-      
+
       return users;
     } catch (e) {
       print('Error getting all users: $e');
       return [];
     }
   }
+
   // Get users by role with sorting by ID
   Future<List<Map<String, dynamic>>> getUsersByRole(String role) async {
     try {
@@ -72,23 +76,24 @@ class UserService {
           .collection('users')
           .where('role', isEqualTo: role)
           .get();
-      
+
       // Convert to list, add ID, then sort by ID
       List<Map<String, dynamic>> users = querySnapshot.docs.map((doc) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
         return data;
       }).toList();
-      
+
       // Sort the list by ID
       users.sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
-      
+
       return users;
     } catch (e) {
       print('Error getting users by role: $e');
       return [];
     }
-  }  // Get pending sellers sorted by ID
+  } // Get pending sellers sorted by ID
+
   Future<List<Map<String, dynamic>>> getPendingSellers() async {
     try {
       // First get all users with role 'seller' and status 'pending'
@@ -97,24 +102,25 @@ class UserService {
           .where('role', isEqualTo: 'seller')
           .where('status', isEqualTo: 'pending')
           .get();
-      
+
       // Convert to list, add ID, then sort
       List<Map<String, dynamic>> pendingSellers = querySnapshot.docs.map((doc) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
         return data;
       }).toList();
-      
+
       // Sort by ID
-      pendingSellers.sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
-      
+      pendingSellers
+          .sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
+
       return pendingSellers;
     } catch (e) {
       print('Error getting pending sellers: $e');
       return [];
     }
   }
-  
+
   // Approve seller
   Future<bool> approveSeller(String userId) async {
     try {
@@ -122,27 +128,31 @@ class UserService {
       await _firestore.collection('users').doc(userId).update({
         'status': 'approved',
       });
-      
+
       // Find the associated seller document by getting the user's email first
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userId).get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(userId).get();
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         String? userEmail = userData['email'];
         String userName = userData['name'] ?? userData['fullName'] ?? 'Seller';
-        
+
         if (userEmail != null) {
           QuerySnapshot sellerQuery = await _firestore
               .collection('sellers')
               .where('email', isEqualTo: userEmail)
               .limit(1)
               .get();
-              
+
           if (sellerQuery.docs.isNotEmpty) {
             // Update the seller status to 'approved'
-            await _firestore.collection('sellers').doc(sellerQuery.docs.first.id).update({
+            await _firestore
+                .collection('sellers')
+                .doc(sellerQuery.docs.first.id)
+                .update({
               'status': 'approved',
             });
-            
+
             // Send notification using NotificationManager
             await NotificationManager.sendSellerRegistrationNotification(
               userId: userId,
@@ -152,14 +162,14 @@ class UserService {
           }
         }
       }
-      
+
       return true;
     } catch (e) {
       print('Error approving seller: $e');
       return false;
     }
   }
-  
+
   // Reject seller
   Future<bool> rejectSeller(String userId) async {
     try {
@@ -167,32 +177,37 @@ class UserService {
       await _firestore.collection('users').doc(userId).update({
         'status': 'rejected',
       });
-      
+
       // Find the associated seller document by getting the user's email first
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(userId).get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(userId).get();
       if (userDoc.exists) {
         Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
         String? userEmail = userData['email'];
-        
+
         if (userEmail != null) {
           QuerySnapshot sellerQuery = await _firestore
               .collection('sellers')
               .where('email', isEqualTo: userEmail)
               .limit(1)
               .get();
-              
+
           if (sellerQuery.docs.isNotEmpty) {
             // Update the seller status to 'rejected'
-            await _firestore.collection('sellers').doc(sellerQuery.docs.first.id).update({
+            await _firestore
+                .collection('sellers')
+                .doc(sellerQuery.docs.first.id)
+                .update({
               'status': 'rejected',
             });
-            
+
             // Send notification to the seller
             final notificationService = NotificationService();
             await notificationService.sendNotificationToUser(
               userId: userId,
               title: 'Seller Application Status',
-              message: 'Your seller account application has been reviewed. Unfortunately, we are unable to approve it at this time. Please contact support for more information.',
+              message:
+                  'Your seller account application has been reviewed. Unfortunately, we are unable to approve it at this time. Please contact support for more information.',
               type: 'seller_rejection',
               additionalData: {
                 'status': 'rejected',
@@ -202,7 +217,7 @@ class UserService {
           }
         }
       }
-      
+
       return true;
     } catch (e) {
       print('Error rejecting seller: $e');
@@ -221,17 +236,93 @@ class UserService {
       print('Error updating user status: $e');
       return false;
     }
-  }  // Get user stats
+  }
+
+  // Delete user account
+  Future<bool> deleteUser(String userId) async {
+    try {
+      // Get user data first
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        print('User document not found');
+        return false;
+      }
+
+      Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+      String? userEmail = userData['email'];
+      String? userRole = userData['role'];
+
+      // If user is a seller, delete their seller document too
+      if (userRole == 'seller' && userEmail != null) {
+        QuerySnapshot sellerQuery = await _firestore
+            .collection('sellers')
+            .where('email', isEqualTo: userEmail)
+            .limit(1)
+            .get();
+
+        if (sellerQuery.docs.isNotEmpty) {
+          await _firestore
+              .collection('sellers')
+              .doc(sellerQuery.docs.first.id)
+              .delete();
+        }
+
+        // Delete all products associated with this seller
+        QuerySnapshot productsQuery = await _firestore
+            .collection('products')
+            .where('sellerId', isEqualTo: userId)
+            .get();
+
+        for (var doc in productsQuery.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+      // Delete user's orders (or mark them as deleted)
+      QuerySnapshot ordersQuery = await _firestore
+          .collection('orders')
+          .where('buyerId', isEqualTo: userId)
+          .get();
+
+      for (var doc in ordersQuery.docs) {
+        await doc.reference
+            .update({'userDeleted': true, 'buyerName': 'Deleted User'});
+      }
+
+      // Delete user's notifications
+      QuerySnapshot notificationsQuery = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (var doc in notificationsQuery.docs) {
+        await doc.reference.delete();
+      }
+
+      // Finally, delete the user document
+      await _firestore.collection('users').doc(userId).delete();
+
+      print('User $userId deleted successfully');
+      return true;
+    } catch (e) {
+      print('Error deleting user: $e');
+      return false;
+    }
+  }
+
+  // Get user stats
   Future<Map<String, int>> getUserStats() async {
     try {
-      AggregateQuerySnapshot totalSnapshot = await _firestore.collection('users').count().get();
+      AggregateQuerySnapshot totalSnapshot =
+          await _firestore.collection('users').count().get();
       AggregateQuerySnapshot approvedSnapshot = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'seller')
           .where('status', isEqualTo: 'approved')
           .count()
           .get();
-      
+
       // Add query for pending sellers
       AggregateQuerySnapshot pendingSnapshot = await _firestore
           .collection('users')
@@ -239,12 +330,12 @@ class UserService {
           .where('status', isEqualTo: 'pending')
           .count()
           .get();
-      
+
       // Handle potentially nullable counts with null-aware operators
       int totalUsers = totalSnapshot.count ?? 0;
       int approvedSellers = approvedSnapshot.count ?? 0;
       int pendingSellers = pendingSnapshot.count ?? 0;
-      
+
       return {
         'totalUsers': totalUsers,
         'approvedSellers': approvedSellers,
@@ -264,31 +355,32 @@ class UserService {
     try {
       // Get current date
       DateTime now = DateTime.now();
-      
+
       // Create a map to store data for the last 7 days
       Map<String, int> weeklyActivity = {};
-      
+
       // Populate map with last 7 days (including today)
       for (int i = 6; i >= 0; i--) {
         DateTime date = now.subtract(Duration(days: i));
-        String dateString = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+        String dateString =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
         weeklyActivity[dateString] = 0;
       }
-        // Query users created in the last 7 days
+      // Query users created in the last 7 days
       DateTime sevenDaysAgo = now.subtract(const Duration(days: 7));
       String sevenDaysAgoStr = sevenDaysAgo.toIso8601String();
-      
+
       QuerySnapshot querySnapshot = await _firestore
           .collection('users')
           .where('createdAt', isGreaterThanOrEqualTo: sevenDaysAgoStr)
           .get();
-          
+
       // Count users by day
       for (var doc in querySnapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
         if (data['createdAt'] != null) {
           DateTime? createdAt;
-          
+
           // Handle different timestamp formats
           if (data['createdAt'] is String) {
             try {
@@ -297,20 +389,24 @@ class UserService {
               print('Error parsing user date string: ${data['createdAt']}');
               continue;
             }
-          } else if (data['createdAt'].runtimeType.toString().contains('Timestamp')) {
+          } else if (data['createdAt']
+              .runtimeType
+              .toString()
+              .contains('Timestamp')) {
             // Firestore Timestamp
             createdAt = data['createdAt'].toDate();
           }
-          
+
           if (createdAt != null) {
-            String dateString = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+            String dateString =
+                '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
             if (weeklyActivity.containsKey(dateString)) {
               weeklyActivity[dateString] = weeklyActivity[dateString]! + 1;
             }
           }
         }
       }
-      
+
       return weeklyActivity;
     } catch (e) {
       print('Error getting weekly user activity: $e');
@@ -326,7 +422,7 @@ class UserService {
         'role': 'seller',
         'status': 'pending',
       });
-      
+
       return true;
     } catch (e) {
       print('Error updating user to seller: $e');
@@ -335,7 +431,8 @@ class UserService {
   }
 
   // Restore admin account - creates user document for existing Firebase Auth admin
-  Future<bool> restoreAdminAccount(String adminEmail, String adminPassword) async {
+  Future<bool> restoreAdminAccount(
+      String adminEmail, String adminPassword) async {
     try {
       // Sign in with the admin credentials
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
@@ -346,8 +443,9 @@ class UserService {
       User? user = userCredential.user;
       if (user != null) {
         // Check if user document already exists
-        DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
-        
+        DocumentSnapshot userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+
         if (userDoc.exists) {
           print('Admin user document already exists');
           return true;
@@ -374,11 +472,13 @@ class UserService {
   }
 
   // Create admin user document for existing auth account by UID
-  Future<bool> createAdminUserDocument(String uid, String email, String name) async {
+  Future<bool> createAdminUserDocument(
+      String uid, String email, String name) async {
     try {
       // Check if user document already exists
-      DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
-      
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(uid).get();
+
       if (userDoc.exists) {
         print('User document already exists');
         return true;

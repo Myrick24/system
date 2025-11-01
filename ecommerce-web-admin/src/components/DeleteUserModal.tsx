@@ -44,20 +44,69 @@ export const DeleteUserModal: React.FC<DeleteUserModalProps> = ({
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [dangerConfirmChecked, setDangerConfirmChecked] = useState(false);
 
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
-      if (!user) return;
-
-      await onConfirm(user.id, deleteType, values.reason);
-      
-      // Reset form
+  // Reset form when modal visibility changes
+  React.useEffect(() => {
+    if (!visible) {
       form.resetFields();
       setConfirmChecked(false);
       setDangerConfirmChecked(false);
       setDeleteType('soft');
+    }
+  }, [visible, form]);
+
+  const handleCancel = () => {
+    form.resetFields();
+    setConfirmChecked(false);
+    setDangerConfirmChecked(false);
+    setDeleteType('soft');
+    onCancel();
+  };
+
+  const handleSubmit = async () => {
+    console.log('=== DELETE MODAL SUBMIT ===');
+    console.log('User to delete:', user);
+    console.log('Delete type:', deleteType);
+    console.log('confirmChecked:', confirmChecked);
+    console.log('dangerConfirmChecked:', dangerConfirmChecked);
+    
+    // Validate checkboxes first
+    if (!confirmChecked) {
+      console.error('First confirmation checkbox not checked');
+      return;
+    }
+    
+    if (deleteType === 'hard' && !dangerConfirmChecked) {
+      console.error('Danger confirmation checkbox not checked for hard delete');
+      return;
+    }
+    
+    try {
+      const values = await form.validateFields();
+      console.log('Form values:', values);
+      
+      if (!user) {
+        console.error('No user selected');
+        return;
+      }
+
+      console.log('Calling onConfirm callback with:', { userId: user.id, deleteType, reason: values.reason });
+      await onConfirm(user.id, deleteType, values.reason);
+      console.log('onConfirm callback completed successfully');
+      
+      // Reset form on success
+      form.resetFields();
+      setConfirmChecked(false);
+      setDangerConfirmChecked(false);
+      setDeleteType('soft');
+      console.log('Form reset completed');
     } catch (error) {
-      console.error('Form validation failed:', error);
+      // Form validation failed - this is expected if fields are invalid
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        console.log('Form validation failed - expected behavior');
+      } else {
+        console.error('Error during form submission:', error);
+        console.error('Error details:', error);
+      }
     }
   };
 
@@ -97,10 +146,10 @@ export const DeleteUserModal: React.FC<DeleteUserModalProps> = ({
         </Space>
       }
       open={visible}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       width={600}
       footer={[
-        <Button key="cancel" onClick={onCancel}>
+        <Button key="cancel" onClick={handleCancel}>
           Cancel
         </Button>,
         <Button

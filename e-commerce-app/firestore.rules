@@ -14,11 +14,18 @@ service cloud.firestore {
       return isAdmin() || isCoop();
     }
     
+    // User collection - consolidated rules
     match /users/{userId} {
+      // Self read/write for own profile
       allow read, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Any authenticated user can read other users
       allow read: if request.auth != null;
-      allow delete: if request.auth != null && isAdmin();
+      
+      // Self create
       allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Self write with restrictions
       allow write: if request.auth != null && 
         request.auth.uid == userId &&
         (
@@ -28,22 +35,38 @@ service cloud.firestore {
           (request.resource.data.role == 'seller' &&
            request.resource.data.status == 'pending')
         );
-    }
-    
-    match /users/{userId} {
-      allow update: if request.auth != null && 
-        isAdmin() &&
-        (request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['role', 'status']));
-    }
-    
-    match /users/{userId} {
+      
+      // Admin can update with specific fields (including deletion-related fields)
+      allow update: if request.auth != null && isAdmin();
+      
+      // Admin can delete users
+      allow delete: if request.auth != null && isAdmin();
+      
+      // Cooperative users can read their members
       allow read: if isCoop() && 
                     resource.data.cooperativeId == request.auth.uid;
+      
+      // Cooperative users can update their members (limited fields)
       allow update: if isCoop() && 
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
                         .hasOnly(['status', 'updatedAt']);
+    }
+    
+    // Admin audit logs - only admins can create and read
+    match /admin_audit_logs/{logId} {
+      allow create: if request.auth != null && isAdmin();
+      allow read: if request.auth != null && isAdmin();
+    }
+    
+    // Deleted users collection - only admins can manage
+    match /deleted_users/{deletedUserId} {
+      allow create, read: if request.auth != null && isAdmin();
+    }
+    
+    // Archived products collection - only admins can manage
+    match /archived_products/{archivedProductId} {
+      allow create, read: if request.auth != null && isAdmin();
     }
     
     match /sellers/{sellerId} {

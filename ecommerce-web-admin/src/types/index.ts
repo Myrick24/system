@@ -21,13 +21,15 @@ export interface Product {
   description: string;
   category: string;
   price: number;
-  inventory: number;
+  currentStock?: number;  // Current available stock
+  inventory?: number;     // Legacy field name support
   sellerId: string;
   sellerName: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: any;
-  images?: string[];
-  imageUrl?: string; // Support for single image URL from Flutter app
+  images?: string[];     // Array of image URLs
+  imageUrl?: string;     // Support for single image URL from Flutter app
+  imageUrls?: string[];  // Alternative field name support
 }
 
 export interface Transaction {

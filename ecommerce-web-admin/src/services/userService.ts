@@ -257,93 +257,204 @@ export class UserService {
   // Professional user deletion with audit trail
   async deleteUser(userId: string, adminId: string, reason: string, deleteType: 'soft' | 'hard' = 'soft'): Promise<{ success: boolean; message: string }> {
     try {
+      console.log('Starting user deletion process:', { userId, adminId, deleteType, reason });
+      
       // First, get user data for audit trail
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (!userDoc.exists()) {
+        console.error('User not found:', userId);
         return { success: false, message: 'User not found' };
       }
 
       const userData = userDoc.data() as User;
-      const batch = writeBatch(db);
+      console.log('User data retrieved:', userData);
 
-      // Create audit trail entry
-      const auditEntry = {
-        action: 'user_deletion',
-        targetUserId: userId,
-        targetUserData: userData,
-        adminId: adminId,
-        deleteType: deleteType,
-        reason: reason,
-        timestamp: serverTimestamp(),
-        ip: window.location.hostname, // Basic IP tracking
-        userAgent: navigator.userAgent
-      };
+      // Step 1: Handle seller-specific operations first (if applicable)
+      if (userData.role === 'seller') {
+        console.log('User is a seller, handling seller deletion...');
+        try {
+          await this.handleSellerDeletionSeparately(userId, deleteType);
+        } catch (sellerError) {
+          console.error('Error handling seller deletion:', sellerError);
+          // Continue with user deletion even if seller operations fail
+        }
+      }
 
-      console.log('Creating audit entry:', auditEntry);
+      // Step 2: Create audit log entry
+      console.log('Creating audit log entry...');
+      try {
+        await addDoc(collection(db, 'admin_audit_logs'), {
+          action: 'user_deletion',
+          targetUserId: userId,
+          targetUserEmail: userData.email,
+          targetUserName: userData.name,
+          targetUserRole: userData.role,
+          adminId: adminId,
+          deleteType: deleteType,
+          reason: reason,
+          timestamp: serverTimestamp(),
+          ip: window.location.hostname,
+          userAgent: navigator.userAgent
+        });
+        console.log('Audit log created successfully');
+      } catch (auditError) {
+        console.error('Error creating audit log:', auditError);
+        // Continue with deletion even if audit log fails
+      }
 
-      // Add audit trail
-      const auditRef = doc(collection(db, 'admin_audit_logs'));
-      batch.set(auditRef, auditEntry);
-      console.log('Audit entry added to batch with ID:', auditRef.id);
-
+      // Step 3: Perform the actual user deletion/update
+      const userRef = doc(db, 'users', userId);
+      
       if (deleteType === 'soft') {
-        // Soft delete: Mark as deleted but keep data
-        const userRef = doc(db, 'users', userId);
-        batch.update(userRef, {
+        console.log('Performing soft delete...');
+        await updateDoc(userRef, {
           status: 'deleted',
           deletedAt: serverTimestamp(),
           deletedBy: adminId,
           deletionReason: reason,
+          deletionType: deleteType,
           originalStatus: userData.status || 'active'
         });
-
-        // If user is a seller, handle their products
-        if (userData.role === 'seller') {
-          await this.handleSellerDeletion(userId, 'soft', batch);
-        }
-
+        console.log('User soft deleted successfully');
       } else {
-        // Hard delete: Completely remove user data
-        const userRef = doc(db, 'users', userId);
-        batch.delete(userRef);
-
-        // If user is a seller, handle their products
-        if (userData.role === 'seller') {
-          await this.handleSellerDeletion(userId, 'hard', batch);
+        console.log('Performing hard delete...');
+        
+        // Save to deleted_users collection first
+        try {
+          await addDoc(collection(db, 'deleted_users'), {
+            originalId: userId,
+            userData: userData,
+            deletedAt: serverTimestamp(),
+            deletedBy: adminId,
+            reason: reason
+          });
+          console.log('User data archived in deleted_users collection');
+        } catch (archiveError) {
+          console.error('Error archiving user data:', archiveError);
         }
-
-        // Move sensitive data to deleted_users collection for compliance
-        const deletedUserRef = doc(collection(db, 'deleted_users'));
-        batch.set(deletedUserRef, {
-          originalId: userId,
-          userData: userData,
-          deletedAt: serverTimestamp(),
-          deletedBy: adminId,
-          reason: reason
-        });
+        
+        // Then delete the user
+        await deleteDoc(userRef);
+        console.log('User hard deleted successfully');
       }
-
-      // Execute batch operation
-      await batch.commit();
-      console.log('Batch operation committed successfully');
 
       const message = deleteType === 'soft' 
         ? `User ${userData.name} has been deactivated successfully`
         : `User ${userData.name} has been permanently deleted`;
 
-      console.log('User deletion completed:', message);
+      console.log('User deletion completed successfully:', message);
       return { success: true, message };
 
     } catch (error) {
-      console.error('Error deleting user:', error);
+      console.error('Error deleting user - Full error:', error);
+      
+      // Extract detailed error information
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        
+        // Check for specific Firebase permission errors
+        if (error.message.includes('permission')) {
+          errorMessage = 'Permission denied: Admin user does not have permission to delete users. Check Firestore rules and ensure user has admin role.';
+        } else if (error.message.includes('auth')) {
+          errorMessage = 'Authentication error: User not properly authenticated. Please login again.';
+        }
+      } else {
+        console.error('Error object:', error);
+      }
+      
+      console.error('Final error message:', errorMessage);
       return { 
         success: false, 
-        message: `Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        message: `Failed to delete user: ${errorMessage}` 
       };
     }
   }
 
-  // Handle seller-specific deletion logic
+  // Handle seller-specific deletion logic separately (not in batch)
+  private async handleSellerDeletionSeparately(sellerId: string, deleteType: 'soft' | 'hard'): Promise<void> {
+    try {
+      console.log('Handling seller deletion separately:', { sellerId, deleteType });
+      
+      // Get seller's products
+      const productsQuery = query(
+        collection(db, 'products'),
+        where('sellerId', '==', sellerId)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+      console.log(`Found ${productsSnapshot.size} products for seller`);
+
+      // Process products one by one
+      for (const productDoc of productsSnapshot.docs) {
+        try {
+          const productRef = doc(db, 'products', productDoc.id);
+          
+          if (deleteType === 'soft') {
+            // Mark products as inactive
+            await updateDoc(productRef, {
+              status: 'seller_deleted',
+              updatedAt: serverTimestamp()
+            });
+            console.log('Product marked as seller_deleted:', productDoc.id);
+          } else {
+            // Archive product first
+            try {
+              await addDoc(collection(db, 'archived_products'), {
+                originalId: productDoc.id,
+                originalSellerId: sellerId,
+                productData: productDoc.data(),
+                archivedAt: serverTimestamp()
+              });
+              console.log('Product archived:', productDoc.id);
+            } catch (archiveError) {
+              console.error('Error archiving product:', archiveError);
+            }
+            
+            // Then delete
+            await deleteDoc(productRef);
+            console.log('Product deleted:', productDoc.id);
+          }
+        } catch (productError) {
+          console.error('Error processing product:', productDoc.id, productError);
+          // Continue with other products
+        }
+      }
+
+      // Handle ongoing transactions
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('sellerId', '==', sellerId),
+        where('status', 'in', ['pending', 'processing'])
+      );
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+      console.log(`Found ${transactionsSnapshot.size} transactions for seller`);
+
+      for (const transactionDoc of transactionsSnapshot.docs) {
+        try {
+          const transactionRef = doc(db, 'transactions', transactionDoc.id);
+          await updateDoc(transactionRef, {
+            status: 'cancelled_seller_deleted',
+            cancelledAt: serverTimestamp(),
+            cancellationReason: 'Seller account deleted'
+          });
+          console.log('Transaction cancelled:', transactionDoc.id);
+        } catch (transactionError) {
+          console.error('Error cancelling transaction:', transactionDoc.id, transactionError);
+          // Continue with other transactions
+        }
+      }
+
+      console.log('Seller deletion handling completed');
+    } catch (error) {
+      console.error('Error handling seller deletion:', error);
+      throw error;
+    }
+  }
+
+  // Old batch version - kept for reference but not used
   private async handleSellerDeletion(sellerId: string, deleteType: 'soft' | 'hard', batch: any): Promise<void> {
     try {
       // Get seller's products
@@ -430,6 +541,10 @@ export class UserService {
       batch.set(auditRef, {
         action: 'user_restoration',
         targetUserId: userId,
+        targetUserName: userData.name,
+        targetUserEmail: userData.email,
+        targetUserRole: userData.role,
+        deleteType: (userData as any).deletionType || 'soft',
         adminId: adminId,
         timestamp: serverTimestamp()
       });

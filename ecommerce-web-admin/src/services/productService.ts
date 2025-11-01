@@ -25,10 +25,24 @@ export class ProductService {
     try {
       const productsSnapshot = await getDocs(collection(db, 'products'));
       
-      return productsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Product));
+      const products = productsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Product from Firestore:', { 
+          id: doc.id, 
+          name: data.name,
+          images: data.images,
+          imageUrls: data.imageUrls,
+          imageUrl: data.imageUrl,
+          ...data 
+        });
+        return {
+          id: doc.id,
+          ...data
+        } as Product;
+      });
+      
+      console.log('All products loaded:', products);
+      return products;
     } catch (error) {
       console.error('Error getting all products:', error);
       return [];
@@ -45,10 +59,24 @@ export class ProductService {
       );
       const productsSnapshot = await getDocs(productsQuery);
       
-      return productsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Product));
+      const products = productsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log(`Product with status ${status}:`, { 
+          id: doc.id,
+          name: data.name,
+          images: data.images,
+          imageUrls: data.imageUrls,
+          imageUrl: data.imageUrl,
+          ...data 
+        });
+        return {
+          id: doc.id,
+          ...data
+        } as Product;
+      });
+      
+      console.log(`All products with status ${status}:`, products);
+      return products;
     } catch (error) {
       console.error('Error getting products by status:', error);
       return [];

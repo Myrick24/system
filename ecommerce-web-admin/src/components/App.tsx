@@ -20,13 +20,13 @@ import { EnhancedDashboard } from './EnhancedDashboard';
 import { UserManagement } from './UserManagement';
 import { ProductManagement } from './ProductManagement';
 import { TransactionMonitoring } from './TransactionMonitoring';
+import { OrderMonitoring } from './OrderMonitoring';
 import { AnnouncementManagement } from './AnnouncementManagement';
 import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
 import { CooperativeManagement } from './CooperativeManagement';
 import { UserFeedbackReports } from './UserFeedbackReports';
-import { ReportsAnalytics } from './ReportsAnalytics';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -60,17 +60,17 @@ const AdminLayout: React.FC = () => {
     {
       key: '/users',
       icon: <UserOutlined />,
-      label: 'User Monitoring',
+      label: 'User Management',
     },
     {
       key: '/products',
       icon: <ShopOutlined />,
-      label: 'Product Listings',
+      label: 'Product Management',
     },
     {
       key: '/transactions',
       icon: <TransactionOutlined />,
-      label: 'Order Monitoring',
+      label: 'Order Management',
     },
     {
       key: '/announcements',
@@ -81,11 +81,6 @@ const AdminLayout: React.FC = () => {
       key: '/feedback',
       icon: <CommentOutlined />,
       label: 'User Feedback',
-    },
-    {
-      key: '/reports',
-      icon: <FileTextOutlined />,
-      label: 'Reports',
     },
     {
       key: '/settings',
@@ -198,10 +193,9 @@ const AdminLayout: React.FC = () => {
             <Route path="/users" element={<UserManagement />} />
             <Route path="/cooperative" element={<CooperativeManagement />} />
             <Route path="/products" element={<ProductManagement />} />
-            <Route path="/transactions" element={<TransactionMonitoring />} />
+            <Route path="/transactions" element={<OrderMonitoring />} />
             <Route path="/announcements" element={<AnnouncementManagement />} />
             <Route path="/feedback" element={<UserFeedbackReports />} />
-            <Route path="/reports" element={<ReportsAnalytics />} />
             <Route path="/settings" element={<AdminSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

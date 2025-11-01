@@ -10,17 +10,17 @@ class UserManagement extends StatefulWidget {
   State<UserManagement> createState() => _UserManagementState();
 }
 
-class _UserManagementState extends State<UserManagement> with SingleTickerProviderStateMixin {
+class _UserManagementState extends State<UserManagement>
+    with SingleTickerProviderStateMixin {
   final UserService _userService = UserService();
   final NotificationService _notificationService = NotificationService();
-  
+
   late TabController _tabController;
   bool _isLoading = false;
   List<Map<String, dynamic>> _allUsers = [];
   List<Map<String, dynamic>> _buyers = [];
   List<Map<String, dynamic>> _sellers = [];
   List<Map<String, dynamic>> _pendingSellers = [];
-
 
   @override
   void initState() {
@@ -39,11 +39,12 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
     _tabController.dispose();
     super.dispose();
   }
+
   Future<void> _loadUsersByTab(int tabIndex) async {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       switch (tabIndex) {
         case 0: // All Users
@@ -57,13 +58,15 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         case 2: // Sellers
           _sellers = await _userService.getUsersByRole('seller');
           // Filter to only show approved sellers
-          _sellers = _sellers.where((seller) => seller['status'] == 'approved').toList();
+          _sellers = _sellers
+              .where((seller) => seller['status'] == 'approved')
+              .toList();
           print('Loaded ${_sellers.length} approved sellers sorted by ID');
           break;
         case 3: // Pending Sellers
           _pendingSellers = await _userService.getPendingSellers();
           print('Loaded ${_pendingSellers.length} pending sellers');
-          
+
           // Debug information to help troubleshoot
           for (var seller in _pendingSellers) {
             print('Pending seller found: ${seller['name']} (${seller['id']})');
@@ -71,13 +74,18 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
             print('Role: ${seller['role']}');
             print('------');
           }
-          
+
           // If there are no pending sellers, check manually for sellers with pending status
           if (_pendingSellers.isEmpty) {
-            print('No pending sellers found using getPendingSellers. Trying alternate approach...');
-            List<Map<String, dynamic>> allSellers = await _userService.getUsersByRole('seller');
-            _pendingSellers = allSellers.where((seller) => seller['status'] == 'pending').toList();
-            print('Alternate check found ${_pendingSellers.length} pending sellers');
+            print(
+                'No pending sellers found using getPendingSellers. Trying alternate approach...');
+            List<Map<String, dynamic>> allSellers =
+                await _userService.getUsersByRole('seller');
+            _pendingSellers = allSellers
+                .where((seller) => seller['status'] == 'pending')
+                .toList();
+            print(
+                'Alternate check found ${_pendingSellers.length} pending sellers');
           }
           break;
       }
@@ -100,14 +108,15 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         await _notificationService.sendNotificationToUser(
           userId: userId,
           title: 'Seller Approval',
-          message: 'Congratulations! You have been approved as a seller. You can now start listing your products.',
+          message:
+              'Congratulations! You have been approved as a seller. You can now start listing your products.',
           type: 'seller_approval',
         );
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Seller approved successfully')),
         );
-        
+
         // Refresh the list
         _loadUsersByTab(_tabController.index);
       }
@@ -127,14 +136,15 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         await _notificationService.sendNotificationToUser(
           userId: userId,
           title: 'Seller Application',
-          message: 'Your application to become a seller has been rejected. Please contact support for more information.',
+          message:
+              'Your application to become a seller has been rejected. Please contact support for more information.',
           type: 'seller_rejection',
         );
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Seller rejected')),
         );
-        
+
         // Refresh the list
         _loadUsersByTab(_tabController.index);
       }
@@ -146,41 +156,98 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
     }
   }
 
-  Future<void> _updateUserStatus(String userId, String currentStatus) async {
+  Future<void> _confirmDeleteUser(String userId, String userName) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete User'),
+        content: Text('Are you sure you want to delete "$userName"?\n\n'
+            'This action cannot be undone and will:\n'
+            '• Delete the user account\n'
+            '• Delete their products (if seller)\n'
+            '• Remove their data from the system'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteUser(userId, userName);
+    }
+  }
+
+  Future<void> _deleteUser(String userId, String userName) async {
     try {
-      String newStatus = currentStatus == 'active' ? 'suspended' : 'active';
-      bool success = await _userService.updateUserStatus(userId, newStatus);
-      
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      bool success = await _userService.deleteUser(userId);
+
+      // Close loading indicator
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
       if (success) {
-        // Send notification to the user
-        await _notificationService.sendNotificationToUser(
-          userId: userId,
-          title: 'Account Status Updated',
-          message: 'Your account has been ${newStatus.toUpperCase()}.',
-          type: 'account_status_update',
-        );
-        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('User status updated to $newStatus')),
+          SnackBar(
+            content: Text('User "$userName" deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
         );
-        
+
         // Refresh the list
         _loadUsersByTab(_tabController.index);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete user'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      print('Error updating user status: $e');
+      // Close loading indicator if still open
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      print('Error deleting user: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update user status')),
+        SnackBar(
+          content: Text('Error deleting user: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(      appBar: AppBar(
+    return Scaffold(
+      appBar: AppBar(
         title: const Text('Account Management'),
         backgroundColor: Colors.green,
-        actions: [          // Information about sorting
+        actions: [
+          // Information about sorting
           Center(
             child: Text(
               'Sorted by ID',
@@ -225,16 +292,17 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         ],
       ),
     );
-  }  Widget _buildUserList(List<Map<String, dynamic>> users, String type) {
+  }
+
+  Widget _buildUserList(List<Map<String, dynamic>> users, String type) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (users.isEmpty) {
       return const Center(child: Text('No users found'));
     }
-    
-    
+
     return RefreshIndicator(
       onRefresh: () => _loadUsersByTab(_tabController.index),
       child: ListView.builder(
@@ -258,8 +326,8 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                       CircleAvatar(
                         backgroundColor: Colors.grey.shade200,
                         child: Text(
-                          (user['name'] as String).isNotEmpty 
-                              ? (user['name'] as String)[0].toUpperCase() 
+                          (user['name'] as String).isNotEmpty
+                              ? (user['name'] as String)[0].toUpperCase()
                               : '?',
                           style: const TextStyle(
                             color: Colors.black87,
@@ -268,7 +336,8 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(                        child: Column(
+                      Expanded(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
@@ -308,28 +377,28 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.visibility, color: Colors.blue),
+                            icon: const Icon(Icons.visibility,
+                                color: Colors.blue),
                             onPressed: () {
                               // View profile action
                             },
                             tooltip: 'View Profile',
                           ),
                           IconButton(
-                            icon: const Icon(Icons.message, color: Colors.green),
+                            icon:
+                                const Icon(Icons.message, color: Colors.green),
                             onPressed: () {
                               // Message action
                             },
                             tooltip: 'Message',
                           ),
                           IconButton(
-                            icon: Icon(
-                              user['status'] == 'suspended' ? Icons.check_circle : Icons.block,
-                              color: user['status'] == 'suspended' ? Colors.green : Colors.red,
-                            ),
+                            icon: const Icon(Icons.delete, color: Colors.red),
                             onPressed: () {
-                              _updateUserStatus(user['id'], user['status'] ?? 'active');
+                              _confirmDeleteUser(user['id'],
+                                  user['name'] ?? user['email'] ?? 'User');
                             },
-                            tooltip: user['status'] == 'suspended' ? 'Activate' : 'Suspend',
+                            tooltip: 'Delete User',
                           ),
                         ],
                       ),
@@ -348,7 +417,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (_pendingSellers.isEmpty) {
       return Center(
         child: Column(
@@ -373,7 +442,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         ),
       );
     }
-    
+
     return RefreshIndicator(
       onRefresh: () => _loadUsersByTab(3),
       child: ListView.builder(
@@ -397,8 +466,8 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                       CircleAvatar(
                         backgroundColor: Colors.orange.shade200,
                         child: Text(
-                          (seller['name'] as String).isNotEmpty 
-                              ? (seller['name'] as String)[0].toUpperCase() 
+                          (seller['name'] as String).isNotEmpty
+                              ? (seller['name'] as String)[0].toUpperCase()
                               : '?',
                           style: const TextStyle(
                             color: Colors.deepOrange,
@@ -418,7 +487,8 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                                 fontSize: 16,
                               ),
                             ),
-                            const SizedBox(height: 4),                            Text(
+                            const SizedBox(height: 4),
+                            Text(
                               seller['email'] ?? 'No email',
                               style: const TextStyle(
                                 color: Colors.grey,
@@ -439,11 +509,12 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                       const Chip(
                         label: Text('PENDING'),
                         backgroundColor: Colors.orange,
-                        labelStyle: TextStyle(color: Colors.white, fontSize: 12),
+                        labelStyle:
+                            TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),                  
+                  const SizedBox(height: 12),
                   Wrap(
                     alignment: WrapAlignment.spaceBetween,
                     crossAxisAlignment: WrapCrossAlignment.center,
@@ -456,14 +527,14 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                           color: Colors.grey,
                           fontSize: 12,
                         ),
-                      ),                      
+                      ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           SizedBox(
                             height: 32,
                             child: ElevatedButton.icon(
-                              icon: const Icon(Icons.visibility, size: 14),                              
+                              icon: const Icon(Icons.visibility, size: 14),
                               label: const Text(
                                 'View',
                                 style: TextStyle(fontSize: 11),
@@ -471,16 +542,20 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 8),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               onPressed: () {
-                                print('Navigating to seller details: ${seller['id']}');
+                                print(
+                                    'Navigating to seller details: ${seller['id']}');
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => SellerRequestDetailPage(sellerId: seller['id']),
+                                    builder: (context) =>
+                                        SellerRequestDetailPage(
+                                            sellerId: seller['id']),
                                   ),
                                 ).then((_) {
                                   // Refresh the list when returning from details page
@@ -493,7 +568,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                           SizedBox(
                             height: 32,
                             child: ElevatedButton.icon(
-                              icon: const Icon(Icons.check, size: 14),                              
+                              icon: const Icon(Icons.check, size: 14),
                               label: const Text(
                                 'Approve',
                                 style: TextStyle(fontSize: 11),
@@ -501,15 +576,18 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 0),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               onPressed: () {
-                                _approveSellerDirectly(seller['id'], seller['name']);
+                                _approveSellerDirectly(
+                                    seller['id'], seller['name']);
                               },
                             ),
-                          ),                          const SizedBox(width: 6),
+                          ),
+                          const SizedBox(width: 6),
                           SizedBox(
                             height: 32,
                             child: ElevatedButton.icon(
@@ -521,7 +599,8 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 0),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
@@ -546,7 +625,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
   Widget _buildRoleBadge(String role) {
     Color color;
     IconData icon;
-    
+
     switch (role.toLowerCase()) {
       case 'admin':
         color = Colors.red;
@@ -561,7 +640,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
         color = Colors.blue;
         icon = Icons.person;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -589,7 +668,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
 
   Widget _buildStatusChip(String status) {
     Color color;
-    
+
     switch (status.toLowerCase()) {
       case 'active':
         color = Colors.green;
@@ -606,7 +685,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
       default:
         color = Colors.blue;
     }
-    
+
     return Chip(
       label: Text(status.toUpperCase()),
       backgroundColor: color.withOpacity(0.1),
@@ -623,7 +702,7 @@ class _UserManagementState extends State<UserManagement> with SingleTickerProvid
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return 'Unknown';
-    
+
     DateTime dateTime = timestamp.toDate();
     return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }

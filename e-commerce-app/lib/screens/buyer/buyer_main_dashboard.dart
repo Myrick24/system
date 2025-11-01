@@ -16,19 +16,27 @@ class BuyerMainDashboard extends StatefulWidget {
 class _BuyerMainDashboardState extends State<BuyerMainDashboard>
     with AutomaticKeepAliveClientMixin {
   int _selectedIndex = 0;
+  final GlobalKey<_BuyerOrdersScreenState> _ordersKey =
+      GlobalKey<_BuyerOrdersScreenState>();
 
   @override
   bool get wantKeepAlive => true;
 
-  final List<Widget> _pages = [
-    const BuyerHomeContent(), // Home products
-    const BuyerOrdersScreen(), // Order history
-    const CartScreen(), // Shopping cart
-    const MessagesScreen(), // Chat with sellers
-    const AccountScreen(
-        key:
-            PageStorageKey('AccountScreen')), // Account and seller registration
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      const BuyerHomeContent(), // Home products
+      BuyerOrdersScreen(key: _ordersKey), // Order history
+      const CartScreen(), // Shopping cart
+      const MessagesScreen(), // Chat with sellers
+      const AccountScreen(
+          key: PageStorageKey(
+              'AccountScreen')), // Account and seller registration
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,12 +53,16 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
         unselectedItemColor: Colors.grey,
         currentIndex: _selectedIndex,
         onTap: (index) {
-          print('=== BuyerMainDashboard: Tab tapped: $index ===');
           setState(() {
             _selectedIndex = index;
           });
-          print(
-              '=== BuyerMainDashboard: _selectedIndex set to: $_selectedIndex ===');
+          // Reload orders when Orders tab is selected
+          if (index == 1) {
+            print('=== Orders tab tapped, calling reloadOrders ===');
+            print(
+                '_ordersKey.currentState is null: ${_ordersKey.currentState == null}');
+            _ordersKey.currentState?.reloadOrders();
+          }
         },
         items: const [
           BottomNavigationBarItem(
@@ -87,7 +99,10 @@ class BuyerOrdersScreen extends StatefulWidget {
 }
 
 class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        AutomaticKeepAliveClientMixin,
+        WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -96,32 +111,60 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   List<Map<String, dynamic>> _activeOrders = [];
   List<Map<String, dynamic>> _completedOrders = [];
   List<Map<String, dynamic>> _cancelledOrders = [];
+  bool _hasLoadedOnce = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
-      _loadOrdersByTab(_tabController.index);
+      if (_tabController.indexIsChanging) {
+        _loadOrdersByTab(_tabController.index);
+      }
     });
     _loadOrdersByTab(0);
+    _hasLoadedOnce = true;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _hasLoadedOnce) {
+      // Reload orders when app returns to foreground
+      _loadOrdersByTab(_tabController.index);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadOrdersByTab(int tabIndex) async {
-    if (_auth.currentUser == null) return;
+  // Public method to reload orders when tab is tapped
+  void reloadOrders() {
+    print('=== BuyerOrdersScreen.reloadOrders() called ===');
+    _loadOrdersByTab(_tabController.index);
+  }
 
+  Future<void> _loadOrdersByTab(int tabIndex) async {
+    if (_auth.currentUser == null) {
+      print('ERROR: No user logged in');
+      return;
+    }
+
+    print('=== Loading orders for tab $tabIndex ===');
     setState(() {
       _isLoading = true;
     });
 
     try {
       final userId = _auth.currentUser!.uid;
+      print('User ID: $userId');
       List<String> statuses;
 
       switch (tabIndex) {
@@ -138,43 +181,57 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
           statuses = ['pending'];
       }
 
+      print('Looking for orders with statuses: $statuses');
+
+      // Query ALL orders for this user (no status filter to avoid index requirement)
+      final buyerIdQuery = await _firestore
+          .collection('orders')
+          .where('buyerId', isEqualTo: userId)
+          .get();
+
+      print('Found ${buyerIdQuery.docs.length} orders with buyerId');
+
       List<Map<String, dynamic>> orders = [];
 
-      for (String status in statuses) {
-        // Query by buyerId (primary field)
-        final buyerIdQuery = await _firestore
-            .collection('orders')
-            .where('buyerId', isEqualTo: userId)
-            .where('status', isEqualTo: status)
-            .get();
+      // Filter by status in memory
+      for (var doc in buyerIdQuery.docs) {
+        final orderData = doc.data();
+        final orderStatus = orderData['status'] as String?;
 
-        for (var doc in buyerIdQuery.docs) {
-          final orderData = doc.data();
+        if (orderStatus != null && statuses.contains(orderStatus)) {
           orderData['id'] = doc.id;
           orders.add(orderData);
         }
-
-        // Also query by userId (fallback for old orders)
-        try {
-          final userIdQuery = await _firestore
-              .collection('orders')
-              .where('userId', isEqualTo: userId)
-              .where('status', isEqualTo: status)
-              .get();
-
-          for (var doc in userIdQuery.docs) {
-            // Check if this order is not already in the list (avoid duplicates)
-            if (!orders.any((order) => order['id'] == doc.id)) {
-              final orderData = doc.data();
-              orderData['id'] = doc.id;
-              orders.add(orderData);
-            }
-          }
-        } catch (e) {
-          print('Error querying by userId: $e');
-          // Continue even if this query fails
-        }
       }
+
+      // Also query by userId (fallback for old orders)
+      try {
+        final userIdQuery = await _firestore
+            .collection('orders')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        print('Found ${userIdQuery.docs.length} orders with userId');
+
+        for (var doc in userIdQuery.docs) {
+          final orderData = doc.data();
+          final orderStatus = orderData['status'] as String?;
+
+          // Check if this order is not already in the list (avoid duplicates)
+          // and has the correct status
+          if (orderStatus != null &&
+              statuses.contains(orderStatus) &&
+              !orders.any((order) => order['id'] == doc.id)) {
+            orderData['id'] = doc.id;
+            orders.add(orderData);
+          }
+        }
+      } catch (e) {
+        print('Error querying by userId: $e');
+        // Continue even if this query fails
+      }
+
+      print('=== TOTAL orders found: ${orders.length} ===');
 
       // Sort by timestamp
       orders.sort((a, b) {
@@ -187,12 +244,15 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       switch (tabIndex) {
         case 0:
           _activeOrders = orders;
+          print('Set _activeOrders to ${_activeOrders.length} items');
           break;
         case 1:
           _completedOrders = orders;
+          print('Set _completedOrders to ${_completedOrders.length} items');
           break;
         case 2:
           _cancelledOrders = orders;
+          print('Set _cancelledOrders to ${_cancelledOrders.length} items');
           break;
       }
     } catch (e) {
@@ -201,6 +261,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       setState(() {
         _isLoading = false;
       });
+      print('=== Finished loading, _isLoading = false ===');
     }
   }
 
@@ -426,17 +487,19 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
+    print('=== BuyerOrdersScreen.build() called ===');
+    print(
+        '_activeOrders: ${_activeOrders.length}, _completedOrders: ${_completedOrders.length}, _cancelledOrders: ${_cancelledOrders.length}');
+    print('_isLoading: $_isLoading');
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Orders'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        automaticallyImplyLeading: false, // Remove back button for bottom nav
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
@@ -461,11 +524,16 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   }
 
   Widget _buildOrderList(List<Map<String, dynamic>> orders) {
+    print('=== _buildOrderList called with ${orders.length} orders ===');
+    print('_isLoading: $_isLoading');
+
     if (_isLoading) {
+      print('Showing loading indicator');
       return const Center(child: CircularProgressIndicator());
     }
 
     if (orders.isEmpty) {
+      print('Orders list is empty, showing empty message');
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -481,6 +549,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       );
     }
 
+    print('Building ListView with ${orders.length} orders');
     return RefreshIndicator(
       onRefresh: () => _loadOrdersByTab(_tabController.index),
       child: ListView.builder(

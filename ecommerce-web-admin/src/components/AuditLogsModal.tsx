@@ -24,6 +24,9 @@ interface AuditLog {
   id: string;
   action: 'user_deletion' | 'user_restoration';
   targetUserId: string;
+  targetUserName?: string;
+  targetUserEmail?: string;
+  targetUserRole?: string;
   targetUserData?: any;
   adminId: string;
   deleteType?: 'soft' | 'hard';
@@ -104,9 +107,9 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
       key: 'targetUser',
       render: (record: AuditLog) => (
         <Space direction="vertical" size={0}>
-          <Text strong>{record.targetUserData?.name || 'Unknown'}</Text>
+          <Text strong>{record.targetUserName || record.targetUserData?.name || 'Unknown'}</Text>
           <Text type="secondary" style={{ fontSize: '12px' }}>
-            {record.targetUserData?.email || record.targetUserId}
+            {record.targetUserEmail || record.targetUserData?.email || record.targetUserId}
           </Text>
         </Space>
       )
@@ -231,12 +234,12 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
             </Descriptions.Item>
             
             <Descriptions.Item label="Target User">
-              {selectedLog.targetUserData?.name} ({selectedLog.targetUserData?.email})
+              {selectedLog.targetUserName || selectedLog.targetUserData?.name || 'Unknown'} ({selectedLog.targetUserEmail || selectedLog.targetUserData?.email || selectedLog.targetUserId})
             </Descriptions.Item>
             
             <Descriptions.Item label="User Role">
-              <Tag color={selectedLog.targetUserData?.role === 'seller' ? 'blue' : 'green'}>
-                {selectedLog.targetUserData?.role?.toUpperCase() || 'UNKNOWN'}
+              <Tag color={selectedLog.targetUserRole || selectedLog.targetUserData?.role === 'seller' ? 'blue' : 'green'}>
+                {(selectedLog.targetUserRole || selectedLog.targetUserData?.role)?.toUpperCase() || 'UNKNOWN'}
               </Tag>
             </Descriptions.Item>
             
@@ -245,10 +248,22 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({
             </Descriptions.Item>
             
             {selectedLog.deleteType && (
-              <Descriptions.Item label="Deletion Type">
-                <Tag color={selectedLog.deleteType === 'hard' ? 'red' : 'orange'}>
-                  {selectedLog.deleteType.toUpperCase()}
-                </Tag>
+              <Descriptions.Item label={selectedLog.action === 'user_restoration' ? 'Restoration Type' : 'Deletion Type'}>
+                <Space direction="vertical" size={0}>
+                  <Tag color={selectedLog.deleteType === 'hard' ? 'red' : 'orange'}>
+                    {selectedLog.deleteType.toUpperCase()}
+                  </Tag>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    {selectedLog.action === 'user_restoration' 
+                      ? (selectedLog.deleteType === 'soft' 
+                          ? 'Account was deactivated, now restored' 
+                          : 'Account was permanently deleted (data recovered from archive)')
+                      : (selectedLog.deleteType === 'soft' 
+                          ? 'Account deactivated (can be restored)' 
+                          : 'Account permanently deleted')
+                    }
+                  </Text>
+                </Space>
               </Descriptions.Item>
             )}
             

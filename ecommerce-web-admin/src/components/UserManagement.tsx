@@ -14,10 +14,12 @@ import { UserService } from '../services/userService';
 import { User } from '../types';
 import DeleteUserModal from './DeleteUserModal';
 import AuditLogsModal from './AuditLogsModal';
+import { useAuth } from '../contexts/AuthContext';
 
 const { TabPane } = Tabs;
 
 export const UserManagement: React.FC = () => {
+  const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [buyers, setBuyers] = useState<User[]>([]);
   const [sellers, setSellers] = useState<User[]>([]);
@@ -90,23 +92,6 @@ export const UserManagement: React.FC = () => {
         }
       }
     });
-  };
-
-  const handleUpdateUserStatus = async (userId: string, currentStatus?: string) => {
-    const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-    
-    try {
-      const success = await userService.updateUserStatus(userId, newStatus);
-      if (success) {
-        message.success(`User status updated to ${newStatus}`);
-        loadUserData(); // Reload data
-      } else {
-        message.error('Failed to update user status');
-      }
-    } catch (error) {
-      console.error('Error updating user status:', error);
-      message.error('Failed to update user status');
-    }
   };
 
   const getStatusColor = (status?: string) => {
@@ -204,25 +189,16 @@ export const UserManagement: React.FC = () => {
               </Button>
             </Tooltip>
           ) : (
-            <>
+            <Tooltip title="Delete user account">
               <Button
-                type={record.status === 'active' ? 'default' : 'primary'}
+                danger
+                icon={<DeleteOutlined />}
                 size="small"
-                onClick={() => handleUpdateUserStatus(record.id, record.status || 'suspended')}
+                onClick={() => handleDeleteUser(record)}
               >
-                {record.status === 'active' ? 'Suspend' : 'Activate'}
+                Delete
               </Button>
-              <Tooltip title="Delete user account">
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  onClick={() => handleDeleteUser(record)}
-                >
-                  Delete
-                </Button>
-              </Tooltip>
-            </>
+            </Tooltip>
           )}
         </Space>
       )
@@ -230,20 +206,27 @@ export const UserManagement: React.FC = () => {
   ];
 
   const handleDeleteUser = (user: User) => {
+    console.log('handleDeleteUser called with user:', user);
     setSelectedUser(user);
     setDeleteModalVisible(true);
+    console.log('Modal should now be visible');
   };
 
-  const handleRestoreUser = async (user: User) => {
+  const handleRestoreUser = async (userToRestore: User) => {
     Modal.confirm({
       title: 'Restore User Account',
       icon: <UndoOutlined />,
-      content: `Are you sure you want to restore ${user.name}'s account?`,
+      content: `Are you sure you want to restore ${userToRestore.name}'s account?`,
       okText: 'Restore',
       cancelText: 'Cancel',
       onOk: async () => {
         try {
-          const result = await userService.restoreUser(user.id, 'current-admin-id'); // Replace with actual admin ID
+          if (!user) {
+            message.error('Admin user not authenticated');
+            return;
+          }
+          const adminId = user.uid || 'unknown-admin';
+          const result = await userService.restoreUser(userToRestore.id, adminId);
           if (result.success) {
             message.success(result.message);
             loadUserData(); // Reload data
@@ -259,23 +242,53 @@ export const UserManagement: React.FC = () => {
   };
 
   const confirmDeleteUser = async (userId: string, deleteType: 'soft' | 'hard', reason: string) => {
+    console.log('=== DELETE USER INITIATED ===');
+    console.log('User ID:', userId);
+    console.log('Delete Type:', deleteType);
+    console.log('Reason:', reason);
+    console.log('Current Auth User:', user);
+    
     try {
       setDeleteLoading(true);
-      const result = await userService.deleteUser(userId, 'current-admin-id', reason, deleteType); // Replace with actual admin ID
+      
+      if (!user) {
+        console.error('ERROR: Admin user not authenticated');
+        message.error('Admin user not authenticated');
+        return;
+      }
+      
+      const adminId = user.uid || 'unknown-admin';
+      console.log('Admin ID:', adminId);
+      console.log('Calling userService.deleteUser...');
+      
+      const result = await userService.deleteUser(userId, adminId, reason, deleteType);
+      
+      console.log('Delete result:', result);
       
       if (result.success) {
+        console.log('SUCCESS: User deleted successfully');
         message.success(result.message);
         setDeleteModalVisible(false);
         setSelectedUser(null);
-        loadUserData(); // Reload data
+        console.log('Reloading user data...');
+        await loadUserData(); // Reload data
+        console.log('User data reloaded');
       } else {
+        console.error('FAILED: User deletion failed:', result.message);
         message.error(result.message);
       }
     } catch (error) {
-      console.error('Error deleting user:', error);
-      message.error('Failed to delete user');
+      console.error('=== DELETE USER ERROR ===');
+      console.error('Error object:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
+      message.error(`Error: ${errorMessage}`);
     } finally {
       setDeleteLoading(false);
+      console.log('=== DELETE USER COMPLETED ===');
     }
   };
 

@@ -10,40 +10,29 @@ export class AdminService {
     try {
       console.log('Checking admin status for userId:', userId);
       
-      // Query Firestore for user with admin role
-      const usersQuery = query(
-        collection(db, 'users'),
-        where('role', '==', 'admin')
-      );
+      // Get the specific user document using their Firebase UID as the document ID
+      const userDoc = await getDoc(doc(db, 'users', userId));
       
-      const querySnapshot = await getDocs(usersQuery);
+      if (!userDoc.exists()) {
+        console.log('User document not found:', userId);
+        return false;
+      }
       
-      // Check if any admin user has matching Firebase Auth UID
-      let isUserAdmin = false;
-      querySnapshot.forEach((doc) => {
-        const userData = doc.data();
-        console.log('Found admin user:', { docId: doc.id, userData });
-        
-        // For now, since we might not have Firebase UID stored in Firestore,
-        // let's check if the user exists in Firebase Auth and has admin role in Firestore
-        if (userData.role === 'admin') {
-          isUserAdmin = true; // Temporarily approve any admin in the system
-        }
-      });
+      const userData = userDoc.data();
+      console.log('User data found:', { userId, role: userData?.role });
       
-      if (!querySnapshot.empty && isUserAdmin) {
-        console.log('User is confirmed admin');
+      // Check if user has admin role
+      if (userData?.role === 'admin') {
+        console.log('User confirmed as admin');
         return true;
       } else {
-        console.log('User is not admin or no admin users found');
+        console.log('User is not admin. Role:', userData?.role);
         return false;
       }
       
     } catch (error) {
       console.error('Error checking admin status:', error);
-      // For testing purposes, return true if there's an error
-      // In production, you'd want to return false for security
-      return true;
+      return false;
     }
   }
 

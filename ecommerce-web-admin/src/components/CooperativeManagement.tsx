@@ -168,6 +168,48 @@ export const CooperativeManagement: React.FC = () => {
     });
   };
 
+  const deleteCooperativeAccount = (userId: string, userName: string) => {
+    confirm({
+      title: 'Delete Cooperative Account',
+      icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+      content: (
+        <div>
+          <Alert
+            message="This action cannot be undone!"
+            type="error"
+            showIcon
+            style={{ marginBottom: '12px' }}
+          />
+          <p>This will permanently delete the cooperative account for <strong>{userName}</strong>.</p>
+          <p style={{ color: '#ff4d4f', fontWeight: 600 }}>All associated data will be marked as deleted.</p>
+        </div>
+      ),
+      okText: 'Yes, Delete Permanently',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      async onOk() {
+        try {
+          const userRef = doc(db, 'users', userId);
+          
+          // Soft delete by marking as deleted
+          await updateDoc(userRef, {
+            status: 'deleted',
+            deletedAt: new Date(),
+            deletedBy: auth.currentUser?.uid,
+            originalRole: 'cooperative',
+            updatedAt: new Date()
+          });
+
+          message.success(`Successfully deleted cooperative account: ${userName}`);
+          loadCooperativeUsers();
+        } catch (error) {
+          console.error('Error deleting cooperative account:', error);
+          message.error('Failed to delete cooperative account');
+        }
+      }
+    });
+  };
+
   const openEditModal = (coop: CooperativeUser) => {
     setEditingCoop(coop);
     editForm.setFieldsValue({
@@ -271,22 +313,24 @@ export const CooperativeManagement: React.FC = () => {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: CooperativeUser) => (
-        <Space>
+        <Space wrap>
           <Button
             type="primary"
             ghost
             icon={<EditOutlined />}
             onClick={() => openEditModal(record)}
+            size="small"
           >
             Edit
           </Button>
           <Button
-            type="text"
+            type="primary"
             danger
             icon={<DeleteOutlined />}
-            onClick={() => removeCooperativeRole(record.id, record.name)}
+            onClick={() => deleteCooperativeAccount(record.id, record.name)}
+            size="small"
           >
-            Remove Role
+            Delete
           </Button>
         </Space>
       )

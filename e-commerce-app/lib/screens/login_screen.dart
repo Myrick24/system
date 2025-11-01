@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/notification_manager.dart';
 import 'signup_screen.dart';
+import 'registration_screen.dart';
 import 'admin/admin_dashboard.dart';
 import 'unified_main_dashboard.dart';
 import 'guest_main_dashboard.dart';
@@ -286,6 +287,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RegistrationScreen(),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Apply as Seller',
+                  style: TextStyle(
+                    color: Colors.green,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               TextButton(
