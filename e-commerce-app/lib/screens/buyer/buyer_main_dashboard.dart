@@ -92,7 +92,9 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
 }
 
 class BuyerOrdersScreen extends StatefulWidget {
-  const BuyerOrdersScreen({Key? key}) : super(key: key);
+  final bool showBackButton;
+  
+  const BuyerOrdersScreen({super.key, this.showBackButton = false});
 
   @override
   State<BuyerOrdersScreen> createState() => _BuyerOrdersScreenState();
@@ -117,6 +119,9 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   bool get wantKeepAlive => true;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -136,6 +141,15 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       // Reload orders when app returns to foreground
       _loadOrdersByTab(_tabController.index);
     }
+  }
+
+  // This method is called every time the widget rebuilds
+  @override
+  void didUpdateWidget(BuyerOrdersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload orders when widget updates
+    print('BuyerOrdersScreen: Widget updated, refreshing orders');
+    _loadOrdersByTab(_tabController.index);
   }
 
   @override
@@ -201,6 +215,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         if (orderStatus != null && statuses.contains(orderStatus)) {
           orderData['id'] = doc.id;
           orders.add(orderData);
+          print('  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
         }
       }
 
@@ -232,6 +247,31 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       }
 
       print('=== TOTAL orders found: ${orders.length} ===');
+
+          print('✅ Found ${userIdQuery.docs.length} orders with userId="$userId" AND status="$status"');
+
+          for (var doc in userIdQuery.docs) {
+            // Check if this order is not already in the list (avoid duplicates)
+            if (!orders.any((order) => order['id'] == doc.id)) {
+              final orderData = doc.data();
+              orderData['id'] = doc.id;
+              orders.add(orderData);
+              print('  ➕ Added (via userId): ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
+            } else {
+              print('  ⏭️ Skipped (duplicate): ${doc.id.substring(0, 15)}...');
+            }
+          }
+        } catch (e) {
+          print('⚠️ Error querying by userId: $e');
+          // Continue even if this query fails
+        }
+      }
+
+      print('');
+      print('=====================================');
+      print('📊 TOTAL ORDERS FOUND: ${orders.length}');
+      print('=====================================');
+      print('');
 
       // Sort by timestamp
       orders.sort((a, b) {
@@ -334,36 +374,60 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             ),
             const SizedBox(height: 20),
 
-            // Order Details
-            Expanded(
-              child: SingleChildScrollView(
+            // Product Info
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildDetailCard('Product Information', [
-                      _buildDetailRow(
-                          'Product', order['productName'] ?? 'Unknown'),
-                      _buildDetailRow('Quantity',
-                          '${order['quantity'] ?? 1} ${order['unit'] ?? ''}'),
-                      _buildDetailRow('Price per unit',
-                          '₱${(order['price'] ?? 0).toStringAsFixed(2)}'),
-                      _buildDetailRow('Total Amount',
-                          '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}'),
-                    ]),
-                    _buildDetailCard('Delivery Information', [
-                      _buildDetailRow('Payment Method',
-                          order['paymentMethod'] ?? 'Cash on Delivery'),
-                      _buildDetailRow('Delivery Method',
-                          order['deliveryMethod'] ?? 'Pick-up'),
-                      if (order['meetupLocation'] != null)
-                        _buildDetailRow(
-                            'Meet-up Location', order['meetupLocation']),
-                      _buildDetailRow(
-                          'Order Date', _formatTimestamp(order['timestamp'])),
-                    ]),
+                    const Text(
+                      'Product Details',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                        'Product', order['productName'] ?? 'Unknown'),
+                    _buildDetailRow('Quantity',
+                        '${order['quantity'] ?? 1} ${order['unit'] ?? ''}'),
+                    _buildDetailRow('Price',
+                        '₱${(order['price'] ?? 0).toStringAsFixed(2)}'),
+                    _buildDetailRow('Total',
+                        '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}'),
                   ],
                 ),
               ),
             ),
+
+            // Order Info
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Order Information',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow('Payment Method',
+                        order['paymentMethod'] ?? 'Cash on Delivery'),
+                    _buildDetailRow('Delivery Method',
+                        order['deliveryMethod'] ?? 'Pick-up'),
+                    if (order['meetupLocation'] != null)
+                      _buildDetailRow(
+                          'Meet-up Location', order['meetupLocation']),
+                    _buildDetailRow(
+                        'Order Date', _formatTimestamp(order['timestamp'])),
+                  ],
+                ),
+              ),
+            ),
+
+            const Spacer(),
 
             // Action Buttons
             if (order['status'] == 'pending') ...[
@@ -412,29 +476,6 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     );
   }
 
-  Widget _buildDetailCard(String title, List<Widget> children) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -442,13 +483,15 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 100,
             child: Text(
               '$label:',
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
-          Expanded(child: Text(value)),
+          Expanded(
+            child: Text(value),
+          ),
         ],
       ),
     );

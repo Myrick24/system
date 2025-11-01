@@ -372,23 +372,44 @@ class CartService extends ChangeNotifier {
       final orderTime = DateTime.now();
 
       // Fetch cooperative pickup location if delivery method is "Pickup at Coop"
-      String? pickupLocation;
+      // We'll get the location from each product's cooperative
+      Map<String, String> productCoopLocations = {};
       if (deliveryMethod == 'Pickup at Coop') {
         try {
-          // Query for a cooperative user to get the pickup location
-          final coopQuery = await _firestore
-              .collection('users')
-              .where('role', isEqualTo: 'cooperative')
-              .limit(1)
-              .get();
-
-          if (coopQuery.docs.isNotEmpty) {
-            final coopData = coopQuery.docs.first.data();
-            pickupLocation = coopData['location'] as String?;
-            print('Found cooperative pickup location: $pickupLocation');
+          // Get cooperative location for each product
+          for (final item in _cartItems) {
+            if (!productCoopLocations.containsKey(item.productId)) {
+              // Get the product to find its cooperative
+              final productDoc = await _firestore
+                  .collection('products')
+                  .doc(item.productId)
+                  .get();
+              
+              if (productDoc.exists) {
+                final productData = productDoc.data() as Map<String, dynamic>;
+                final cooperativeId = productData['cooperativeId'] as String?;
+                
+                if (cooperativeId != null) {
+                  // Get the cooperative's location
+                  final coopDoc = await _firestore
+                      .collection('users')
+                      .doc(cooperativeId)
+                      .get();
+                  
+                  if (coopDoc.exists) {
+                    final coopData = coopDoc.data() as Map<String, dynamic>;
+                    final location = coopData['location'] as String?;
+                    if (location != null && location.isNotEmpty) {
+                      productCoopLocations[item.productId] = location;
+                      print('Found cooperative location for ${item.productName}: $location');
+                    }
+                  }
+                }
+              }
+            }
           }
         } catch (e) {
-          print('Error fetching cooperative location: $e');
+          print('Error fetching cooperative locations: $e');
         }
       }
 
@@ -457,9 +478,8 @@ class CartService extends ChangeNotifier {
               'deliveryAddress': deliveryAddress,
             // Add pickup location if delivery method is Pickup at Coop
             if (deliveryMethod == 'Pickup at Coop' &&
-                pickupLocation != null &&
-                pickupLocation.isNotEmpty)
-              'pickupLocation': pickupLocation,
+                productCoopLocations.containsKey(item.productId))
+              'pickupLocation': productCoopLocations[item.productId],
             // Add customer info
             'customerName': userData['name'] ??
                 userData['fullName'] ??

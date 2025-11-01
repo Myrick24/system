@@ -1000,7 +1000,7 @@ class _AccountScreenState extends State<AccountScreen>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const BuyerOrdersScreen(),
+                                builder: (context) => const BuyerOrdersScreen(showBackButton: true),
                               ),
                             );
                           },
