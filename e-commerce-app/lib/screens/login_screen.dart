@@ -6,7 +6,6 @@ import 'signup_screen.dart';
 import 'registration_screen.dart';
 import 'admin/admin_dashboard.dart';
 import 'unified_main_dashboard.dart';
-import 'guest_main_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   final String? email;
@@ -22,6 +21,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _auth = FirebaseAuth.instance;
   bool _isLoading = false;
+  String _emailError = '';
+  String _passwordError = '';
 
   @override
   void initState() {
@@ -37,14 +38,40 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    // Clear previous errors
+    setState(() {
+      _emailError = '';
+      _passwordError = '';
+    });
+
+    // Validate email and password are not empty
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        if (email.isEmpty) _emailError = 'Please enter email';
+        if (password.isEmpty) _passwordError = 'Please enter password';
+      });
+      return;
+    }
+
+    // Validate email format (must contain @)
+    if (!email.contains('@')) {
+      setState(() {
+        _emailError = 'Email must contain @';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        email: email,
+        password: password,
       );
 
       // Check if user is admin
@@ -54,13 +81,6 @@ class _LoginScreenState extends State<LoginScreen> {
           .get();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            duration: Duration(seconds: 5),
-          ),
-        );
-
         // Send welcome notification for returning users
         final userData = userDoc.data() as Map<String, dynamic>?;
         final userRole = userData?['role'] ?? 'buyer';
@@ -128,21 +148,11 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       }
-    } on FirebaseAuthException catch (e) {
-      String message = 'An error occurred';
-      if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Wrong password provided.';
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+    } on FirebaseAuthException {
+      setState(() {
+        _passwordError = 'Wrong password or email not found';
+        _isLoading = false;
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -189,8 +199,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   hintText: 'Email Address',
+                  errorText: _emailError.isNotEmpty ? _emailError : null,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
+                    borderSide: _emailError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: _emailError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(color: Colors.grey),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: _emailError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(color: Colors.green, width: 2),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -204,8 +230,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 obscureText: !_passwordVisible,
                 decoration: InputDecoration(
                   hintText: 'Password',
+                  errorText: _passwordError.isNotEmpty ? _passwordError : null,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
+                    borderSide: _passwordError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: _passwordError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(color: Colors.grey),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: _passwordError.isNotEmpty
+                        ? const BorderSide(color: Colors.red, width: 2)
+                        : const BorderSide(color: Colors.green, width: 2),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -267,7 +309,36 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
+              // Separator with "or" text
+              Row(
+                children: [
+                  Expanded(
+                    child: Divider(
+                      color: Colors.grey.shade400,
+                      thickness: 1,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'or',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Divider(
+                      color: Colors.grey.shade400,
+                      thickness: 1,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -288,9 +359,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              TextButton(
+              const SizedBox(height: 24),
+              // Seller section
+              Text(
+                'Want to sell your products?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
                 onPressed: () {
+                  // Navigate directly to seller registration
+                  // The registration screen will handle account creation if needed
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -298,31 +382,28 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   );
                 },
-                child: const Text(
-                  'Apply as Seller',
-                  style: TextStyle(
-                    color: Colors.green,
-                    decoration: TextDecoration.underline,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.green,
+                  side: const BorderSide(color: Colors.green, width: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const GuestMainDashboard(),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.storefront, size: 20, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text(
+                      'Apply as Seller',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
                     ),
-                    (route) => false,
-                  );
-                },
-                child: const Text(
-                  'Continue as Guest',
-                  style: TextStyle(
-                    color: Colors.green,
-                    decoration: TextDecoration.underline,
-                  ),
+                  ],
                 ),
               ),
             ],

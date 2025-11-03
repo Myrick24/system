@@ -18,7 +18,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
   final _auth = FirebaseAuth.instance;
   String? _selectedCategory; // Track currently selected category filter
 
-  Future<void> _startChatWithSeller(String sellerId, String sellerName, {Map<String, dynamic>? product, String? productId}) async {
+  Future<void> _startChatWithSeller(String sellerId, String sellerName,
+      {Map<String, dynamic>? product, String? productId}) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -32,19 +33,20 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
 
     try {
       // Check if there's an existing chat between this customer and seller
-      final chatQuery = await _firestore.collection('chats')
+      final chatQuery = await _firestore
+          .collection('chats')
           .where('sellerId', isEqualTo: sellerId)
           .where('customerId', isEqualTo: currentUser.uid)
           .limit(1)
           .get();
 
       String chatId;
-      
+
       if (chatQuery.docs.isEmpty) {
         // Create a new chat if none exists
         final chatRef = _firestore.collection('chats').doc();
         chatId = chatRef.id;
-        
+
         Map<String, dynamic> chatData = {
           'sellerId': sellerId,
           'customerId': currentUser.uid,
@@ -55,18 +57,18 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
           'unreadCustomerCount': 0,
           'unreadSellerCount': 0,
         };
-        
+
         // Add product information if provided
         if (product != null) {
           chatData['product'] = product;
           chatData['productId'] = productId;
         }
-        
+
         await chatRef.set(chatData);
       } else {
         // Use existing chat but update product info if provided
         chatId = chatQuery.docs.first.id;
-        
+
         if (product != null) {
           await _firestore.collection('chats').doc(chatId).update({
             'product': product,
@@ -104,32 +106,13 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: CustomScrollView(
-          slivers: [
+        slivers: [
           SliverPadding(
             padding: const EdgeInsets.all(16.0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Back button (only show when not in main navigation)
-                if (ModalRoute.of(context)?.canPop ?? false)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back),
-                          onPressed: () => Navigator.pop(context),
-                          color: Colors.green,
-                        ),
-                        const Text(
-                          'Browse Products',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                // Don't show back button when used in unified dashboard
+                // Only show when navigated to as a separate screen
                 // Search Bar
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -212,13 +195,16 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       children: [
                         _buildCategoryItem(Icons.apps, 'All', Colors.purple),
                         const SizedBox(width: 12),
-                        _buildCategoryItem(Icons.set_meal, 'Vegetables', Colors.green),
+                        _buildCategoryItem(
+                            Icons.set_meal, 'Vegetables', Colors.green),
                         const SizedBox(width: 12),
-                        _buildCategoryItem(Icons.apple, 'Fruits', Colors.orange),
+                        _buildCategoryItem(
+                            Icons.apple, 'Fruits', Colors.orange),
                         const SizedBox(width: 12),
                         _buildCategoryItem(Icons.grain, 'Grains', Colors.amber),
                         const SizedBox(width: 12),
-                        _buildCategoryItem(Icons.all_inbox, 'Others', Colors.grey),
+                        _buildCategoryItem(
+                            Icons.all_inbox, 'Others', Colors.grey),
                       ],
                     ),
                   ),
@@ -232,9 +218,9 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                     Row(
                       children: [
                         Text(
-                          _selectedCategory != null 
-                            ? '$_selectedCategory Products'
-                            : 'Featured Products',
+                          _selectedCategory != null
+                              ? '$_selectedCategory Products'
+                              : 'Featured Products',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -386,8 +372,10 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       print('currentStock: ${product['currentStock']}');
                       print('quantity: ${product['quantity']}');
                       print('inventory: ${product['inventory']}');
-                      
-                      double stockValue = (product['currentStock'] ?? product['quantity'] ?? 0).toDouble();
+
+                      double stockValue =
+                          (product['currentStock'] ?? product['quantity'] ?? 0)
+                              .toDouble();
                       print('Final stock value: $stockValue');
 
                       return _buildProductCard(
@@ -416,7 +404,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
 
   Widget _buildCategoryItem(IconData icon, String label, Color color) {
     // Check if this is the currently selected category
-    final isSelected = (_selectedCategory == label) || (label == 'All' && _selectedCategory == null);
+    final isSelected = (_selectedCategory == label) ||
+        (label == 'All' && _selectedCategory == null);
 
     return GestureDetector(
       onTap: () {
@@ -445,13 +434,15 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 color: isSelected ? color : color.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(15),
                 border: isSelected ? Border.all(color: color, width: 3) : null,
-                boxShadow: isSelected ? [
-                  BoxShadow(
-                    color: color.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ] : null,
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: color.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        )
+                      ]
+                    : null,
               ),
               child: Icon(
                 icon,
@@ -477,8 +468,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
     );
   }
 
-  Widget _buildProductCard(String title, String price, IconData icon,
-      Color color, String category,
+  Widget _buildProductCard(
+      String title, String price, IconData icon, Color color, String category,
       {bool? allowsReservation,
       double? currentStock,
       required Map<String, dynamic> product,
@@ -537,13 +528,15 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               fit: BoxFit.cover,
                               width: double.infinity,
                               height: double.infinity,
-                              loadingBuilder: (context, child, loadingProgress) {
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
                                 if (loadingProgress == null) return child;
                                 return Center(
                                   child: CircularProgressIndicator(
                                     value: loadingProgress.expectedTotalBytes !=
                                             null
-                                        ? loadingProgress.cumulativeBytesLoaded /
+                                        ? loadingProgress
+                                                .cumulativeBytesLoaded /
                                             loadingProgress.expectedTotalBytes!
                                         : null,
                                     valueColor:
@@ -553,13 +546,15 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               },
                               errorBuilder: (context, error, stackTrace) {
                                 return Center(
-                                  child: Icon(icon, color: Colors.grey[400], size: 40),
+                                  child: Icon(icon,
+                                      color: Colors.grey[400], size: 40),
                                 );
                               },
                             ),
                           )
                         : Center(
-                            child: Icon(icon, color: Colors.grey[400], size: 40),
+                            child:
+                                Icon(icon, color: Colors.grey[400], size: 40),
                           ),
                   ),
                   // Message Icon
@@ -571,7 +566,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         onTap: () {
                           final sellerId = product['sellerId'];
                           final sellerName = product['sellerName'] ?? 'Seller';
-                          _startChatWithSeller(sellerId, sellerName, product: product, productId: productId);
+                          _startChatWithSeller(sellerId, sellerName,
+                              product: product, productId: productId);
                         },
                         child: Container(
                           width: 28,
@@ -607,7 +603,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         ),
                         child: const Center(
                           child: Text(
-                                'OUT OF STOCK',
+                            'OUT OF STOCK',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -622,7 +618,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
               // Product Info with better spacing and styling
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(6.0), // Further reduced from 8.0
+                  padding:
+                      const EdgeInsets.all(6.0), // Further reduced from 8.0
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -667,20 +664,24 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                           onTap: () {
                             if (product['sellerId'] != null) {
                               print('DEBUG: Navigating to seller details');
-                              print('DEBUG: Product sellerId: "${product['sellerId']}"');
-                              print('DEBUG: Product sellerId type: ${product['sellerId'].runtimeType}');
+                              print(
+                                  'DEBUG: Product sellerId: "${product['sellerId']}"');
+                              print(
+                                  'DEBUG: Product sellerId type: ${product['sellerId'].runtimeType}');
                               print('DEBUG: Product data: $product');
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => SellerDetailsScreen(
                                     sellerId: product['sellerId'],
-                                    sellerInfo: null, // Will be loaded in the screen
+                                    sellerInfo:
+                                        null, // Will be loaded in the screen
                                   ),
                                 ),
                               );
                             } else {
-                              print('DEBUG: No sellerId found in product: $product');
+                              print(
+                                  'DEBUG: No sellerId found in product: $product');
                             }
                           },
                           child: Row(
@@ -699,7 +700,9 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               ),
                               if (hasStock) ...[
                                 const SizedBox(width: 2),
-                                Icon(Icons.star, color: Colors.grey.shade400, size: 10), // Gray star for 0.0 rating
+                                Icon(Icons.star,
+                                    color: Colors.grey.shade400,
+                                    size: 10), // Gray star for 0.0 rating
                                 const SizedBox(width: 1),
                                 Text(
                                   '0.0', // Default rating for products
@@ -722,7 +725,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => ProductDetailsScreen(
+                                      builder: (context) =>
+                                          ProductDetailsScreen(
                                         product: product,
                                         productId: productId,
                                       ),
@@ -731,7 +735,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: hasStock ? Colors.green : Colors.grey,
+                            backgroundColor:
+                                hasStock ? Colors.green : Colors.grey,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
@@ -741,7 +746,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                           ),
                           child: const Text(
                             'View',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),

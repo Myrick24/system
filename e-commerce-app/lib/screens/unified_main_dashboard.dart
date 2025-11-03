@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../services/cart_service.dart';
 import 'buyer/buyer_home_content.dart';
 import 'account_screen.dart';
 import 'cart_screen.dart';
@@ -66,7 +68,7 @@ class _UnifiedMainDashboardState extends State<UnifiedMainDashboard> {
 
   void _setupPages() {
     _pages = [
-      const BuyerHomeContent(), // Home for everyone  
+      const BuyerHomeContent(), // Home for everyone
       const BuyerOrdersScreen(), // Orders for everyone
       const CartScreen(), // Cart for everyone
       const MessagesScreen(), // Messages for everyone
@@ -78,6 +80,48 @@ class _UnifiedMainDashboardState extends State<UnifiedMainDashboard> {
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  // Build cart icon with badge
+  Widget _buildCartBadge() {
+    return Selector<CartService, int>(
+      selector: (context, cartService) => cartService.itemCount,
+      builder: (context, itemCount, child) {
+        print('🛒 Cart badge builder called - itemCount: $itemCount');
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(Icons.shopping_cart),
+            // Show badge if cart has items
+            if (itemCount > 0)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    itemCount > 99 ? '99+' : '$itemCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -103,24 +147,25 @@ class _UnifiedMainDashboardState extends State<UnifiedMainDashboard> {
         unselectedItemColor: Colors.grey,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.shopping_bag),
             label: 'Orders',
           ),
+          // Cart with badge
           BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart),
+            icon: _buildCartBadge(),
             label: 'Cart',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.message),
             label: 'Messages',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Account',
           ),
@@ -149,7 +194,7 @@ class _UnifiedMainDashboardState extends State<UnifiedMainDashboard> {
 // Keep the existing BuyerOrdersScreen class here or import it
 class BuyerOrdersScreen extends StatefulWidget {
   final bool showBackButton;
-  
+
   const BuyerOrdersScreen({super.key, this.showBackButton = false});
 
   @override
@@ -218,7 +263,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       print('🔍 LOADING ORDERS FOR TAB $tabIndex');
       print('👤 User ID: $userId');
       print('=====================================');
-      
+
       List<String> statuses;
 
       switch (tabIndex) {
@@ -242,7 +287,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       print('--- CHECKING ALL ORDERS IN DATABASE ---');
       final allOrdersSnapshot = await _firestore.collection('orders').get();
       print('📦 Total orders in Firestore: ${allOrdersSnapshot.docs.length}');
-      
+
       if (allOrdersSnapshot.docs.isNotEmpty) {
         print('');
         print('Sample of ALL orders:');
@@ -261,7 +306,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       for (String status in statuses) {
         print('');
         print('--- Querying status: "$status" ---');
-        
+
         // Query by buyerId (primary field)
         final buyerIdQuery = await _firestore
             .collection('orders')
@@ -269,13 +314,15 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             .where('status', isEqualTo: status)
             .get();
 
-        print('✅ Found ${buyerIdQuery.docs.length} orders with buyerId="$userId" AND status="$status"');
+        print(
+            '✅ Found ${buyerIdQuery.docs.length} orders with buyerId="$userId" AND status="$status"');
 
         for (var doc in buyerIdQuery.docs) {
           final orderData = doc.data();
           orderData['id'] = doc.id;
           orders.add(orderData);
-          print('  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
+          print(
+              '  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
         }
 
         // Also query by userId (fallback for old orders)
@@ -286,7 +333,8 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
               .where('status', isEqualTo: status)
               .get();
 
-          print('✅ Found ${userIdQuery.docs.length} orders with userId="$userId" AND status="$status"');
+          print(
+              '✅ Found ${userIdQuery.docs.length} orders with userId="$userId" AND status="$status"');
 
           for (var doc in userIdQuery.docs) {
             // Check if this order is not already in the list (avoid duplicates)
@@ -294,7 +342,8 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
               final orderData = doc.data();
               orderData['id'] = doc.id;
               orders.add(orderData);
-              print('  ➕ Added (via userId): ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
+              print(
+                  '  ➕ Added (via userId): ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
             } else {
               print('  ⏭️ Skipped (duplicate): ${doc.id.substring(0, 15)}...');
             }
@@ -565,7 +614,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Orders'),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../../services/cart_service.dart';
 import 'buyer_home_content.dart';
 import '../account_screen.dart';
 import '../cart_screen.dart';
@@ -64,24 +66,25 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
             _ordersKey.currentState?.reloadOrders();
           }
         },
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.shopping_bag),
             label: 'Orders',
           ),
+          // Cart with badge
           BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart),
+            icon: _buildCartBadge(),
             label: 'Cart',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.message),
             label: 'Messages',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Account',
           ),
@@ -89,11 +92,53 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
       ),
     );
   }
+
+  // Build cart icon with badge
+  Widget _buildCartBadge() {
+    return Selector<CartService, int>(
+      selector: (context, cartService) => cartService.itemCount,
+      builder: (context, itemCount, child) {
+        print('🛒 Cart badge builder called - itemCount: $itemCount');
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(Icons.shopping_cart),
+            // Show badge if cart has items
+            if (itemCount > 0)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    itemCount > 99 ? '99+' : '$itemCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class BuyerOrdersScreen extends StatefulWidget {
   final bool showBackButton;
-  
+
   const BuyerOrdersScreen({super.key, this.showBackButton = false});
 
   @override
@@ -212,7 +257,8 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         if (orderStatus != null && statuses.contains(orderStatus)) {
           orderData['id'] = doc.id;
           orders.add(orderData);
-          print('  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
+          print(
+              '  ➕ Added: ${doc.id.substring(0, 15)}... - ${orderData['productName']}');
         }
       }
 

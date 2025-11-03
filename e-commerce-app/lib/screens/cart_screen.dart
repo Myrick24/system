@@ -94,34 +94,16 @@ class _CartScreenState extends State<CartScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        title: Row(
-          children: [
-            const Text(
-              'Shopping Cart',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            Consumer<CartService>(
-              builder: (context, cartService, child) {
-                return cartService.cartItems.isNotEmpty
-                    ? Text(
-                        ' (${cartService.cartItems.length})',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.white70,
-                        ),
-                      )
-                    : const SizedBox.shrink();
-              },
-            ),
-          ],
+        title: const Text(
+          'Shopping Cart',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
+        automaticallyImplyLeading: false,
         actions: [
           Consumer<CartService>(
             builder: (context, cartService, child) {

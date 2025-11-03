@@ -12,21 +12,16 @@ class AccountNotifications extends StatefulWidget {
   State<AccountNotifications> createState() => _AccountNotificationsState();
 }
 
-class _AccountNotificationsState extends State<AccountNotifications> with SingleTickerProviderStateMixin {
+class _AccountNotificationsState extends State<AccountNotifications> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
-  late TabController _tabController;
+
   bool _isLoading = true;
-  bool _isSeller = false;
-  String? _userRole;
-  int _unreadCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadUserRole();
+    _loadData();
     _listenToRealtimeNotifications();
   }
 
@@ -50,13 +45,7 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     });
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadUserRole() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
     });
@@ -64,18 +53,12 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        final userDoc = await _firestore.collection('users').doc(user.uid).get();
-        if (userDoc.exists) {
-          final userData = userDoc.data();
-          setState(() {
-            _userRole = userData?['role'];
-            _isSeller = _userRole == 'seller';
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
-      print('Error loading user role: $e');
+      print('Error loading data: $e');
       setState(() {
         _isLoading = false;
       });
@@ -121,7 +104,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
                 final count = snapshot.data ?? 0;
                 if (count == 0) return const SizedBox.shrink();
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(12),
@@ -141,22 +125,6 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
         ),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(
-              icon: const Icon(Icons.notifications),
-              text: _isSeller ? 'Seller Notifications' : 'Buyer Notifications',
-            ),
-            Tab(
-              icon: const Icon(Icons.history),
-              text: 'All Notifications',
-            ),
-          ],
-        ),
         actions: [
           IconButton(
             onPressed: _markAllAsRead,
@@ -170,45 +138,11 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // Role-specific notifications
-          _isSeller ? _buildSellerNotifications(user.uid) : _buildBuyerNotifications(user.uid),
-          // All notifications
-          _buildAllNotifications(user.uid),
-        ],
-      ),
+      body: _buildAllNotifications(user.uid),
     );
   }
 
-  // Build seller-specific notifications
-  Widget _buildSellerNotifications(String userId) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        return _buildNotificationsList(snapshot, 'seller');
-      },
-    );
-  }
-
-  // Build buyer-specific notifications
-  Widget _buildBuyerNotifications(String userId) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        return _buildNotificationsList(snapshot, 'buyer');
-      },
-    );
-  }
-
-  // Build all notifications
+  // Build all notifications in a single list
   Widget _buildAllNotifications(String userId) {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
@@ -221,8 +155,10 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     );
   }
 
-  Widget _buildNotificationsList(AsyncSnapshot<QuerySnapshot> snapshot, String type) {
-    if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+  Widget _buildNotificationsList(
+      AsyncSnapshot<QuerySnapshot> snapshot, String type) {
+    if (snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -250,63 +186,28 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     }
 
     var notifications = snapshot.data?.docs ?? [];
-    
-    // Filter by type if needed
-    if (type == 'seller') {
-      final sellerTypes = [
-        'checkout_seller',
-        'seller_approved',
-        'seller_rejected',
-        'product_approval',
-        'product_approved',
-        'product_rejected',
-        'product_rejection',
-        'new_product_seller',
-        'low_stock',
-        'order_status',
-      ];
-      notifications = notifications.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return sellerTypes.contains(data['type'] ?? '');
-      }).toList();
-    } else if (type == 'buyer') {
-      final buyerTypes = [
-        'checkout_buyer',
-        'order_update',
-        'order_status',
-        'new_product_buyer',
-        'product_update',
-        'payment',
-      ];
-      notifications = notifications.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return buyerTypes.contains(data['type'] ?? '');
-      }).toList();
-    }
-    
+
     // Sort notifications by timestamp/createdAt (handle both field names)
     notifications.sort((a, b) {
       final aData = a.data() as Map<String, dynamic>;
       final bData = b.data() as Map<String, dynamic>;
-      
+
       final aTime = aData['timestamp'] ?? aData['createdAt'];
       final bTime = bData['timestamp'] ?? bData['createdAt'];
-      
+
       if (aTime == null && bTime == null) return 0;
       if (aTime == null) return 1;
       if (bTime == null) return -1;
-      
+
       if (aTime is Timestamp && bTime is Timestamp) {
         return bTime.compareTo(aTime); // Descending order
       }
-      
+
       return 0;
     });
-    
+
     // Limit results
-    if (type != 'all' && notifications.length > 50) {
-      notifications = notifications.sublist(0, 50);
-    } else if (notifications.length > 100) {
+    if (notifications.length > 100) {
       notifications = notifications.sublist(0, 100);
     }
 
@@ -322,11 +223,9 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
             ),
             const SizedBox(height: 16),
             Text(
-              type == 'seller'
-                  ? 'No seller notifications yet'
-                  : type == 'buyer'
-                      ? 'No buyer notifications yet'
-                      : 'No notifications yet',
+              type == 'unread'
+                  ? 'No unread notifications'
+                  : 'No read notifications',
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.grey[600],
@@ -334,11 +233,9 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
             ),
             const SizedBox(height: 8),
             Text(
-              type == 'seller'
-                  ? 'You\'ll see order updates, product approvals, and more here'
-                  : type == 'buyer'
-                      ? 'You\'ll see order confirmations, new products, and updates here'
-                      : 'All your notifications will appear here',
+              type == 'unread'
+                  ? 'You\'re all caught up!\nNew notifications will appear here.'
+                  : 'No read notifications yet',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -348,22 +245,6 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
           ],
         ),
       );
-    }
-
-    // Calculate unread count
-    final unreadCount = notifications.where((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      return data['read'] == false;
-    }).length;
-
-    if (unreadCount != _unreadCount) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _unreadCount = unreadCount;
-          });
-        }
-      });
     }
 
     return ListView.builder(
@@ -378,7 +259,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     );
   }
 
-  Widget _buildNotificationTile(String notificationId, Map<String, dynamic> data) {
+  Widget _buildNotificationTile(
+      String notificationId, Map<String, dynamic> data) {
     final type = data['type'] ?? '';
     final title = data['title'] ?? 'Notification';
     final message = data['message'] ?? '';
@@ -518,15 +400,12 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
   Future<void> _markAsRead(String notificationId) async {
     try {
       // Update both 'read' and 'isRead' fields for compatibility
-      await _firestore
-          .collection('notifications')
-          .doc(notificationId)
-          .set({
-            'read': true,
-            'isRead': true,
-            'readAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-      
+      await _firestore.collection('notifications').doc(notificationId).set({
+        'read': true,
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       print('✓ Notification $notificationId marked as read');
     } catch (e) {
       print('Error marking notification as read: $e');
@@ -536,10 +415,10 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
             .collection('notifications')
             .doc(notificationId)
             .update({
-              'read': true,
-              'isRead': true,
-              'readAt': FieldValue.serverTimestamp(),
-            });
+          'read': true,
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
       } catch (retryError) {
         print('Retry failed: $retryError');
       }
@@ -549,7 +428,7 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
   Future<void> _markAllAsRead() async {
     try {
       await RealtimeNotificationService.markAllAsRead();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('All notifications marked as read')),
@@ -570,7 +449,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Clear All Notifications'),
-        content: const Text('Are you sure you want to delete all notifications? This cannot be undone.'),
+        content: const Text(
+            'Are you sure you want to delete all notifications? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -623,7 +503,7 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     final message = data['message'] ?? '';
     final timestamp = (data['timestamp'] ?? data['createdAt']) as Timestamp?;
     final priority = data['priority'] ?? 'normal';
-    
+
     // Extract additional details
     final orderId = data['orderId'];
     final productName = data['productName'];
@@ -687,7 +567,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
                 ),
                 if (priority == 'high')
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.red.shade700,
                       borderRadius: BorderRadius.circular(4),
@@ -725,10 +606,14 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
                     height: 1.5,
                   ),
                 ),
-                
+
                 // Only show details section if there are any details
-                if (orderId != null || productName != null || quantity != null || 
-                    totalAmount != null || buyerName != null || sellerName != null) ...[
+                if (orderId != null ||
+                    productName != null ||
+                    quantity != null ||
+                    totalAmount != null ||
+                    buyerName != null ||
+                    sellerName != null) ...[
                   const SizedBox(height: 20),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -742,56 +627,60 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
                       children: [
                         // Order details
                         if (orderId != null) ...[
-                          _buildDetailRow(Icons.receipt_long, 'Order ID', orderId),
+                          _buildDetailRow(
+                              Icons.receipt_long, 'Order ID', orderId),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         // Product details
                         if (productName != null) ...[
-                          _buildDetailRow(Icons.inventory_2, 'Product', productName),
+                          _buildDetailRow(
+                              Icons.inventory_2, 'Product', productName),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         if (quantity != null) ...[
-                          _buildDetailRow(Icons.shopping_basket, 'Quantity', quantity.toString()),
+                          _buildDetailRow(Icons.shopping_basket, 'Quantity',
+                              quantity.toString()),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         if (totalAmount != null) ...[
                           _buildDetailRow(
-                            Icons.payments, 
-                            'Total Amount', 
+                            Icons.payments,
+                            'Total Amount',
                             '₱${totalAmount.toStringAsFixed(2)}',
                             valueColor: Colors.green.shade700,
                             valueFontWeight: FontWeight.bold,
                           ),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         // Buyer/Seller details
                         if (buyerName != null) ...[
                           _buildDetailRow(Icons.person, 'Buyer', buyerName),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         if (sellerName != null) ...[
                           _buildDetailRow(Icons.store, 'Seller', sellerName),
                           const SizedBox(height: 12),
                         ],
-                        
+
                         // Remove the last SizedBox
                         const SizedBox(height: 0),
                       ],
                     ),
                   ),
                 ],
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Timestamp
                 Row(
                   children: [
-                    Icon(Icons.access_time, size: 16, color: Colors.grey.shade500),
+                    Icon(Icons.access_time,
+                        size: 16, color: Colors.grey.shade500),
                     const SizedBox(width: 8),
                     Text(
                       _formatTimestamp(timestamp),
@@ -811,7 +700,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
               child: const Text('Close'),
               style: TextButton.styleFrom(
                 foregroundColor: iconColor,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
@@ -820,7 +710,8 @@ class _AccountNotificationsState extends State<AccountNotifications> with Single
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value, {Color? valueColor, FontWeight? valueFontWeight}) {
+  Widget _buildDetailRow(IconData icon, String label, String value,
+      {Color? valueColor, FontWeight? valueFontWeight}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

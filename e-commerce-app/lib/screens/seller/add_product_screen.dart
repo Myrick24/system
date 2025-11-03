@@ -237,6 +237,105 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  // Send notification to cooperative user (the cooperative itself)
+  Future<void> _sendNotificationToCooperativeUsers(
+    String cooperativeUserId,
+    String title,
+    String body,
+    String payload,
+  ) async {
+    try {
+      print('Sending notification to cooperative user ID: $cooperativeUserId');
+
+      // Get the cooperative user document to verify it exists and get their name
+      final coopUserDoc =
+          await _firestore.collection('users').doc(cooperativeUserId).get();
+
+      if (!coopUserDoc.exists) {
+        print(
+            'Warning: Cooperative user not found with ID: $cooperativeUserId');
+        return;
+      }
+
+      final coopUserData = coopUserDoc.data() as Map<String, dynamic>;
+      final userName = coopUserData['name'] ?? 'Cooperative';
+      final userRole = coopUserData['role'] ?? '';
+
+      if (userRole != 'cooperative' && userRole != 'admin') {
+        print(
+            'Warning: User $cooperativeUserId is not a cooperative (role: $userRole)');
+        return;
+      }
+
+      print(
+          'Creating notification for cooperative: $userName ($cooperativeUserId)');
+
+      // Create notification record for the cooperative user
+      // This will trigger real-time updates in the cooperative dashboard
+      await _firestore.collection('notifications').add({
+        'userId': cooperativeUserId,
+        'title': title,
+        'body': body,
+        'payload': payload,
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'product_approval',
+        'cooperativeId': cooperativeUserId,
+        'priority': 'high',
+      });
+
+      print('✅ Successfully created notification for cooperative: $userName');
+
+      // Also check if there are any staff members linked to this cooperative
+      // (users who have cooperativeId pointing to this cooperative)
+      final staffQuery = await _firestore
+          .collection('users')
+          .where('cooperativeId', isEqualTo: cooperativeUserId)
+          .where('role', isEqualTo: 'cooperative')
+          .get();
+
+      if (staffQuery.docs.isNotEmpty) {
+        print(
+            'Found ${staffQuery.docs.length} staff members linked to this cooperative');
+
+        for (var staffDoc in staffQuery.docs) {
+          try {
+            String staffUserId = staffDoc.id;
+            Map<String, dynamic> staffData = staffDoc.data();
+            String staffName = staffData['name'] ?? 'Staff Member';
+
+            print(
+                'Creating notification for staff member: $staffName ($staffUserId)');
+
+            await _firestore.collection('notifications').add({
+              'userId': staffUserId,
+              'title': title,
+              'body': body,
+              'payload': payload,
+              'read': false,
+              'createdAt': FieldValue.serverTimestamp(),
+              'type': 'product_approval',
+              'cooperativeId': cooperativeUserId,
+              'priority': 'high',
+            });
+
+            print('✅ Successfully created notification for staff: $staffName');
+          } catch (e) {
+            print('Error creating notification for staff ${staffDoc.id}: $e');
+          }
+        }
+      } else {
+        print('No additional staff members found for this cooperative');
+      }
+
+      print(
+          '✅ Notification process complete for cooperative $cooperativeUserId');
+    } catch (e) {
+      print('❌ Error sending notification to cooperative: $e');
+      print('Stack trace: ${StackTrace.current}');
+    }
+  }
+
   Future<void> _submitProduct() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -388,18 +487,43 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Notify cooperative about new product submission
       if (_selectedCoopId != null) {
         try {
+          // Format product details for notification
+          final productName = _nameController.text.trim();
+          final price = double.parse(_priceController.text.trim());
+          final quantity = int.parse(_quantityController.text.trim());
+          final unit = _selectedUnit;
+          final category = _selectedCategory;
+
+          // Create simple notification message
+          final notificationMessage =
+              '$sellerName uploaded "$productName" for approval';
+
+          // Save to cooperative_notifications collection for persistent record
           await _firestore.collection('cooperative_notifications').add({
-            'title': 'New Product Pending Approval',
-            'message':
-                'New product "${_nameController.text.trim()}" by $sellerName requires your approval.',
+            'title': 'New Product Uploaded',
+            'message': notificationMessage,
             'createdAt': FieldValue.serverTimestamp(),
             'type': 'product_approval',
             'read': false,
             'sellerId': currentUser.uid,
+            'sellerName': sellerName,
             'productId': productId,
-            'priority': 'medium',
-            'cooperativeId': _selectedCoopId, // Target specific cooperative
+            'productName': productName,
+            'price': price,
+            'quantity': quantity,
+            'unit': unit,
+            'category': category,
+            'priority': 'high',
+            'cooperativeId': _selectedCoopId,
           });
+
+          // Send real-time notification to all cooperative users
+          await _sendNotificationToCooperativeUsers(
+            _selectedCoopId!,
+            'New Product Uploaded',
+            notificationMessage,
+            'product_approval|$productId|${_selectedCoopId}',
+          );
         } catch (e) {
           print('Failed to notify cooperative: $e');
           // Don't fail the whole operation if cooperative notification fails

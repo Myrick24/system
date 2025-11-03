@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import '../widgets/philippine_address_form.dart';
 import '../theme/app_theme.dart';
+import 'buyer/buyer_main_dashboard.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({Key? key}) : super(key: key);
@@ -21,6 +22,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   final _auth = FirebaseAuth.instance;
   final _contactNumberController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _firestore = FirebaseFirestore.instance;
   final _formKey = GlobalKey<FormState>();
   // Form controllers
@@ -28,6 +32,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   File? _governmentIdImage;
   bool _isLoading = false;
+  bool _passwordVisible = false;
+  bool _confirmPasswordVisible = false;
   // Image handling
   final ImagePicker _picker = ImagePicker();
 
@@ -46,6 +52,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   void dispose() {
     _fullNameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _contactNumberController.dispose();
     _vegetableListController.dispose();
     _sitioController.dispose();
@@ -139,12 +148,305 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           final userData = userDoc.data() as Map<String, dynamic>;
           setState(() {
             _fullNameController.text = userData['name'] ?? '';
+            _emailController.text =
+                userData['email'] ?? currentUser.email ?? '';
+          });
+        } else {
+          // If no user document exists, use Firebase Auth email
+          setState(() {
+            _emailController.text = currentUser.email ?? '';
           });
         }
       } catch (e) {
         print('Error fetching user data: $e');
+        // Fallback to Firebase Auth email
+        setState(() {
+          _emailController.text = currentUser.email ?? '';
+        });
       }
     }
+  }
+
+  // Helper method to build section title
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        fontSize: 13,
+        color: AppTheme.primaryGreen,
+      ),
+    );
+  }
+
+  // Helper method to build section content
+  Widget _buildSectionContent(String content) {
+    return Text(
+      content,
+      style: TextStyle(
+        fontSize: 12,
+        color: Colors.grey.shade700,
+        height: 1.6,
+      ),
+    );
+  }
+
+  // Show Terms and Conditions Dialog
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  const Text(
+                    '🌾',
+                    style: TextStyle(fontSize: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Terms and Conditions',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Last Updated: October 2025',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green.shade100,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome to HARVEST, a mobile platform that connects farmers, cooperatives, and buyers for easier and fair agricultural trading. By using this app, you agree to follow the rules and responsibilities written below. Please read them carefully.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSectionTitle('1. Account Registration and Approval'),
+                    _buildSectionContent(
+                        'Farmers who want to sell their products must apply as a seller and be approved by their cooperative. Cooperatives are responsible for verifying the identity and details of each farmer or seller. Users must provide true and complete information during registration. Any false data may result in account suspension.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('2. Product Listing and Sales'),
+                    _buildSectionContent(
+                        'Sellers must post accurate information about their products (name, price, quantity, date of harvest, etc.). HARVEST and the cooperative have the right to review, edit, or remove any product listing that violates platform policies. Prices and stock availability are managed by the seller, under cooperative supervision.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('3. Orders and Deliveries'),
+                    _buildSectionContent(
+                        'Buyers can place orders through the app. Cooperatives handle order coordination and delivery to ensure products are delivered properly. Sellers must prepare the products on time based on the order and delivery schedule. Delivery information (buyer name, address, contact) is shared only with the assigned cooperative and delivery personnel.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('4. Payments'),
+                    _buildSectionContent(
+                        'Payments will be processed based on the cooperative\'s chosen method (cash, bank transfer, e-wallet, etc.). HARVEST is not responsible for any payment dispute between sellers, buyers, and cooperatives. Sellers must confirm receipt of payment before marking an order as completed.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('5. Account Suspension or Termination'),
+                    _buildSectionContent(
+                        'The cooperative or admin may suspend or deactivate any account that violates the app\'s policies, provides false information, or misuses the platform. Repeated violations may result in permanent account termination.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('6. Responsibility of Users'),
+                    _buildSectionContent(
+                        'All users must use the app honestly and respectfully. Users must not post inappropriate, illegal, or misleading content. HARVEST has the right to update these terms without prior notice.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('7. Limitation of Liability'),
+                    _buildSectionContent(
+                        'HARVEST serves as a platform only and is not directly involved in the sale or delivery of products. The cooperative and sellers are responsible for ensuring product quality and delivery accuracy.'),
+                  ],
+                ),
+              ),
+            ),
+            // Footer
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryGreen,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'I Understand',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Show Data Privacy Policy Dialog
+  void _showPrivacyDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.primaryGreen,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  const Text(
+                    '🔒',
+                    style: TextStyle(fontSize: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Data Privacy Policy',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Last Updated: October 2025',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green.shade100,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'HARVEST respects your privacy and is committed to protecting your personal information in line with the Data Privacy Act of 2012 (RA 10173) of the Philippines.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSectionTitle('1. Information We Collect'),
+                    _buildSectionContent(
+                        'We may collect the following data: Full name, contact number, and address; Farm and cooperative details; Product listings and transaction records; Uploaded IDs or verification documents; Payment and delivery information.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('2. How We Use Your Information'),
+                    _buildSectionContent(
+                        'Your data will only be used for the following purposes: Account registration and verification; Cooperative approval and coordination; Order processing and delivery; Communication between farmers, buyers, and cooperatives; Improving app services and security.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('3. Data Sharing'),
+                    _buildSectionContent(
+                        'Your information will only be shared with your cooperative and authorized delivery partners for transaction purposes. HARVEST does not sell or share your data with any third-party company without your consent.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('4. Data Protection'),
+                    _buildSectionContent(
+                        'We apply security measures to protect your data from unauthorized access, loss, or misuse. Only authorized personnel and cooperative representatives can view your account details.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('5. User Rights'),
+                    _buildSectionContent(
+                        'You have the right to: Access and review your personal information; Request correction of inaccurate data; Withdraw your consent or request account deletion.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('6. Policy Updates'),
+                    _buildSectionContent(
+                        'We may update this policy to improve our services. Any changes will be posted in the app.'),
+                    const SizedBox(height: 12),
+                    _buildSectionTitle('7. Contact Us'),
+                    _buildSectionContent(
+                        'If you have questions or concerns about your data, you can contact your cooperative representative or the HARVEST support team.'),
+                  ],
+                ),
+              ),
+            ),
+            // Footer
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryGreen,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'I Understand',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Function to pick government ID image
@@ -244,14 +546,46 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
 
     try {
-      final currentUser = _auth.currentUser;
+      User? currentUser = _auth.currentUser;
+
+      // If no user is logged in, create a new account
       if (currentUser == null) {
-        throw Exception('No user logged in');
+        final email = _emailController.text.trim();
+        final password = _passwordController.text.trim();
+
+        // Validate password fields
+        if (password.isEmpty) {
+          throw Exception('Please enter a password');
+        }
+        if (password != _confirmPasswordController.text.trim()) {
+          throw Exception('Passwords do not match');
+        }
+
+        // Create new user account
+        final userCredential = await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+
+        currentUser = userCredential.user;
+
+        if (currentUser == null) {
+          throw Exception('Failed to create account');
+        }
+
+        // Create user document in Firestore
+        await _firestore.collection('users').doc(currentUser.uid).set({
+          'name': _fullNameController.text.trim(),
+          'email': email,
+          'role':
+              'buyer', // Initially set as buyer, will be updated when seller approved
+          'createdAt': FieldValue.serverTimestamp(),
+        });
       }
 
       // Generate a unique seller ID
       String sellerId = _firestore.collection('sellers').doc().id;
-      String userEmail = currentUser.email ?? '';
+      String userEmail = _emailController.text.trim();
 
       // Upload government ID
       String? governmentIdUrl = await _uploadGovernmentId(sellerId);
@@ -339,17 +673,90 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Application submitted successfully to $_selectedCoopName! Please wait for cooperative approval. Check your account screen for status updates.'),
-            duration: Duration(seconds: 4),
-            backgroundColor: Colors.green,
-          ),
+        // Show success dialog
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Success icon
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 60,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Title
+                  Text(
+                    'Application Submitted!',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  // Message
+                  Text(
+                    '✅ Your application has been sent to $_selectedCoopName for approval.\n\nYou can still browse the marketplace while waiting.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  // Continue button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext); // Close dialog
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const BuyerMainDashboard(),
+                          ),
+                          (route) => false, // Remove all previous routes
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
-        // Return to previous screen with a result
-        Navigator.pop(context,
-            {'success': true, 'sellerId': sellerId, 'status': 'pending'});
       }
     } catch (e) {
       print('Error during registration: $e');
@@ -479,6 +886,134 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Email Address
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: 'Email Address*',
+                      prefixIcon:
+                          Icon(Icons.email, color: Colors.grey.shade600),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      labelStyle: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your email address';
+                      }
+                      // Basic email validation
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                          .hasMatch(value)) {
+                        return 'Please enter a valid email address';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Password fields - only show if no user is logged in
+                if (_auth.currentUser == null) ...[
+                  // Password
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextFormField(
+                      controller: _passwordController,
+                      obscureText: !_passwordVisible,
+                      decoration: InputDecoration(
+                        labelText: 'Password*',
+                        prefixIcon:
+                            Icon(Icons.lock, color: Colors.grey.shade600),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _passwordVisible
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                            color: Colors.grey.shade600,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _passwordVisible = !_passwordVisible;
+                            });
+                          },
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        labelStyle: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a password';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Confirm Password
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextFormField(
+                      controller: _confirmPasswordController,
+                      obscureText: !_confirmPasswordVisible,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password*',
+                        prefixIcon:
+                            Icon(Icons.lock, color: Colors.grey.shade600),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _confirmPasswordVisible
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                            color: Colors.grey.shade600,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _confirmPasswordVisible =
+                                  !_confirmPasswordVisible;
+                            });
+                          },
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        labelStyle: TextStyle(color: Colors.grey.shade700),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please confirm your password';
+                        }
+                        if (value != _passwordController.text) {
+                          return 'Passwords do not match';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Contact Number
                 Container(
@@ -676,7 +1211,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
 
                 // Cooperative Selection Section
                 Container(
@@ -767,57 +1302,58 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                   )
                 else
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedCoopId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: 'Choose Cooperative*',
-                        prefixIcon:
-                            Icon(Icons.business, color: Colors.grey.shade600),
-                        border: InputBorder.none,
-                        labelStyle: TextStyle(color: Colors.grey.shade700),
-                        contentPadding: EdgeInsets.zero,
+                  SizedBox(
+                    height: 64,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
                       ),
-                      items: _cooperatives.map((coop) {
-                        return DropdownMenuItem<String>(
-                          value: coop['id'] as String,
-                          child: Text(
-                            coop['name'] as String,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedCoopId,
+                        decoration: InputDecoration(
+                          labelText: 'Choose Cooperative*',
+                          prefixIcon:
+                              Icon(Icons.business, color: Colors.grey.shade600),
+                          border: InputBorder.none,
+                          labelStyle: TextStyle(color: Colors.grey.shade700),
+                          contentPadding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 16),
+                        ),
+                        items: _cooperatives.map((coop) {
+                          return DropdownMenuItem<String>(
+                            value: coop['id'] as String,
+                            child: Text(
+                              coop['name'] as String,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCoopId = value;
-                          // Find the selected cooperative name
-                          final selectedCoop = _cooperatives.firstWhere(
-                            (coop) => coop['id'] == value,
-                            orElse: () => {'name': ''},
                           );
-                          _selectedCoopName = selectedCoop['name'] as String?;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please select a cooperative';
-                        }
-                        return null;
-                      },
-                      hint: const Text('Select a cooperative'),
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedCoopId = value;
+                            // Find the selected cooperative name
+                            final selectedCoop = _cooperatives.firstWhere(
+                              (coop) => coop['id'] == value,
+                              orElse: () => {'name': ''},
+                            );
+                            _selectedCoopName = selectedCoop['name'] as String?;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please select a cooperative to handle your application';
+                          }
+                          return null;
+                        },
+                        hint: const Text(
+                            'Select a cooperative that will handle your products'),
+                        isExpanded: true,
+                      ),
                     ),
                   ),
                 if (_selectedCoopName != null && _selectedCoopName!.isNotEmpty)
@@ -846,6 +1382,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ],
                     ),
                   ),
+                const SizedBox(height: 24),
+
                 const SizedBox(height: 24),
 
                 // Government ID Upload Section
@@ -966,9 +1504,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 // Terms and Conditions Section
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+                    color: AppTheme.primaryGreen.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.shade200),
+                    border: Border.all(
+                        color: AppTheme.primaryGreen.withOpacity(0.3)),
                   ),
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -978,7 +1517,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         children: [
                           Icon(
                             Icons.gavel,
-                            color: Colors.orange.shade700,
+                            color: AppTheme.primaryGreen,
                             size: 20,
                           ),
                           const SizedBox(width: 8),
@@ -987,7 +1526,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Colors.orange.shade800,
+                              color: AppTheme.primaryGreen,
                             ),
                           ),
                         ],
@@ -999,12 +1538,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.shade200),
+                          border: Border.all(
+                              color: AppTheme.primaryGreen.withOpacity(0.4),
+                              width: 1.5),
                         ),
                         child: CheckboxListTile(
-                          title: const Text(
-                            'I agree to the Terms and Conditions*',
-                            style: TextStyle(fontSize: 14),
+                          title: GestureDetector(
+                            onTap: _showTermsDialog,
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'I agree to the '),
+                                  TextSpan(
+                                    text: 'Terms and Conditions',
+                                    style: TextStyle(
+                                      color: Colors.blue.shade700,
+                                      decoration: TextDecoration.underline,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const TextSpan(text: '*'),
+                                ],
+                              ),
+                            ),
                           ),
                           value: _agreeToTerms,
                           onChanged: (value) {
@@ -1016,7 +1576,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           contentPadding:
                               const EdgeInsets.symmetric(horizontal: 8),
                           dense: true,
-                          activeColor: Colors.orange.shade600,
+                          activeColor: AppTheme.primaryGreen,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1026,12 +1586,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.shade200),
+                          border: Border.all(
+                              color: AppTheme.primaryGreen.withOpacity(0.4),
+                              width: 1.5),
                         ),
                         child: CheckboxListTile(
-                          title: const Text(
-                            'I agree to the Data Privacy Policy*',
-                            style: TextStyle(fontSize: 14),
+                          title: GestureDetector(
+                            onTap: _showPrivacyDialog,
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black87,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'I agree to the '),
+                                  TextSpan(
+                                    text: 'Data Privacy Policy',
+                                    style: TextStyle(
+                                      color: Colors.blue.shade700,
+                                      decoration: TextDecoration.underline,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const TextSpan(text: '*'),
+                                ],
+                              ),
+                            ),
                           ),
                           value: _agreeToPrivacy,
                           onChanged: (value) {
@@ -1043,7 +1624,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           contentPadding:
                               const EdgeInsets.symmetric(horizontal: 8),
                           dense: true,
-                          activeColor: Colors.orange.shade600,
+                          activeColor: AppTheme.primaryGreen,
                         ),
                       ),
                     ],

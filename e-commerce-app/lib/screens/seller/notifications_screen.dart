@@ -64,7 +64,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 final count = snapshot.data ?? 0;
                 if (count == 0) return const SizedBox.shrink();
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.red,
                     borderRadius: BorderRadius.circular(12),
@@ -94,112 +95,124 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('notifications')
-            .where('userId', isEqualTo: currentUser.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
-              ),
-            );
-          }
+      body: _buildNotificationsList(),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Error loading notifications: ${snapshot.error}'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Try refreshing the page',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
+  Widget _buildNotificationsList() {
+    final currentUser = _auth.currentUser;
 
-          var notifications = snapshot.data?.docs ?? [];
+    if (currentUser == null) {
+      return const Center(
+        child: Text('Please log in to view notifications'),
+      );
+    }
 
-          // Sort notifications by timestamp/createdAt (handle both field names)
-          notifications.sort((a, b) {
-            final aData = a.data() as Map<String, dynamic>;
-            final bData = b.data() as Map<String, dynamic>;
-            
-            final aTime = aData['timestamp'] ?? aData['createdAt'];
-            final bTime = bData['timestamp'] ?? bData['createdAt'];
-            
-            if (aTime == null && bTime == null) return 0;
-            if (aTime == null) return 1;
-            if (bTime == null) return -1;
-            
-            final aDate = (aTime as Timestamp).toDate();
-            final bDate = (bTime as Timestamp).toDate();
-            
-            return bDate.compareTo(aDate); // Descending order
-          });
-
-          if (notifications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notifications_none,
-                    size: 80,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No notifications yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You\'ll receive notifications when your products are reviewed',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade500,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: notifications.length,
-            itemBuilder: (context, index) {
-              final notification =
-                  notifications[index].data() as Map<String, dynamic>;
-              final notificationId = notifications[index].id;
-
-              return _buildNotificationCard(notification, notificationId);
-            },
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: currentUser.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryGreen),
+            ),
           );
-        },
-      ),
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error loading notifications: ${snapshot.error}'),
+                const SizedBox(height: 8),
+                Text(
+                  'Try refreshing the page',
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        var notifications = snapshot.data?.docs ?? [];
+
+        // Sort notifications by timestamp/createdAt (handle both field names)
+        notifications.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+
+          final aTime = aData['timestamp'] ?? aData['createdAt'];
+          final bTime = bData['timestamp'] ?? bData['createdAt'];
+
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+
+          final aDate = (aTime as Timestamp).toDate();
+          final bDate = (bTime as Timestamp).toDate();
+
+          return bDate.compareTo(aDate); // Descending order
+        });
+
+        if (notifications.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.notifications_none,
+                  size: 80,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No notifications',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You\'re all caught up!\nNew notifications will appear here.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8.0),
+          itemCount: notifications.length,
+          itemBuilder: (context, index) {
+            final notification =
+                notifications[index].data() as Map<String, dynamic>;
+            final notificationId = notifications[index].id;
+
+            return _buildNotificationCard(notification, notificationId);
+          },
+        );
+      },
     );
   }
 
   Widget _buildNotificationCard(
       Map<String, dynamic> notification, String notificationId) {
     // Check both 'read' and 'isRead' fields
-    final isRead = (notification['read'] == true) || (notification['isRead'] == true);
+    final isRead =
+        (notification['read'] == true) || (notification['isRead'] == true);
     final type = notification['type'] ?? 'general';
     final title = notification['title'] ?? 'Notification';
     final message = notification['message'] ?? '';
@@ -413,15 +426,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _markAsRead(String notificationId) async {
     try {
       // Update both 'read' and 'isRead' fields for compatibility
-      await _firestore
-          .collection('notifications')
-          .doc(notificationId)
-          .set({
-            'read': true,
-            'isRead': true,
-            'readAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-      
+      await _firestore.collection('notifications').doc(notificationId).set({
+        'read': true,
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       print('✓ Notification $notificationId marked as read');
     } catch (e) {
       print('Error marking notification as read: $e');
@@ -431,10 +441,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .collection('notifications')
             .doc(notificationId)
             .update({
-              'read': true,
-              'isRead': true,
-              'readAt': FieldValue.serverTimestamp(),
-            });
+          'read': true,
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
       } catch (retryError) {
         print('Retry failed: $retryError');
       }
@@ -567,8 +577,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(Icons.inventory_2, 
-                        size: 18, 
+                      Icon(
+                        Icons.inventory_2,
+                        size: 18,
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(width: 8),
@@ -594,8 +605,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 if (productId != null) ...[
                   Row(
                     children: [
-                      Icon(Icons.tag, 
-                        size: 18, 
+                      Icon(
+                        Icons.tag,
+                        size: 18,
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(width: 8),
@@ -624,8 +636,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.access_time, 
-                      size: 16, 
+                    Icon(
+                      Icons.access_time,
+                      size: 16,
                       color: Colors.grey.shade500,
                     ),
                     const SizedBox(width: 8),
@@ -642,7 +655,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
           ),
           actions: [
-            if (productId != null && (type == 'product_approved' || type == 'product_rejected'))
+            if (productId != null &&
+                (type == 'product_approved' || type == 'product_rejected'))
               TextButton.icon(
                 onPressed: () {
                   Navigator.pop(context);

@@ -50,5 +50,16 @@
 	<string>This app needs access to camera for taking product photos</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to microphone when taking videos of products</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>https</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>Firebase Dynamic Links</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -671,13 +671,13 @@ class _AccountScreenState extends State<AccountScreen>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.orange.shade300,
-                      Colors.orange.shade500,
+                      AppTheme.primaryGreen,
+                      AppTheme.primaryGreen.withOpacity(0.8),
                     ],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.orange.withOpacity(0.3),
+                      color: AppTheme.primaryGreen.withOpacity(0.3),
                       spreadRadius: 2,
                       blurRadius: 8,
                       offset: const Offset(0, 4),
@@ -718,7 +718,7 @@ class _AccountScreenState extends State<AccountScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.yellow.shade700,
+                              color: Colors.white.withOpacity(0.3),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Text(
@@ -734,7 +734,7 @@ class _AccountScreenState extends State<AccountScreen>
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Your seller application is under review by our admin team.',
+                        'Review by Cooperative',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -814,7 +814,7 @@ class _AccountScreenState extends State<AccountScreen>
                           label: const Text('Check Status'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
-                            foregroundColor: Colors.orange.shade600,
+                            foregroundColor: AppTheme.primaryGreen,
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -1000,7 +1000,8 @@ class _AccountScreenState extends State<AccountScreen>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const BuyerOrdersScreen(showBackButton: true),
+                                builder: (context) => const BuyerOrdersScreen(
+                                    showBackButton: true),
                               ),
                             );
                           },
@@ -1283,7 +1284,7 @@ class _AccountScreenState extends State<AccountScreen>
           .snapshots(),
       builder: (context, snapshot) {
         int unreadCount = 0;
-        
+
         if (snapshot.hasData) {
           unreadCount = snapshot.data?.docs.length ?? 0;
         }

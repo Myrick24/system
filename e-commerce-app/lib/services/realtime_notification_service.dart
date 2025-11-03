@@ -8,14 +8,16 @@ import 'dart:async';
 /// Real-time Push Notification Service
 /// Handles FCM push notifications, local notifications, and real-time Firestore updates
 class RealtimeNotificationService {
-  static final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  static final FirebaseMessaging _firebaseMessaging =
+      FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Stream controllers for real-time updates
-  static final StreamController<Map<String, dynamic>> _notificationStreamController =
+  static final StreamController<Map<String, dynamic>>
+      _notificationStreamController =
       StreamController<Map<String, dynamic>>.broadcast();
 
   // Stream for listening to new notifications
@@ -118,7 +120,8 @@ class RealtimeNotificationService {
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       print('✅ User granted notification permission');
-    } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+    } else if (settings.authorizationStatus ==
+        AuthorizationStatus.provisional) {
       print('⚠️  User granted provisional permission');
     } else {
       print('❌ User declined notification permission');
@@ -223,7 +226,8 @@ class RealtimeNotificationService {
 
   /// Check initial message when app opened from terminated state
   static Future<void> _checkInitialMessage() async {
-    RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
+    RemoteMessage? initialMessage =
+        await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
       print('🚀 App opened from notification: ${initialMessage.messageId}');
       _handleNotificationOpened(initialMessage);
@@ -233,7 +237,7 @@ class RealtimeNotificationService {
   /// Handle notification tap
   static void _onNotificationTapped(NotificationResponse response) {
     print('👆 Local notification tapped: ${response.payload}');
-    
+
     if (response.payload != null) {
       // Parse payload and navigate
       final parts = response.payload!.split('|');
@@ -259,10 +263,12 @@ class RealtimeNotificationService {
     // Determine notification icon and color based on type
     final notificationDetails = _getNotificationDetails(type);
 
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
       'harvest_notifications',
       'Harvest App Notifications',
-      channelDescription: 'Real-time notifications for orders, products, and updates',
+      channelDescription:
+          'Real-time notifications for orders, products, and updates',
       importance: Importance.high,
       priority: Priority.high,
       playSound: true,
@@ -331,7 +337,7 @@ class RealtimeNotificationService {
     final orderId = data['orderId'] ?? '';
     final productId = data['productId'] ?? '';
     final productName = data['productName'] ?? '';
-    
+
     return '$type|$orderId|$productId|$productName';
   }
 
@@ -347,11 +353,12 @@ class RealtimeNotificationService {
   }
 
   /// Save notification to Firestore
-  static Future<void> _saveNotificationToFirestore(RemoteMessage message) async {
+  static Future<void> _saveNotificationToFirestore(
+      RemoteMessage message) async {
     try {
       final data = message.data;
       final userId = data['userId'];
-      
+
       if (userId == null) {
         print('⚠️  No userId in notification data, skipping Firestore save');
         return;
@@ -392,13 +399,13 @@ class RealtimeNotificationService {
     _auth.authStateChanges().listen((User? user) {
       if (user != null) {
         print('👤 Setting up Firestore listener for user: ${user.uid}');
-        
+
+        // Try with createdAt first (newer notifications)
         _firestore
             .collection('notifications')
             .where('userId', isEqualTo: user.uid)
             .where('read', isEqualTo: false)
-            .orderBy('timestamp', descending: true)
-            .limit(1)
+            .orderBy('createdAt', descending: true)
             .snapshots()
             .listen(
           (snapshot) {
@@ -407,11 +414,12 @@ class RealtimeNotificationService {
                 if (change.type == DocumentChangeType.added) {
                   final data = change.doc.data();
                   if (data != null) {
-                    print('🆕 New notification detected in Firestore');
-                    
+                    print(
+                        '🆕 New notification detected in Firestore: ${data['title']}');
+
                     // Show local notification for Firestore-only notifications
                     _showFirestoreNotification(data);
-                    
+
                     // Broadcast to stream
                     _notificationStreamController.add({
                       'source': 'firestore',
@@ -425,7 +433,41 @@ class RealtimeNotificationService {
             }
           },
           onError: (error) {
-            print('❌ Error in Firestore listener: $error');
+            print('❌ Error in Firestore listener (trying createdAt): $error');
+
+            // Fallback: Try without orderBy if index doesn't exist
+            _firestore
+                .collection('notifications')
+                .where('userId', isEqualTo: user.uid)
+                .where('read', isEqualTo: false)
+                .snapshots()
+                .listen(
+              (snapshot) {
+                if (snapshot.docChanges.isNotEmpty) {
+                  for (var change in snapshot.docChanges) {
+                    if (change.type == DocumentChangeType.added) {
+                      final data = change.doc.data();
+                      if (data != null) {
+                        print(
+                            '🆕 New notification detected (fallback): ${data['title']}');
+                        _showFirestoreNotification(data);
+
+                        _notificationStreamController.add({
+                          'source': 'firestore',
+                          'id': change.doc.id,
+                          'data': data,
+                          'timestamp': DateTime.now().toIso8601String(),
+                        });
+                      }
+                    }
+                  }
+                }
+              },
+              onError: (fallbackError) {
+                print(
+                    '❌ Error in Firestore listener (fallback): $fallbackError');
+              },
+            );
           },
         );
       } else {
@@ -435,12 +477,17 @@ class RealtimeNotificationService {
   }
 
   /// Show notification from Firestore data
-  static Future<void> _showFirestoreNotification(Map<String, dynamic> data) async {
+  static Future<void> _showFirestoreNotification(
+      Map<String, dynamic> data) async {
     final title = data['title'] ?? 'Notification';
-    final message = data['message'] ?? '';
+    // Support both 'message' and 'body' fields
+    final message = data['body'] ?? data['message'] ?? '';
     final type = data['type'] ?? 'general';
 
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    print('📱 Showing phone notification: $title - $message');
+
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
       'harvest_notifications',
       'Harvest App Notifications',
       channelDescription: 'Real-time notifications',
@@ -448,6 +495,12 @@ class RealtimeNotificationService {
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
+      enableLights: true,
+      ledColor: Color.fromARGB(255, 76, 175, 80),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+      icon: '@mipmap/ic_launcher',
+      styleInformation: BigTextStyleInformation(''),
     );
 
     const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
@@ -565,7 +618,8 @@ class RealtimeNotificationService {
     required String body,
     String? payload,
   }) async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
       'harvest_notifications',
       'Harvest App Notifications',
       channelDescription: 'Real-time notifications',

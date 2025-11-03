@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'coop_order_details.dart';
 import 'coop_payment_management.dart';
 
@@ -38,16 +39,25 @@ class _CoopDashboardState extends State<CoopDashboard>
     'delivered'
   ];
 
+  // Notification listener
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  int _unreadNotificationCount = 0;
+  List<Map<String, dynamic>> _recentNotifications = [];
+  Set<String> _shownNotificationIds =
+      {}; // Track which notifications we've already shown popups for
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
     _checkAccess();
+    _setupNotificationListener();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -106,6 +116,841 @@ class _CoopDashboardState extends State<CoopDashboard>
         _accessDeniedReason = 'Error verifying access: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Setup real-time notification listener
+  void _setupNotificationListener() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      print('Cannot setup notification listener: No user logged in');
+      return;
+    }
+
+    print('Setting up notification listener for user: ${user.uid}');
+
+    // Try compound query first (requires index)
+    _notificationSubscription = _firestore
+        .collection('notifications')
+        .where('userId', isEqualTo: user.uid)
+        .where('read', isEqualTo: false)
+        .orderBy('createdAt', descending: true)
+        .limit(10)
+        .snapshots()
+        .listen((snapshot) {
+      print(
+          'Notification snapshot received: ${snapshot.docs.length} unread notifications');
+
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          _unreadNotificationCount = 0;
+          _recentNotifications = [];
+        });
+        return;
+      }
+
+      setState(() {
+        _unreadNotificationCount = snapshot.docs.length;
+        _recentNotifications = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+      });
+
+      // Show popup only for NEW notifications (ones we haven't shown before)
+      for (var doc in snapshot.docs) {
+        final notificationId = doc.id;
+
+        // Only show popup if we haven't shown this notification before
+        if (!_shownNotificationIds.contains(notificationId)) {
+          final notificationData = doc.data();
+          print(
+              'Showing popup for new notification: ${notificationData['title']}');
+
+          _showNotificationPopup(
+            title: notificationData['title'] ?? 'New Notification',
+            body: notificationData['body'] ?? '',
+            notificationId: notificationId,
+            payload: notificationData['payload'],
+          );
+
+          // Mark this notification as shown
+          _shownNotificationIds.add(notificationId);
+        }
+      }
+    }, onError: (error) {
+      print('Error in notification listener: $error');
+      // If compound query fails (index not ready), try simple query
+      if (error.toString().contains('index')) {
+        print('Firestore index not ready, using fallback query');
+        _setupFallbackNotificationListener();
+      }
+    });
+  }
+
+  /// Fallback notification listener without orderBy (doesn't need index)
+  void _setupFallbackNotificationListener() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    print('Setting up FALLBACK notification listener (no index required)');
+
+    _notificationSubscription = _firestore
+        .collection('notifications')
+        .where('userId', isEqualTo: user.uid)
+        .where('read', isEqualTo: false)
+        .limit(10)
+        .snapshots()
+        .listen((snapshot) {
+      print(
+          'Fallback notification snapshot: ${snapshot.docs.length} unread notifications');
+
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          _unreadNotificationCount = 0;
+          _recentNotifications = [];
+        });
+        return;
+      }
+
+      // Manually sort by createdAt since we can't use orderBy
+      var sortedDocs = snapshot.docs.toList();
+      sortedDocs.sort((a, b) {
+        var aTime = a.data()['createdAt'] as Timestamp?;
+        var bTime = b.data()['createdAt'] as Timestamp?;
+        if (aTime == null || bTime == null) return 0;
+        return bTime.compareTo(aTime); // descending
+      });
+
+      setState(() {
+        _unreadNotificationCount = sortedDocs.length;
+        _recentNotifications = sortedDocs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+      });
+
+      // Show popup only for NEW notifications
+      for (var doc in sortedDocs) {
+        final notificationId = doc.id;
+
+        if (!_shownNotificationIds.contains(notificationId)) {
+          final notificationData = doc.data();
+          print(
+              'Showing popup for new notification: ${notificationData['title']}');
+
+          _showNotificationPopup(
+            title: notificationData['title'] ?? 'New Notification',
+            body: notificationData['body'] ?? '',
+            notificationId: notificationId,
+            payload: notificationData['payload'],
+          );
+
+          _shownNotificationIds.add(notificationId);
+        }
+      }
+    }, onError: (error) {
+      print('Error in fallback notification listener: $error');
+    });
+  }
+
+  /// Show notification popup as enhanced SnackBar
+  void _showNotificationPopup({
+    required String title,
+    required String body,
+    required String notificationId,
+    String? payload,
+  }) {
+    if (!mounted) return;
+
+    // Parse notification type from title or payload
+    String notificationType = 'general';
+    if (title.contains('Product')) notificationType = 'product';
+    if (title.contains('Order')) notificationType = 'order';
+    if (title.contains('Payment')) notificationType = 'payment';
+
+    // Get icon and color based on type
+    IconData notificationIcon = Icons.notifications_active;
+    Color notificationColor = Colors.green.shade700;
+
+    switch (notificationType) {
+      case 'product':
+        notificationIcon = Icons.inventory_2_rounded;
+        notificationColor = Colors.blue.shade700;
+        break;
+      case 'order':
+        notificationIcon = Icons.shopping_cart_rounded;
+        notificationColor = Colors.orange.shade700;
+        break;
+      case 'payment':
+        notificationIcon = Icons.payment_rounded;
+        notificationColor = Colors.purple.shade700;
+        break;
+      default:
+        notificationIcon = Icons.notifications_active_rounded;
+        notificationColor = Colors.green.shade700;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: InkWell(
+          onTap: () async {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            await _markNotificationAsRead(notificationId);
+            // Open notifications list
+            _showNotificationsList();
+          },
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Icon with circular background
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    notificationIcon,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                SizedBox(width: 16),
+                // Content
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title with emphasis
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 6),
+                      // Body with better formatting - increased maxLines for product details
+                      Text(
+                        body,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.95),
+                          height: 1.4,
+                        ),
+                        maxLines: 6,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 8),
+                      // Time indicator
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 14,
+                            color: Colors.white.withOpacity(0.7),
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Just now',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.7),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 8),
+                // Action button
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () async {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          await _markNotificationAsRead(notificationId);
+                          // Open notifications list
+                          _showNotificationsList();
+                        },
+                        child: Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Text(
+                            'VIEW',
+                            style: TextStyle(
+                              color: notificationColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    // Dismiss button
+                    InkWell(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      },
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white.withOpacity(0.7),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        backgroundColor: notificationColor,
+        duration: Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        margin: EdgeInsets.all(16),
+        elevation: 8,
+        padding: EdgeInsets.all(12),
+      ),
+    );
+  }
+
+  /// Mark notification as read
+  Future<void> _markNotificationAsRead(String notificationId) async {
+    try {
+      await _firestore
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'read': true});
+    } catch (e) {
+      print('Error marking notification as read: $e');
+    }
+  }
+
+  /// Show notifications list dialog with enhanced design
+  void _showNotificationsList() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                width: double.maxFinite,
+                constraints: BoxConstraints(maxHeight: 600),
+                child: DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Container(
+                        padding: EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.green.shade700,
+                              Colors.green.shade500
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(20),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.notifications_active_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Notifications',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      if (_recentNotifications.isNotEmpty)
+                                        Text(
+                                          '${_recentNotifications.length} unread',
+                                          style: TextStyle(
+                                            color:
+                                                Colors.white.withOpacity(0.8),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.close, color: Colors.white),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 16),
+                            // Tabs
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: TabBar(
+                                labelColor: Colors.white,
+                                unselectedLabelColor:
+                                    Colors.white.withOpacity(0.6),
+                                indicator: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                indicatorSize: TabBarIndicatorSize.tab,
+                                dividerColor: Colors.transparent,
+                                tabs: [
+                                  Tab(
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.circle, size: 8),
+                                        SizedBox(width: 8),
+                                        Text('Unread Notifications'),
+                                      ],
+                                    ),
+                                  ),
+                                  Tab(
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.done_all, size: 16),
+                                        SizedBox(width: 8),
+                                        Text('Read Notifications'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Content with TabBarView
+                      Flexible(
+                        child: TabBarView(
+                          children: [
+                            // Unread notifications
+                            _buildNotificationsTabContent(
+                              unread: true,
+                              setState: setState,
+                            ),
+                            // Read notifications
+                            _buildNotificationsTabContent(
+                              unread: false,
+                              setState: setState,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Build content for notifications tab (unread or read)
+  Widget _buildNotificationsTabContent({
+    required bool unread,
+    required StateSetter setState,
+  }) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: _auth.currentUser?.uid)
+          .where('read', isEqualTo: !unread)
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade700),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyState(
+            message: unread
+                ? 'No unread notifications\nYou\'re all caught up!'
+                : 'No read notifications yet',
+          );
+        }
+
+        final notifications = snapshot.data!.docs.map((doc) {
+          return {
+            'id': doc.id,
+            ...doc.data() as Map<String, dynamic>,
+          };
+        }).toList();
+
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.separated(
+                padding: EdgeInsets.all(16),
+                itemCount: notifications.length,
+                separatorBuilder: (context, index) => SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final notification = notifications[index];
+                  return _buildNotificationCard(
+                    notification,
+                    showReadStatus: !unread,
+                  );
+                },
+              ),
+            ),
+            // Footer actions for unread tab
+            if (unread && notifications.isNotEmpty)
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          for (var notification in notifications) {
+                            await _markNotificationAsRead(notification['id']);
+                          }
+                        },
+                        icon: Icon(Icons.done_all_rounded, size: 18),
+                        label: Text('Mark All Read'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.green.shade700,
+                          side: BorderSide(color: Colors.green.shade700),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Build empty state for notifications
+  Widget _buildEmptyState({String? message}) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.notifications_off_outlined,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
+            ),
+            SizedBox(height: 24),
+            Text(
+              'No Notifications',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              message ??
+                  'You\'re all caught up!\nNew notifications will appear here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade500,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build individual notification card
+  Widget _buildNotificationCard(
+    Map<String, dynamic> notification, {
+    bool showReadStatus = false,
+  }) {
+    // Determine notification type and styling
+    String type = notification['type'] ?? 'general';
+    IconData icon = Icons.notifications_rounded;
+    Color iconColor = Colors.blue;
+
+    switch (type) {
+      case 'product_approval':
+        icon = Icons.inventory_2_rounded;
+        iconColor = Colors.blue.shade600;
+        break;
+      case 'order_update':
+        icon = Icons.shopping_cart_rounded;
+        iconColor = Colors.orange.shade600;
+        break;
+      case 'payment':
+        icon = Icons.payment_rounded;
+        iconColor = Colors.purple.shade600;
+        break;
+      default:
+        icon = Icons.notifications_active_rounded;
+        iconColor = Colors.green.shade600;
+    }
+
+    String priority = notification['priority'] ?? 'normal';
+    bool isHighPriority = priority == 'high';
+    bool isRead = notification['read'] == true;
+
+    return InkWell(
+      onTap: () async {
+        if (!isRead) {
+          await _markNotificationAsRead(notification['id']);
+        }
+        Navigator.pop(context);
+        _tabController.animateTo(1);
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isRead ? Colors.grey.shade50 : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isHighPriority
+                ? iconColor.withOpacity(0.3)
+                : Colors.grey.shade200,
+            width: isHighPriority ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(isRead ? 0.05 : 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: isRead ? iconColor.withOpacity(0.5) : iconColor,
+                size: 24,
+              ),
+            ),
+            SizedBox(width: 12),
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          notification['title'] ?? 'Notification',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: isRead
+                                ? Colors.grey.shade600
+                                : Colors.grey.shade900,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isHighPriority)
+                        Container(
+                          margin: EdgeInsets.only(left: 8),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'HIGH',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  SizedBox(height: 6),
+                  // Body - increased maxLines to show full product details
+                  Text(
+                    notification['body'] ?? '',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color:
+                          isRead ? Colors.grey.shade500 : Colors.grey.shade600,
+                      height: 1.5,
+                    ),
+                    maxLines: 8,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8),
+                  // Footer
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.access_time_rounded,
+                        size: 14,
+                        color: Colors.grey.shade400,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        _formatTimestamp(notification['createdAt']),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade400,
+                        ),
+                      ),
+                      Spacer(),
+                      // Action button
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: iconColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'View Details',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: iconColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Format timestamp for display
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return 'Just now';
+
+    try {
+      DateTime dateTime;
+      if (timestamp is Timestamp) {
+        dateTime = timestamp.toDate();
+      } else {
+        return 'Just now';
+      }
+
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inMinutes < 1) {
+        return 'Just now';
+      } else if (difference.inHours < 1) {
+        return '${difference.inMinutes}m ago';
+      } else if (difference.inDays < 1) {
+        return '${difference.inHours}h ago';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d ago';
+      } else {
+        return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+      }
+    } catch (e) {
+      return 'Just now';
     }
   }
 
@@ -333,6 +1178,47 @@ class _CoopDashboardState extends State<CoopDashboard>
         title: const Text('Cooperative Dashboard'),
         backgroundColor: Colors.green,
         elevation: 0,
+        actions: [
+          // Notification bell with badge
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: Stack(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.notifications, color: Colors.white),
+                  onPressed: _showNotificationsList,
+                ),
+                if (_unreadNotificationCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        _unreadNotificationCount > 9
+                            ? '9+'
+                            : '$_unreadNotificationCount',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
