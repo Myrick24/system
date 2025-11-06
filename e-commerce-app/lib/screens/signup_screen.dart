@@ -268,7 +268,10 @@ class _SignupScreenState extends State<SignupScreen> {
             errorMessage = 'Invalid phone number format.';
           } else if (e.code == 'too-many-requests') {
             errorMessage =
-                'Too many requests. Please wait a moment and try again.';
+                'Too many SMS requests. Please try again in a few hours or contact support.\n\nTip: You can use a different phone number for testing.';
+          } else if (e.code == 'quota-exceeded') {
+            errorMessage =
+                'Daily SMS quota exceeded. Please try again tomorrow or enable billing in Firebase Console.';
           } else if (e.code == 'invalid-app-credential' ||
               e.code == 'unknown') {
             errorMessage =
