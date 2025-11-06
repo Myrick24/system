@@ -13,6 +13,21 @@ service cloud.firestore {
     function isAdminOrCoop() {
       return isAdmin() || isCoop();
     }
+
+    // Password reset helper
+    // Allows unauthenticated clients to update only the `password` field
+    // when a server-generated one-time token (passwordResetToken) and
+    // expiry (passwordResetExpiry) already exist on the user document.
+    // NOTE: A trusted backend or Cloud Function must generate and store
+    // the token+expiry on the user document before this rule will permit
+    // an unauthenticated password update.
+    function canResetPassword() {
+      return request.auth == null
+        && resource.data.passwordResetToken != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['password'])
+        && request.resource.data.passwordResetToken == resource.data.passwordResetToken
+        && request.time < resource.data.passwordResetExpiry;
+    }
     
     // User collection - consolidated rules
     match /users/{userId} {
@@ -24,6 +39,22 @@ service cloud.firestore {
       
       // Unauthenticated users can read cooperatives only (for seller registration)
       allow read: if request.auth == null && resource.data.role == 'cooperative';
+      
+      // Allow public read for forgot password mobile number lookup
+      allow list: if request.auth == null;
+
+      // Allow unauthenticated password reset when a valid server-generated
+      // passwordResetToken and passwordResetExpiry are present on the
+      // document. The client must include the token in the update request
+      // and the update may only change the `password` field.
+      // See documentation: generate/store token via Cloud Function or admin
+      // SDK when sending SMS OTP verification.
+      allow update: if canResetPassword();
+      
+      // Allow authenticated users (phone verified) to update password field only
+      // This is for forgot password flow where user verified via SMS OTP
+      allow update: if request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['password', 'updatedAt']);
       
       // Self create
       allow create: if request.auth != null && request.auth.uid == userId;

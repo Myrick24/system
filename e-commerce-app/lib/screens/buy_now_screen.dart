@@ -100,47 +100,18 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     });
 
     try {
-      // First, try to get the pickup location from the product itself
-      final pickupLocation = widget.product['pickupLocation'] as String?;
-      
-      if (pickupLocation != null && pickupLocation.isNotEmpty) {
-        setState(() {
-          _coopPickupLocation = pickupLocation;
-        });
-        print('Found pickup location from product: $pickupLocation');
-      } else {
-        // Fallback: Get cooperative location from the product's cooperativeId
-        final cooperativeId = widget.product['cooperativeId'] as String?;
-        
-        if (cooperativeId != null && cooperativeId.isNotEmpty) {
-          final coopDoc = await _firestore
-              .collection('users')
-              .doc(cooperativeId)
-              .get();
-          
-          if (coopDoc.exists) {
-            final coopData = coopDoc.data() as Map<String, dynamic>;
-            final location = coopData['location'] as String?;
-            setState(() {
-              _coopPickupLocation = location;
-            });
-            print('Found cooperative location: $location');
-          }
-        } else {
-          // Last resort: Query for any cooperative
-          final coopQuery = await _firestore
-              .collection('users')
-              .where('role', isEqualTo: 'cooperative')
-              .limit(1)
-              .get();
+      // Query for a cooperative user to get the pickup location
+      final coopQuery = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'cooperative')
+          .limit(1)
+          .get();
 
-          if (coopQuery.docs.isNotEmpty) {
-            final coopData = coopQuery.docs.first.data();
-            setState(() {
-              _coopPickupLocation = coopData['location'] as String?;
-            });
-          }
-        }
+      if (coopQuery.docs.isNotEmpty) {
+        final coopData = coopQuery.docs.first.data();
+        setState(() {
+          _coopPickupLocation = coopData['location'] as String?;
+        });
       }
     } catch (e) {
       print('Error loading cooperative location: $e');
