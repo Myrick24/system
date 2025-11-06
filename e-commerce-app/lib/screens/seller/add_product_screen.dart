@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
-import '../../services/notification_manager.dart';
 import '../../theme/app_theme.dart';
 
 class AddProductScreen extends StatefulWidget {
@@ -242,8 +241,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
     String cooperativeUserId,
     String title,
     String body,
-    String payload,
-  ) async {
+    String payload, {
+    String? productId,
+    String? productName,
+    double? price,
+    double? quantity,
+    String? unit,
+    String? category,
+    String? sellerName,
+  }) async {
     try {
       print('Sending notification to cooperative user ID: $cooperativeUserId');
 
@@ -272,7 +278,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // Create notification record for the cooperative user
       // This will trigger real-time updates in the cooperative dashboard
-      await _firestore.collection('notifications').add({
+      final notificationData = {
         'userId': cooperativeUserId,
         'title': title,
         'body': body,
@@ -282,7 +288,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'type': 'product_approval',
         'cooperativeId': cooperativeUserId,
         'priority': 'high',
-      });
+      };
+
+      // Add product details if provided
+      if (productId != null) notificationData['productId'] = productId;
+      if (productName != null) notificationData['productName'] = productName;
+      if (price != null) notificationData['price'] = price;
+      if (quantity != null) notificationData['quantity'] = quantity;
+      if (unit != null) notificationData['unit'] = unit;
+      if (category != null) notificationData['category'] = category;
+      if (sellerName != null) notificationData['sellerName'] = sellerName;
+
+      await _firestore.collection('notifications').add(notificationData);
 
       print('✅ Successfully created notification for cooperative: $userName');
 
@@ -307,7 +324,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             print(
                 'Creating notification for staff member: $staffName ($staffUserId)');
 
-            await _firestore.collection('notifications').add({
+            final staffNotificationData = {
               'userId': staffUserId,
               'title': title,
               'body': body,
@@ -317,7 +334,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
               'type': 'product_approval',
               'cooperativeId': cooperativeUserId,
               'priority': 'high',
-            });
+            };
+
+            // Add product details if provided
+            if (productId != null)
+              staffNotificationData['productId'] = productId;
+            if (productName != null)
+              staffNotificationData['productName'] = productName;
+            if (price != null) staffNotificationData['price'] = price;
+            if (quantity != null) staffNotificationData['quantity'] = quantity;
+            if (unit != null) staffNotificationData['unit'] = unit;
+            if (category != null) staffNotificationData['category'] = category;
+            if (sellerName != null)
+              staffNotificationData['sellerName'] = sellerName;
+
+            await _firestore
+                .collection('notifications')
+                .add(staffNotificationData);
 
             print('✅ Successfully created notification for staff: $staffName');
           } catch (e) {
@@ -476,14 +509,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Add product to Firestore with the specific ID
       await _firestore.collection('products').doc(productId).set(productData);
 
-      // Notify seller that product was submitted for approval
-      await NotificationManager.sendDirectTestNotification(
-        title: '📋 Product Submitted',
-        body:
-            'Your product "${_nameController.text.trim()}" has been submitted for cooperative review. You\'ll be notified once it\'s approved.',
-        payload: 'product_submitted|$productId',
-      );
-
       // Notify cooperative about new product submission
       if (_selectedCoopId != null) {
         try {
@@ -520,9 +545,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
           // Send real-time notification to all cooperative users
           await _sendNotificationToCooperativeUsers(
             _selectedCoopId!,
-            'New Product Uploaded',
+            '🆕 New Product Uploaded',
             notificationMessage,
             'product_approval|$productId|${_selectedCoopId}',
+            productId: productId,
+            productName: productName,
+            price: price,
+            quantity: quantity.toDouble(),
+            unit: unit,
+            category: category,
+            sellerName: sellerName,
           );
         } catch (e) {
           print('Failed to notify cooperative: $e');

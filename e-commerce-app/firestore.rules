@@ -80,11 +80,17 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow read: if isCoop() && 
                     resource.data.cooperativeId == request.auth.uid;
+      // Allow sellers to update their own application
+      allow update: if request.auth != null && 
+                      resource.data.userId == request.auth.uid;
+      // Allow sellers to delete their own application
+      allow delete: if request.auth != null && 
+                      resource.data.userId == request.auth.uid;
+      // Allow cooperatives to update status and verification fields
       allow update: if isCoop() && 
-                      resource.data.cooperativeId == request.auth.uid &&
-                      request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['status', 'verified', 'updatedAt']);
+                      resource.data.cooperativeId == request.auth.uid;
       allow update: if request.auth != null && isAdmin();
+      allow delete: if request.auth != null && isAdmin();
     }
       
     match /products/{productId} {
@@ -327,10 +333,18 @@ service cloud.firestore {
       // Allow listing/querying orders - users can query their own orders
       allow list: if request.auth != null;
       
+      // Helper function to check if user is the seller of the product
+      function isProductSeller() {
+        let productId = resource.data.productId;
+        let product = get(/databases/$(database)/documents/products/$(productId));
+        return product.data.sellerId == request.auth.uid;
+      }
+      
       allow update: if request.auth != null && 
         ((resource.data.buyerId == request.auth.uid || 
          resource.data.userId == request.auth.uid ||
-         resource.data.sellerId == request.auth.uid) &&
+         resource.data.sellerId == request.auth.uid ||
+         isProductSeller()) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates'])) ||
         (isCoop() && 

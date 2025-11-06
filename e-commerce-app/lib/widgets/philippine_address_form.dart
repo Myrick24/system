@@ -21,13 +21,13 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
   final String _region = "REGION I";
   final String _province = "PANGASINAN";
   final String _municipality = "MABINI";
-  
+
   String? selectedBarangay;
 
   // Barangays in Mabini, Pangasinan
   final List<String> barangays = [
     "BACNIT",
-    "BARLO", 
+    "BARLO",
     "CAABIANGAAN",
     "CABANAETAN",
     "CABINUANGAN",
@@ -50,6 +50,15 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
     _initializeFromInitialAddress();
   }
 
+  @override
+  void didUpdateWidget(PhilippineAddressForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-initialize if initialAddress changed
+    if (oldWidget.initialAddress != widget.initialAddress) {
+      _initializeFromInitialAddress();
+    }
+  }
+
   void _initializeFromInitialAddress() {
     if (widget.initialAddress != null) {
       selectedBarangay = widget.initialAddress!['barangay'];
@@ -63,7 +72,8 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
         'province': _province,
         'city': _municipality,
         'barangay': selectedBarangay!,
-        'full_address': '$selectedBarangay, $_municipality, $_province, $_region',
+        'full_address':
+            '$selectedBarangay, $_municipality, $_province, $_region',
       });
     }
   }
@@ -147,7 +157,8 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.location_city, color: Colors.green.shade700, size: 20),
+                  Icon(Icons.location_city,
+                      color: Colors.green.shade700, size: 20),
                   const SizedBox(width: 8),
                   Text(
                     'Municipality Information',
@@ -167,7 +178,10 @@ class _PhilippineAddressFormState extends State<PhilippineAddressForm> {
               const SizedBox(height: 4),
               Text(
                 'Municipality: $_municipality',
-                style: TextStyle(fontSize: 13, color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w600),
               ),
             ],
           ),

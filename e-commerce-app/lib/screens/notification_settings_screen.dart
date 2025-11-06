@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/push_notification_service.dart';
+import '../services/realtime_notification_service.dart';
 import '../services/notification_manager.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
@@ -78,27 +78,28 @@ class _NotificationSettingsScreenState
 
       // Subscribe/unsubscribe from specific topics based on preferences
       if (_announcementsEnabled) {
-        await PushNotificationService.subscribeToTopic('announcements');
+        await RealtimeNotificationService.subscribeToTopic('announcements');
       } else {
-        await PushNotificationService.unsubscribeFromTopic('announcements');
+        await RealtimeNotificationService.unsubscribeFromTopic('announcements');
       }
 
       if (_marketUpdatesEnabled && widget.userRole == 'farmer') {
-        await PushNotificationService.subscribeToTopic('market_updates');
+        await RealtimeNotificationService.subscribeToTopic('market_updates');
       } else if (!_marketUpdatesEnabled) {
-        await PushNotificationService.unsubscribeFromTopic('market_updates');
+        await RealtimeNotificationService.unsubscribeFromTopic(
+            'market_updates');
       }
 
       if (_farmingTipsEnabled && widget.userRole == 'farmer') {
-        await PushNotificationService.subscribeToTopic('farming_tips');
+        await RealtimeNotificationService.subscribeToTopic('farming_tips');
       } else if (!_farmingTipsEnabled) {
-        await PushNotificationService.unsubscribeFromTopic('farming_tips');
+        await RealtimeNotificationService.unsubscribeFromTopic('farming_tips');
       }
 
       if (_newProductsEnabled && widget.userRole == 'buyer') {
-        await PushNotificationService.subscribeToTopic('new_products');
+        await RealtimeNotificationService.subscribeToTopic('new_products');
       } else if (!_newProductsEnabled) {
-        await PushNotificationService.unsubscribeFromTopic('new_products');
+        await RealtimeNotificationService.unsubscribeFromTopic('new_products');
       }
     } else {
       // Unsubscribe from all topics if push notifications are disabled
@@ -309,8 +310,8 @@ class _NotificationSettingsScreenState
   }
 
   Future<void> _showNotificationInfo() async {
-    final hasPermission = await PushNotificationService.hasPermission();
-    final token = await PushNotificationService.getCurrentToken();
+    final hasPermission = await RealtimeNotificationService.hasPermission();
+    final token = await RealtimeNotificationService.getCurrentToken();
 
     if (!mounted) return;
 
@@ -370,7 +371,7 @@ class _NotificationSettingsScreenState
     );
 
     if (confirmed == true) {
-      await PushNotificationService.clearAllNotifications();
+      await RealtimeNotificationService.clearAllNotifications();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

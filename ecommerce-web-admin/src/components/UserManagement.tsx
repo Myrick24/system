@@ -143,31 +143,7 @@ export const UserManagement: React.FC = () => {
   ];
 
   const pendingSellerColumns = [
-    ...baseColumns,
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (record: User) => (
-        <Space>
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            size="small"
-            onClick={() => handleApproveSeller(record.id, record.name)}
-          >
-            Approve
-          </Button>
-          <Button
-            danger
-            icon={<CloseOutlined />}
-            size="small"
-            onClick={() => handleRejectSeller(record.id, record.name)}
-          >
-            Reject
-          </Button>
-        </Space>
-      )
-    }
+    ...baseColumns
   ];
 
   const userColumns = [

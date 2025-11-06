@@ -31,6 +31,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _fullNameController = TextEditingController();
 
   File? _governmentIdImage;
+  String?
+      _existingGovernmentIdUrl; // Store existing government ID URL for editing
   bool _isLoading = false;
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
@@ -151,6 +153,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             _emailController.text =
                 userData['email'] ?? currentUser.email ?? '';
           });
+
+          // Load seller data if user is a registered seller
+          if (userData['role'] == 'seller' ||
+              userData.containsKey('sellerId')) {
+            await _loadSellerApplicationData(currentUser.uid);
+          }
         } else {
           // If no user document exists, use Firebase Auth email
           setState(() {
@@ -164,6 +172,64 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _emailController.text = currentUser.email ?? '';
         });
       }
+    }
+  }
+
+  // Load existing seller application data for editing
+  Future<void> _loadSellerApplicationData(String userId) async {
+    try {
+      print('📋 Loading seller application data for editing...');
+
+      // Query sellers collection by userId
+      final sellerDocs = await _firestore
+          .collection('sellers')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      if (sellerDocs.docs.isNotEmpty) {
+        final sellerData = sellerDocs.docs.first.data();
+        print('✅ Found seller data: ${sellerData['fullName']}');
+
+        setState(() {
+          // Fill personal information
+          _fullNameController.text = sellerData['fullName'] ?? '';
+          _contactNumberController.text = sellerData['contactNumber'] ?? '';
+          _vegetableListController.text = sellerData['vegetableList'] ?? '';
+          _sitioController.text = sellerData['sitio'] ?? '';
+
+          // Fill address information (including barangay)
+          if (sellerData['address'] != null) {
+            final address = sellerData['address'] as Map<String, dynamic>;
+            _selectedAddress = {
+              'region': address['region'] ?? '',
+              'province': address['province'] ?? '',
+              'city': address['city'] ?? '',
+              'barangay': address['barangay'] ?? '',
+            };
+            print('📍 Address loaded: $_selectedAddress');
+          }
+
+          // Store existing government ID URL
+          if (sellerData['governmentIdUrl'] != null) {
+            _existingGovernmentIdUrl = sellerData['governmentIdUrl'];
+            print('🆔 Government ID URL stored: $_existingGovernmentIdUrl');
+          }
+
+          // Set cooperative selection
+          if (sellerData['cooperativeId'] != null) {
+            _selectedCoopId = sellerData['cooperativeId'];
+            print('🏢 Cooperative ID: $_selectedCoopId');
+          }
+
+          // Set agreement checkboxes to true (already accepted in previous submission)
+          _agreeToTerms = true;
+          _agreeToPrivacy = true;
+        });
+      } else {
+        print('⚠️  No seller application found for this user');
+      }
+    } catch (e) {
+      print('Error loading seller application data: $e');
     }
   }
 
@@ -532,8 +598,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
 
-    // Check if government ID is uploaded
-    if (_governmentIdImage == null) {
+    // Check if government ID is uploaded (optional if already has existing ID for editing)
+    if (_governmentIdImage == null && _existingGovernmentIdUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Please upload your government-issued ID')),
@@ -583,15 +649,45 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         });
       }
 
-      // Generate a unique seller ID
-      String sellerId = _firestore.collection('sellers').doc().id;
+      // Generate a unique seller ID (or use existing one for editing)
+      String sellerId;
+      bool isEditing = false;
+
+      // Check if this is an edit (user already has a seller application)
+      if (_existingGovernmentIdUrl != null || _governmentIdImage != null) {
+        // Try to find existing seller document
+        final existingDocs = await _firestore
+            .collection('sellers')
+            .where('userId', isEqualTo: currentUser.uid)
+            .get();
+
+        if (existingDocs.docs.isNotEmpty) {
+          sellerId = existingDocs.docs.first.id;
+          isEditing = true;
+          print('📝 Editing existing seller application with ID: $sellerId');
+        } else {
+          sellerId = _firestore.collection('sellers').doc().id;
+          print('📝 Creating new seller application with ID: $sellerId');
+        }
+      } else {
+        sellerId = _firestore.collection('sellers').doc().id;
+        print('📝 Creating new seller application with ID: $sellerId');
+      }
+
       String userEmail = _emailController.text.trim();
 
-      // Upload government ID
-      String? governmentIdUrl = await _uploadGovernmentId(sellerId);
+      // Upload government ID (or use existing one)
+      String? governmentIdUrl;
+      if (_governmentIdImage != null) {
+        // New image selected, upload it
+        governmentIdUrl = await _uploadGovernmentId(sellerId);
+      } else if (_existingGovernmentIdUrl != null) {
+        // Use existing image URL
+        governmentIdUrl = _existingGovernmentIdUrl;
+      }
 
       if (governmentIdUrl == null) {
-        throw Exception('Failed to upload government ID');
+        throw Exception('Failed to process government ID');
       }
 
       // Build full address string from the new structure
@@ -611,14 +707,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _selectedAddress['province']!.isNotEmpty) {
         addressParts.add(_selectedAddress['province']!);
       }
-      if (_selectedAddress['region'] != null &&
-          _selectedAddress['region']!.isNotEmpty) {
-        addressParts.add(_selectedAddress['region']!);
-      }
       String fullAddress = addressParts.join(', ');
 
-      // Create a seller document in Firestore with detailed information
-      await _firestore.collection('sellers').doc(sellerId).set({
+      // Prepare seller data for create
+      final sellerDataForCreate = {
         'id': sellerId,
         'fullName': _fullNameController.text.trim(),
         'contactNumber': _contactNumberController.text.trim(),
@@ -634,16 +726,52 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         'email': userEmail,
         'governmentIdUrl': governmentIdUrl,
         'createdAt': FieldValue.serverTimestamp(),
-        'status': 'pending', // Changed to pending for cooperative verification
+        'status': 'pending',
         'verified': false,
         'userId': currentUser.uid,
         'documentsVerified': false,
         'termsAccepted': true,
         'privacyAccepted': true,
-        'cooperativeId': _selectedCoopId, // Link to selected cooperative
-        'cooperativeName':
-            _selectedCoopName, // Store cooperative name for display
-      });
+        'cooperativeId': _selectedCoopId,
+        'cooperativeName': _selectedCoopName,
+      };
+
+      // For editing, only update fields that can be changed
+      final sellerDataForUpdate = {
+        'fullName': _fullNameController.text.trim(),
+        'contactNumber': _contactNumberController.text.trim(),
+        'address': {
+          'region': _selectedAddress['region'] ?? '',
+          'province': _selectedAddress['province'] ?? '',
+          'city': _selectedAddress['city'] ?? '',
+          'barangay': _selectedAddress['barangay'] ?? '',
+          'sitio': _sitioController.text.trim(),
+          'fullAddress': fullAddress,
+        },
+        'vegetableList': _vegetableListController.text.trim(),
+        'email': userEmail,
+        'governmentIdUrl': governmentIdUrl,
+        'termsAccepted': true,
+        'privacyAccepted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Create or update seller document
+      if (isEditing) {
+        // Update existing seller application (only changeable fields)
+        await _firestore
+            .collection('sellers')
+            .doc(sellerId)
+            .update(sellerDataForUpdate);
+        print('✅ Seller application updated successfully');
+      } else {
+        // Create new seller document
+        await _firestore
+            .collection('sellers')
+            .doc(sellerId)
+            .set(sellerDataForCreate);
+        print('✅ New seller application created successfully');
+      }
 
       // Update the user's role to seller in the users collection
       // Use set with merge to handle case where user document might not exist
@@ -658,19 +786,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         'cooperativeId': _selectedCoopId, // Link seller to cooperative
       }, SetOptions(merge: true));
 
-      // Send notification to selected cooperative about new seller application
-      await _firestore.collection('cooperative_notifications').add({
-        'title': 'New Seller Application',
-        'message':
-            'A new seller application from ${_fullNameController.text.trim()} requires your approval.',
-        'createdAt': FieldValue.serverTimestamp(),
-        'type': 'seller_application',
-        'read': false,
-        'userId': currentUser.uid,
-        'sellerId': sellerId,
-        'priority': 'high',
-        'cooperativeId': _selectedCoopId, // Target specific cooperative
-      });
+      // Send notification to selected cooperative only for new applications
+      if (!isEditing) {
+        await _sendSellerApplicationNotification(
+          _selectedCoopId!,
+          _fullNameController.text.trim(),
+          userEmail,
+          sellerId,
+        );
+      } else {
+        print('📝 Application edit - notification not sent');
+      }
 
       if (mounted) {
         // Show success dialog
@@ -701,7 +827,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   const SizedBox(height: 24),
                   // Title
                   Text(
-                    'Application Submitted!',
+                    isEditing
+                        ? 'Application Updated!'
+                        : 'Application Submitted!',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -712,7 +840,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   const SizedBox(height: 16),
                   // Message
                   Text(
-                    '✅ Your application has been sent to $_selectedCoopName for approval.\n\nYou can still browse the marketplace while waiting.',
+                    isEditing
+                        ? '✅ Your application has been updated successfully.\n\nThe cooperative will review your changes.'
+                        : '✅ Your application has been sent to $_selectedCoopName for approval.\n\nYou can still browse the marketplace while waiting.',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey.shade700,
@@ -774,6 +904,119 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  // Send notification to cooperative about new seller application
+  Future<void> _sendSellerApplicationNotification(
+    String cooperativeUserId,
+    String applicantName,
+    String applicantEmail,
+    String sellerId,
+  ) async {
+    try {
+      print(
+          '📤 Sending seller application notification to cooperative: $cooperativeUserId');
+
+      // Get the cooperative user document to verify it exists
+      final coopUserDoc =
+          await _firestore.collection('users').doc(cooperativeUserId).get();
+
+      if (!coopUserDoc.exists) {
+        print(
+            '⚠️  Warning: Cooperative user not found with ID: $cooperativeUserId');
+        return;
+      }
+
+      final coopUserData = coopUserDoc.data() as Map<String, dynamic>;
+      final cooperativeName = coopUserData['name'] ?? 'Cooperative';
+      final userRole = coopUserData['role'] ?? '';
+
+      if (userRole != 'cooperative' && userRole != 'admin') {
+        print(
+            '⚠️  Warning: User $cooperativeUserId is not a cooperative (role: $userRole)');
+        return;
+      }
+
+      print(
+          '✅ Creating notification for cooperative: $cooperativeName ($cooperativeUserId)');
+
+      // Create notification record for the cooperative user using 'notifications' collection
+      // This matches the product notification pattern
+      final notificationData = {
+        'userId': cooperativeUserId,
+        'title': 'New Seller Application',
+        'body': '$applicantName has submitted a new seller application.',
+        'payload': 'seller_application',
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'seller_application',
+        'cooperativeId': cooperativeUserId,
+        'priority': 'high',
+        'applicantName': applicantName,
+        'applicantEmail': applicantEmail,
+        'sellerId': sellerId,
+      };
+
+      // Add notification to 'notifications' collection (same as products)
+      await _firestore.collection('notifications').add(notificationData);
+
+      print(
+          '✅ Successfully created notification for cooperative: $cooperativeName');
+
+      // Also notify staff members linked to this cooperative
+      final staffQuery = await _firestore
+          .collection('users')
+          .where('cooperativeId', isEqualTo: cooperativeUserId)
+          .where('role', isEqualTo: 'cooperative')
+          .get();
+
+      if (staffQuery.docs.isNotEmpty) {
+        print(
+            '👥 Found ${staffQuery.docs.length} staff members linked to this cooperative');
+
+        for (var staffDoc in staffQuery.docs) {
+          try {
+            String staffUserId = staffDoc.id;
+            Map<String, dynamic> staffData = staffDoc.data();
+            String staffName = staffData['name'] ?? 'Staff Member';
+
+            print(
+                '📤 Creating notification for staff member: $staffName ($staffUserId)');
+
+            final staffNotificationData = {
+              'userId': staffUserId,
+              'title': 'New Seller Application',
+              'body': '$applicantName has submitted a new seller application.',
+              'payload': 'seller_application',
+              'read': false,
+              'createdAt': FieldValue.serverTimestamp(),
+              'type': 'seller_application',
+              'cooperativeId': cooperativeUserId,
+              'priority': 'high',
+              'applicantName': applicantName,
+              'applicantEmail': applicantEmail,
+              'sellerId': sellerId,
+            };
+
+            await _firestore
+                .collection('notifications')
+                .add(staffNotificationData);
+
+            print('✅ Successfully created notification for staff: $staffName');
+          } catch (e) {
+            print('❌ Error creating notification for staff ${staffDoc.id}: $e');
+          }
+        }
+      } else {
+        print('ℹ️  No additional staff members found for this cooperative');
+      }
+
+      print(
+          '✅ Seller application notification process complete for cooperative $cooperativeUserId');
+    } catch (e) {
+      print('❌ Error sending seller application notification: $e');
+      print('Stack trace: ${StackTrace.current}');
     }
   }
 
@@ -1075,6 +1318,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ),
                       const SizedBox(height: 16),
                       PhilippineAddressForm(
+                        initialAddress: _selectedAddress.isNotEmpty
+                            ? _selectedAddress
+                            : null,
                         onAddressSelected: (Map<String, String> address) {
                           setState(() {
                             _selectedAddress = address;
@@ -1439,13 +1685,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         child: _governmentIdImage != null
                             ? Stack(
                                 children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.file(
-                                      _governmentIdImage!,
-                                      width: double.infinity,
-                                      height: 120,
-                                      fit: BoxFit.cover,
+                                  GestureDetector(
+                                    onTap: _pickGovernmentId,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        _governmentIdImage!,
+                                        width: double.infinity,
+                                        height: 120,
+                                        fit: BoxFit.cover,
+                                      ),
                                     ),
                                   ),
                                   Positioned(
@@ -1471,30 +1720,152 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                                       ),
                                     ),
                                   ),
-                                ],
-                              )
-                            : InkWell(
-                                onTap: _pickGovernmentId,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.cloud_upload,
-                                      size: 40,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Tap to upload Government ID*',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.withOpacity(0.8),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'Tap to change',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                ],
+                              )
+                            : _existingGovernmentIdUrl != null
+                                ? Stack(
+                                    children: [
+                                      GestureDetector(
+                                        onTap: _pickGovernmentId,
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: Image.network(
+                                            _existingGovernmentIdUrl!,
+                                            width: double.infinity,
+                                            height: 120,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                              return Container(
+                                                width: double.infinity,
+                                                height: 120,
+                                                color: Colors.grey.shade200,
+                                                child: const Center(
+                                                  child: Icon(Icons.error),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              _existingGovernmentIdUrl = null;
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.close,
+                                              color: Colors.white,
+                                              size: 16,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                Colors.black.withOpacity(0.6),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'Current',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 8,
+                                        left: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.8),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'Tap to change',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : InkWell(
+                                    onTap: _pickGovernmentId,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.cloud_upload,
+                                          size: 40,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Tap to upload Government ID*',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                       ),
                     ],
                   ),

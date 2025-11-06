@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/product_service.dart';
-import '../../widgets/notification_badge.dart';
+import '../../widgets/realtime_notification_widgets.dart';
 
 class SellerProductDashboard extends StatefulWidget {
   const SellerProductDashboard({Key? key}) : super(key: key);
@@ -330,18 +330,11 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
             alignment: Alignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.notifications),
+                icon: RealtimeNotificationBadge(
+                  child: const Icon(Icons.notifications),
+                ),
                 onPressed: _viewNotifications,
               ),
-              if (_unreadNotifications > 0)
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: NotificationBadge(
-                    count: _unreadNotifications,
-                    child: const SizedBox.shrink(),
-                  ),
-                ),
             ],
           ),
         ],
@@ -449,7 +442,8 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
                 child: Stack(
                   children: [
                     SizedBox(
-                      height: 100, // Further reduced from 100 to save more space
+                      height:
+                          100, // Further reduced from 100 to save more space
                       width: double.infinity,
                       child: product['imageUrl'] != null
                           ? Image.network(
@@ -502,7 +496,8 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
               // Product Info with better styling
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(6.0), // Further reduced from 8.0
+                  padding:
+                      const EdgeInsets.all(6.0), // Further reduced from 8.0
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -551,7 +546,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
                         overflow: TextOverflow.ellipsis,
                       ),
                       // Stock info (only if available and space permits)
-                      if (product['stock'] != null) 
+                      if (product['stock'] != null)
                         Text(
                           'Stock: ${product['stock']}',
                           style: TextStyle(
@@ -581,7 +576,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
                                     ? 'VIEW DETAILS'
                                     : 'VIEW',
                             style: const TextStyle(
-                              fontSize: 10, 
+                              fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),
                           ),

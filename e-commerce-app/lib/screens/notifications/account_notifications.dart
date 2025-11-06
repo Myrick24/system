@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../services/realtime_notification_service.dart';
 import '../../widgets/realtime_notification_widgets.dart';
+import '../notification_detail_screen.dart';
 
 class AccountNotifications extends StatefulWidget {
   const AccountNotifications({Key? key}) : super(key: key);
@@ -29,17 +30,10 @@ class _AccountNotificationsState extends State<AccountNotifications> {
     // Listen to real-time notification updates
     RealtimeNotificationService.notificationStream.listen((notification) {
       if (mounted && notification['source'] == 'firestore') {
-        // Optionally show snackbar for new notifications
+        // Just refresh the list when new notification arrives
         final data = notification['data'] as Map<String, dynamic>?;
         if (data != null) {
-          RealtimeNotificationSnackbar.show(
-            context,
-            title: data['title'] ?? 'New Notification',
-            message: data['message'] ?? '',
-            onTap: () {
-              setState(() {}); // Refresh the list
-            },
-          );
+          setState(() {}); // Refresh the list
         }
       }
     });
@@ -263,11 +257,30 @@ class _AccountNotificationsState extends State<AccountNotifications> {
       String notificationId, Map<String, dynamic> data) {
     final type = data['type'] ?? '';
     final title = data['title'] ?? 'Notification';
-    final message = data['message'] ?? '';
+    final message = data['message'] ?? data['body'] ?? '';
     // Check both 'read' and 'isRead' fields
     final isRead = (data['read'] == true) || (data['isRead'] == true);
     final timestamp = (data['timestamp'] ?? data['createdAt']) as Timestamp?;
-    final priority = data['priority'] ?? 'normal';
+
+    // Build notification subtitle - for product approval, show key details below the message
+    String displayMessage = message;
+    List<String> additionalInfo = [];
+
+    if (type == 'product_approval' || title.contains('Product')) {
+      final productName = data['productName'];
+      final price = data['price'];
+      final quantity = data['quantity'];
+      final unit = data['unit'] ?? 'kg';
+      final category = data['category'];
+
+      // Only add additional info if we have product details
+      if (productName != null && productName.toString().isNotEmpty) {
+        if (price != null) additionalInfo.add('₱${price.toStringAsFixed(2)}');
+        if (quantity != null)
+          additionalInfo.add('${quantity.toString()} $unit');
+        if (category != null) additionalInfo.add(category.toString());
+      }
+    }
 
     // Get icon and color based on notification type
     IconData icon = Icons.notifications;
@@ -295,9 +308,10 @@ class _AccountNotificationsState extends State<AccountNotifications> {
       elevation: isRead ? 0 : 2,
       color: isRead ? Colors.white : Colors.green.shade50,
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: iconColor.withOpacity(0.2),
-          child: Icon(icon, color: iconColor),
+          child: Icon(icon, color: iconColor, size: 24),
         ),
         title: Row(
           children: [
@@ -305,27 +319,11 @@ class _AccountNotificationsState extends State<AccountNotifications> {
               child: Text(
                 title,
                 style: TextStyle(
-                  fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                  fontWeight: isRead ? FontWeight.w600 : FontWeight.bold,
                   fontSize: 16,
                 ),
               ),
             ),
-            if (priority == 'high')
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'HIGH',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
           ],
         ),
         subtitle: Column(
@@ -333,15 +331,28 @@ class _AccountNotificationsState extends State<AccountNotifications> {
           children: [
             const SizedBox(height: 4),
             Text(
-              message,
+              displayMessage,
               style: TextStyle(
-                color: Colors.grey[700],
+                color: Colors.grey[800],
                 fontSize: 14,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 4),
+            if (additionalInfo.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                additionalInfo.join(' • '),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 6),
             Text(
               _formatTimestamp(timestamp),
               style: TextStyle(
@@ -368,9 +379,9 @@ class _AccountNotificationsState extends State<AccountNotifications> {
             // Give a small delay to ensure Firestore updates
             await Future.delayed(const Duration(milliseconds: 200));
           }
-          // Show popup with notification details
+          // Navigate based on notification type
           if (mounted) {
-            _showNotificationPopup(data);
+            _handleNotificationTap(data);
           }
         },
       ),
@@ -495,6 +506,18 @@ class _AccountNotificationsState extends State<AccountNotifications> {
         }
       }
     }
+  }
+
+  void _handleNotificationTap(Map<String, dynamic> data) {
+    // Navigate to notification detail screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NotificationDetailScreen(
+          notification: data,
+        ),
+      ),
+    );
   }
 
   void _showNotificationPopup(Map<String, dynamic> data) {

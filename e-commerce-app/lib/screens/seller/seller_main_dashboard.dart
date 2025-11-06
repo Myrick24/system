@@ -9,7 +9,7 @@ import 'seller_profile_management.dart';
 import 'add_product_screen.dart';
 import 'notifications_screen.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/notification_badge.dart';
+import '../../widgets/realtime_notification_widgets.dart';
 
 class SellerMainDashboard extends StatefulWidget {
   const SellerMainDashboard({Key? key}) : super(key: key);
@@ -86,15 +86,16 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
               doc.data()['status'] == 'approved' &&
               doc.data()['isActive'] == true)
           .length;
-      
+
       // Check for low stock products - consider both 'stock' and 'quantity' fields
       // Low stock threshold: less than or equal to 5 units
       int lowStockProducts = 0;
       for (var doc in productsQuery.docs) {
         final data = doc.data();
         final productName = data['name'] ?? data['productName'] ?? 'Unknown';
-        final stock = data['stock'] ?? data['quantity'] ?? data['currentStock'] ?? 0;
-        
+        final stock =
+            data['stock'] ?? data['quantity'] ?? data['currentStock'] ?? 0;
+
         int stockValue = 0;
         if (stock is int) {
           stockValue = stock;
@@ -108,10 +109,10 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
             continue;
           }
         }
-        
+
         // Debug: Print stock levels
         print('Product: $productName, Stock: $stockValue');
-        
+
         // Only count as low stock if 5 or less
         if (stockValue <= 5) {
           lowStockProducts++;
@@ -123,8 +124,8 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
           .where((doc) => doc.data()['status'] == 'pending')
           .length;
       int completedOrders = ordersQuery.docs
-          .where((doc) => 
-              doc.data()['status'] == 'completed' || 
+          .where((doc) =>
+              doc.data()['status'] == 'completed' ||
               doc.data()['status'] == 'delivered')
           .length;
 
@@ -134,7 +135,8 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
         if (status == 'completed' || status == 'delivered') {
           final amount = order.data()['totalAmount'];
           if (amount != null) {
-            totalRevenue += (amount is int ? amount.toDouble() : amount.toDouble());
+            totalRevenue +=
+                (amount is int ? amount.toDouble() : amount.toDouble());
           }
         }
       }
@@ -166,30 +168,6 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
         backgroundColor: AppTheme.primaryGreen,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          // Notification Icon with Badge
-          NotificationBadge(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationsScreen(),
-                ),
-              );
-            },
-            child: const Icon(
-              Icons.notifications,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _loadDashboardStats();
-            },
-          ),
-        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -488,7 +466,7 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
                         ),
                         const SizedBox(height: 24),
                       ],
-                      
+
                       // Pending Orders Alert
                       if (_dashboardStats['pendingOrders'] > 0) ...[
                         InkWell(
@@ -509,7 +487,8 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
                               color: AppTheme.accentOrange.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: AppTheme.accentOrange.withOpacity(0.3)),
+                                  color:
+                                      AppTheme.accentOrange.withOpacity(0.3)),
                             ),
                             child: Row(
                               children: [

@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
 import '../../services/realtime_notification_service.dart';
 import '../../widgets/realtime_notification_widgets.dart';
+import '../notification_detail_screen.dart';
+import '../order_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
@@ -22,15 +24,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // Listen to real-time notification updates
     RealtimeNotificationService.notificationStream.listen((notification) {
       if (mounted && notification['source'] == 'firestore') {
-        // Show snackbar for new notifications
-        RealtimeNotificationSnackbar.show(
-          context,
-          title: notification['data']['title'] ?? 'New Notification',
-          message: notification['data']['message'] ?? '',
-          onTap: () {
-            setState(() {}); // Refresh the list
-          },
-        );
+        // Just refresh the list when new notification arrives
+        setState(() {}); // Refresh the list
       }
     });
   }
@@ -215,8 +210,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         (notification['read'] == true) || (notification['isRead'] == true);
     final type = notification['type'] ?? 'general';
     final title = notification['title'] ?? 'Notification';
-    final message = notification['message'] ?? '';
+    final message = notification['message'] ?? notification['body'] ?? '';
     final createdAt = notification['createdAt'] ?? notification['timestamp'];
+
+    // Special card for new_order type
+    if (type == 'new_order') {
+      return _buildOrderNotificationCard(
+          notification, notificationId, isRead, title, message, createdAt);
+    }
+
+    // Build additional info line for product/order notifications
+    List<String> additionalInfo = [];
+
+    if (type.contains('product') || type.contains('order')) {
+      final productName = notification['productName'];
+      final price = notification['price'];
+      final quantity = notification['quantity'];
+      final unit = notification['unit'] ?? 'kg';
+      final status = notification['status'];
+
+      if (productName != null && productName.toString().isNotEmpty) {
+        if (price != null) additionalInfo.add('₱${price.toStringAsFixed(2)}');
+        if (quantity != null)
+          additionalInfo.add('${quantity.toString()} $unit');
+        if (status != null && status.toString().isNotEmpty) {
+          additionalInfo.add(status.toString().toUpperCase());
+        }
+      }
+    }
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -234,12 +255,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               isRead ? Colors.white : AppTheme.primaryGreen.withOpacity(0.05),
         ),
         child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: CircleAvatar(
             backgroundColor: _getNotificationColor(type),
             child: Icon(
               _getNotificationIcon(type),
               color: Colors.white,
-              size: 20,
+              size: 22,
             ),
           ),
           title: Row(
@@ -248,7 +271,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                    fontWeight: isRead ? FontWeight.w600 : FontWeight.bold,
                     fontSize: 16,
                     color: Colors.black87,
                   ),
@@ -273,10 +296,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 message,
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey.shade700,
+                  color: Colors.grey.shade800,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 8),
+              if (additionalInfo.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  additionalInfo.join(' • '),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 6),
               Text(
                 _formatDate(createdAt),
                 style: TextStyle(
@@ -343,11 +381,350 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               // Give a small delay to ensure Firestore updates
               await Future.delayed(const Duration(milliseconds: 200));
             }
-            // Show popup with notification details
+            // Navigate based on notification type
             if (mounted) {
-              _showNotificationPopup(notification);
+              _handleNotificationTap(notification);
             }
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderNotificationCard(
+    Map<String, dynamic> notification,
+    String notificationId,
+    bool isRead,
+    String title,
+    String message,
+    dynamic createdAt,
+  ) {
+    final productName = notification['productName'] ?? 'Product';
+    final productImage = notification['productImage'] ?? '';
+    final quantity = notification['quantity'];
+    final unit = notification['unit'] ?? 'kg';
+    final totalAmount = notification['totalAmount'];
+    final customerName = notification['customerName'] ?? 'Customer';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      elevation: isRead ? 2 : 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          if (!isRead) {
+            await _markAsRead(notificationId);
+            await Future.delayed(const Duration(milliseconds: 200));
+          }
+          if (mounted) {
+            _handleNotificationTap(notification);
+          }
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: isRead
+                ? null
+                : LinearGradient(
+                    colors: [
+                      AppTheme.primaryGreen.withOpacity(0.03),
+                      Colors.blue.withOpacity(0.02),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+            border: Border.all(
+              color: isRead
+                  ? Colors.grey.shade200
+                  : AppTheme.primaryGreen.withOpacity(0.3),
+              width: isRead ? 1 : 2,
+            ),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: Title and Unread Indicator
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.shopping_bag,
+                      color: Colors.blue.shade700,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                            ),
+                            if (!isRead)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGreen,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'NEW',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatDate(createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: Colors.grey.shade600),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'mark_read':
+                          if (!isRead) _markAsRead(notificationId);
+                          break;
+                        case 'mark_unread':
+                          if (isRead) _markAsUnread(notificationId);
+                          break;
+                        case 'delete':
+                          _deleteNotification(notificationId);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      if (!isRead)
+                        const PopupMenuItem(
+                          value: 'mark_read',
+                          child: Row(
+                            children: [
+                              Icon(Icons.mark_email_read, size: 18),
+                              SizedBox(width: 8),
+                              Text('Mark as Read'),
+                            ],
+                          ),
+                        ),
+                      if (isRead)
+                        const PopupMenuItem(
+                          value: 'mark_unread',
+                          child: Row(
+                            children: [
+                              Icon(Icons.mark_email_unread, size: 18),
+                              SizedBox(width: 8),
+                              Text('Mark as Unread'),
+                            ],
+                          ),
+                        ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Delete', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Divider
+              Container(
+                height: 1,
+                color: Colors.grey.shade200,
+              ),
+              const SizedBox(height: 12),
+              // Product Details Section
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Product Image
+                  if (productImage.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        productImage,
+                        width: 70,
+                        height: 70,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: 70,
+                            height: 70,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: Colors.grey.shade400,
+                              size: 30,
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.shopping_bag_outlined,
+                        color: Colors.grey.shade400,
+                        size: 30,
+                      ),
+                    ),
+                  const SizedBox(width: 12),
+                  // Product Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          productName,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        // Quantity Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.blue.shade400,
+                                Colors.blue.shade600
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.inventory_2,
+                                  color: Colors.white, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$quantity $unit',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Total Amount Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.green.shade400,
+                                Colors.green.shade600
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.payments,
+                                  color: Colors.white, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '₱${totalAmount?.toStringAsFixed(2) ?? '0.00'}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Customer Info
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.grey.shade600, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'From: $customerName',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward_ios,
+                        color: Colors.grey.shade400, size: 14),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -501,6 +878,105 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         const SnackBar(
           content: Text('Error deleting notification'),
           backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _handleNotificationTap(Map<String, dynamic> notification) async {
+    final type = notification['type'] ?? '';
+
+    // For new_order notifications, fetch the actual order and use OrderDetailScreen
+    if (type == 'new_order') {
+      final orderId = notification['orderId'];
+
+      if (orderId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Order ID not found'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      try {
+        // Fetch the full order document from the orders collection
+        final orderDoc =
+            await _firestore.collection('orders').doc(orderId).get();
+
+        if (!orderDoc.exists) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Order not found'),
+                  backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
+
+        // Use the actual order data from the orders collection
+        final orderData = orderDoc.data() as Map<String, dynamic>;
+        orderData['id'] = orderDoc.id;
+        orderData['orderId'] = orderDoc.id;
+
+        // If order doesn't have sellerId, get it from the notification
+        if (!orderData.containsKey('sellerId') ||
+            orderData['sellerId'] == null) {
+          orderData['sellerId'] = notification['sellerId'];
+          print(
+              'DEBUG: Added sellerId from notification: ${notification['sellerId']}');
+        }
+
+        // Get customer info like order management does
+        if (orderData.containsKey('userId')) {
+          try {
+            final userDoc = await _firestore
+                .collection('users')
+                .doc(orderData['userId'])
+                .get();
+            if (userDoc.exists) {
+              final userData = userDoc.data() as Map<String, dynamic>;
+              orderData['customerName'] = userData['name'] ??
+                  userData['fullName'] ??
+                  'Unknown Customer';
+              orderData['customerContact'] = userData['phone'] ??
+                  userData['phoneNumber'] ??
+                  userData['contact'];
+              orderData['customerEmail'] = userData['email'];
+            }
+          } catch (e) {
+            print('Error fetching customer info: $e');
+          }
+        }
+
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => OrderDetailScreen(
+                order: orderData,
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        print('Error fetching order: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Error loading order: $e'),
+                backgroundColor: Colors.red),
+          );
+        }
+      }
+    } else {
+      // For other notifications, use NotificationDetailScreen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => NotificationDetailScreen(
+            notification: notification,
+          ),
         ),
       );
     }

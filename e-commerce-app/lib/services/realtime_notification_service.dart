@@ -20,6 +20,21 @@ class RealtimeNotificationService {
       _notificationStreamController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  // Track shown notifications to prevent duplicates
+  static final Set<String> _shownNotificationIds = {};
+
+  // Track when the listener was initialized
+  static DateTime? _listenerStartTime;
+
+  // Track first load per user session
+  static final Map<String, bool> _isFirstLoadPerUser = {};
+
+  // Track current listener subscription
+  static StreamSubscription<QuerySnapshot>? _notificationSubscription;
+
+  // Track current user to detect user changes
+  static String? _currentUserId;
+
   // Stream for listening to new notifications
   static Stream<Map<String, dynamic>> get notificationStream =>
       _notificationStreamController.stream;
@@ -40,6 +55,9 @@ class RealtimeNotificationService {
   /// Initialize the notification service
   static Future<void> initialize() async {
     print('🔔 Initializing Real-time Notification Service...');
+
+    // Mark the initialization time
+    _listenerStartTime = DateTime.now();
 
     // Initialize local notifications
     await _initializeLocalNotifications();
@@ -398,80 +416,108 @@ class RealtimeNotificationService {
   static void _setupFirestoreListener() {
     _auth.authStateChanges().listen((User? user) {
       if (user != null) {
-        print('👤 Setting up Firestore listener for user: ${user.uid}');
+        // Check if this is a new user
+        final isNewUser = _currentUserId != user.uid;
 
-        // Try with createdAt first (newer notifications)
-        _firestore
+        print('👤 Setting up Firestore listener for user: ${user.uid}');
+        print('   Is new user: $isNewUser');
+
+        // If it's a new user, cancel previous subscription and clear data
+        if (isNewUser) {
+          _notificationSubscription?.cancel();
+          _shownNotificationIds.clear();
+          _currentUserId = user.uid;
+          print('   Cleared previous data for new user');
+        }
+
+        // Initialize first load flag for this user if not exists
+        if (!_isFirstLoadPerUser.containsKey(user.uid)) {
+          _isFirstLoadPerUser[user.uid] = true;
+        }
+
+        // Listen to notifications collection for this user
+        _notificationSubscription = _firestore
             .collection('notifications')
             .where('userId', isEqualTo: user.uid)
             .where('read', isEqualTo: false)
-            .orderBy('createdAt', descending: true)
             .snapshots()
             .listen(
           (snapshot) {
+            final isFirstLoad = _isFirstLoadPerUser[user.uid] ?? false;
+
+            print('📨 Snapshot callback triggered');
+            print('   Total unread notifications: ${snapshot.docs.length}');
+            print('   Document changes: ${snapshot.docChanges.length}');
+            print('   Is first load: $isFirstLoad');
+
             if (snapshot.docChanges.isNotEmpty) {
               for (var change in snapshot.docChanges) {
                 if (change.type == DocumentChangeType.added) {
+                  final docId = change.doc.id;
                   final data = change.doc.data();
+
                   if (data != null) {
+                    final title = data['title'] ?? 'Notification';
+                    final body = data['body'] ?? data['message'] ?? '';
+
                     print(
-                        '🆕 New notification detected in Firestore: ${data['title']}');
+                        '🔔 Notification change detected: $title (ID: $docId)');
+                    print('   Body: $body');
+                    print('   Type: ${data['type']}');
+                    print(
+                        '   Already shown: ${_shownNotificationIds.contains(docId)}');
 
-                    // Show local notification for Firestore-only notifications
-                    _showFirestoreNotification(data);
+                    if (!_shownNotificationIds.contains(docId)) {
+                      // Mark as shown IMMEDIATELY to prevent duplicates
+                      _shownNotificationIds.add(docId);
+                      print(
+                          '   Added to shown list. Total shown: ${_shownNotificationIds.length}');
 
-                    // Broadcast to stream
-                    _notificationStreamController.add({
-                      'source': 'firestore',
-                      'id': change.doc.id,
-                      'data': data,
-                      'timestamp': DateTime.now().toIso8601String(),
-                    });
+                      // Skip showing floating notifications on first load
+                      // Only show for new notifications that arrive after initial load
+                      if (!isFirstLoad) {
+                        print('✅✅✅ SHOWING FLOATING NOTIFICATION: $title');
+                        _showFirestoreNotification(data);
+                      } else {
+                        print(
+                            '⏭️  Skipping floating notification (first load): $title');
+                      }
+
+                      // Always broadcast to stream for UI updates
+                      _notificationStreamController.add({
+                        'source': 'firestore',
+                        'id': docId,
+                        'data': data,
+                        'timestamp': DateTime.now().toIso8601String(),
+                      });
+                    } else {
+                      print('⏩ Notification already processed, skipping');
+                    }
                   }
                 }
               }
             }
+
+            // ALWAYS mark first load as complete after the first snapshot
+            // This happens regardless of whether there were changes or not
+            if (isFirstLoad) {
+              _isFirstLoadPerUser[user.uid] = false;
+              print(
+                  '✅✅✅ FIRST LOAD COMPLETE - All future notifications will show as floating');
+              print(
+                  '   Shown notification IDs count: ${_shownNotificationIds.length}');
+            }
           },
           onError: (error) {
-            print('❌ Error in Firestore listener (trying createdAt): $error');
-
-            // Fallback: Try without orderBy if index doesn't exist
-            _firestore
-                .collection('notifications')
-                .where('userId', isEqualTo: user.uid)
-                .where('read', isEqualTo: false)
-                .snapshots()
-                .listen(
-              (snapshot) {
-                if (snapshot.docChanges.isNotEmpty) {
-                  for (var change in snapshot.docChanges) {
-                    if (change.type == DocumentChangeType.added) {
-                      final data = change.doc.data();
-                      if (data != null) {
-                        print(
-                            '🆕 New notification detected (fallback): ${data['title']}');
-                        _showFirestoreNotification(data);
-
-                        _notificationStreamController.add({
-                          'source': 'firestore',
-                          'id': change.doc.id,
-                          'data': data,
-                          'timestamp': DateTime.now().toIso8601String(),
-                        });
-                      }
-                    }
-                  }
-                }
-              },
-              onError: (fallbackError) {
-                print(
-                    '❌ Error in Firestore listener (fallback): $fallbackError');
-              },
-            );
+            print('❌ Error in Firestore listener: $error');
+            print(
+                '⚠️  Make sure to create a composite index for notifications collection');
           },
         );
       } else {
         print('⚠️  No user logged in, skipping Firestore listener');
+        // Clear shown notifications when user logs out
+        _shownNotificationIds.clear();
       }
     });
   }
@@ -697,6 +743,39 @@ class RealtimeNotificationService {
       print('✅ Unsubscribed from topic: $topic');
     } catch (e) {
       print('❌ Error unsubscribing from topic $topic: $e');
+    }
+  }
+
+  /// Check if notification permission is granted
+  static Future<bool> hasPermission() async {
+    try {
+      NotificationSettings settings =
+          await _firebaseMessaging.getNotificationSettings();
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (e) {
+      print('Error checking notification permission: $e');
+      return false;
+    }
+  }
+
+  /// Get current FCM token
+  static Future<String?> getCurrentToken() async {
+    try {
+      return await _firebaseMessaging.getToken();
+    } catch (e) {
+      print('Error getting FCM token: $e');
+      return null;
+    }
+  }
+
+  /// Clear all notifications
+  static Future<void> clearAllNotifications() async {
+    try {
+      await _localNotifications.cancelAll();
+      print('All notifications cleared');
+    } catch (e) {
+      print('Error clearing notifications: $e');
     }
   }
 

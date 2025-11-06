@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
-import 'coop_order_details.dart';
 import 'coop_payment_management.dart';
+import 'seller_review_screen.dart';
+import '../notification_detail_screen.dart';
 
 /// Cooperative Dashboard for managing deliveries and payments
 /// This dashboard allows cooperatives to:
@@ -39,12 +40,21 @@ class _CoopDashboardState extends State<CoopDashboard>
     'delivered'
   ];
 
+  // Seller category filter
+  String _selectedSellerCategory = 'All';
+
+  // Track expanded orders
+  Set<String> _expandedOrders = {};
+
   // Notification listener
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  StreamSubscription<QuerySnapshot>? _cooperativeNotificationSubscription;
   int _unreadNotificationCount = 0;
   List<Map<String, dynamic>> _recentNotifications = [];
   Set<String> _shownNotificationIds =
       {}; // Track which notifications we've already shown popups for
+  Set<String> _shownCoopNotificationIds =
+      {}; // Track cooperative notifications we've shown
 
   @override
   void initState() {
@@ -52,12 +62,14 @@ class _CoopDashboardState extends State<CoopDashboard>
     _tabController = TabController(length: 5, vsync: this);
     _checkAccess();
     _setupNotificationListener();
+    _setupCooperativeNotificationListener();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _notificationSubscription?.cancel();
+    _cooperativeNotificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -263,177 +275,244 @@ class _CoopDashboardState extends State<CoopDashboard>
     required String notificationId,
     String? payload,
   }) {
-    if (!mounted) return;
+    // Notification popups disabled - notifications only appear in the notification list
+    return;
+  }
 
-    // Parse notification type from title or payload
-    String notificationType = 'general';
-    if (title.contains('Product')) notificationType = 'product';
-    if (title.contains('Order')) notificationType = 'order';
-    if (title.contains('Payment')) notificationType = 'payment';
-
-    // Get icon and color based on type
-    IconData notificationIcon = Icons.notifications_active;
-    Color notificationColor = Colors.green.shade700;
-
-    switch (notificationType) {
-      case 'product':
-        notificationIcon = Icons.inventory_2_rounded;
-        notificationColor = Colors.blue.shade700;
-        break;
-      case 'order':
-        notificationIcon = Icons.shopping_cart_rounded;
-        notificationColor = Colors.orange.shade700;
-        break;
-      case 'payment':
-        notificationIcon = Icons.payment_rounded;
-        notificationColor = Colors.purple.shade700;
-        break;
-      default:
-        notificationIcon = Icons.notifications_active_rounded;
-        notificationColor = Colors.green.shade700;
+  /// Setup real-time listener for cooperative notifications (seller applications)
+  void _setupCooperativeNotificationListener() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      print(
+          'Cannot setup cooperative notification listener: No user logged in');
+      return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: InkWell(
-          onTap: () async {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            await _markNotificationAsRead(notificationId);
-            // Open notifications list
-            _showNotificationsList();
-          },
-          child: Container(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Icon with circular background
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    shape: BoxShape.circle,
+    print('Setting up cooperative notification listener for user: ${user.uid}');
+
+    _cooperativeNotificationSubscription = _firestore
+        .collection('cooperative_notifications')
+        .where('cooperativeId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .listen((snapshot) {
+      print(
+          'Cooperative notification snapshot: ${snapshot.docs.length} notifications');
+
+      for (var doc in snapshot.docs) {
+        final notificationId = doc.id;
+        final notificationData = doc.data();
+
+        // Only show popup if we haven't shown this notification before
+        if (!_shownCoopNotificationIds.contains(notificationId)) {
+          print(
+              '🔔 New seller application notification: ${notificationData['title']}');
+
+          _showCooperativeNotificationPopup(
+            title: notificationData['title'] ?? 'New Seller Application',
+            message: notificationData['message'] ?? '',
+            type: notificationData['type'] ?? 'seller_application',
+            notificationId: notificationId,
+            sellerId: notificationData['sellerId'] ?? '',
+            applicantName: notificationData['applicantName'] ??
+                (notificationData['message']?.contains('from') ?? false
+                    ? notificationData['message'].split('from').last.trim()
+                    : 'New Applicant'),
+          );
+
+          // Mark this notification as shown
+          _shownCoopNotificationIds.add(notificationId);
+        }
+      }
+    }, onError: (error) {
+      print('Error in cooperative notification listener: $error');
+    });
+  }
+
+  /// Show floating notification popup for cooperative notifications
+  void _showCooperativeNotificationPopup({
+    required String title,
+    required String message,
+    required String type,
+    required String notificationId,
+    required String sellerId,
+    required String applicantName,
+  }) {
+    if (!mounted) return;
+
+    // Create an overlay entry for the floating notification
+    final overlay = Overlay.of(context);
+    late OverlayEntry overlayEntry;
+
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 80,
+        left: 16,
+        right: 16,
+        child: Material(
+          child: GestureDetector(
+            onTap: () {
+              overlayEntry.remove();
+              // Could navigate to seller details screen here
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  child: Icon(
-                    notificationIcon,
-                    color: Colors.white,
-                    size: 28,
+                ],
+                border: Border(
+                  left: BorderSide(
+                    color: Colors.green.shade700,
+                    width: 5,
                   ),
                 ),
-                SizedBox(width: 16),
-                // Content
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header with icon and close button
+                  Row(
                     children: [
-                      // Title with emphasis
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.white,
-                          letterSpacing: 0.3,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: 6),
-                      // Body with better formatting - increased maxLines for product details
-                      Text(
-                        body,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.95),
-                          height: 1.4,
+                        child: Icon(
+                          Icons.person_add,
+                          color: Colors.green.shade700,
+                          size: 20,
                         ),
-                        maxLines: 6,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 8),
-                      // Time indicator
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time_rounded,
-                            size: 14,
-                            color: Colors.white.withOpacity(0.7),
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Just now',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.7),
-                              fontStyle: FontStyle.italic,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey.shade900,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              applicantName,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          overlayEntry.remove();
+                        },
+                        child: Icon(
+                          Icons.close,
+                          color: Colors.grey.shade400,
+                          size: 20,
+                        ),
                       ),
                     ],
                   ),
-                ),
-                SizedBox(width: 8),
-                // Action button
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () async {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          await _markNotificationAsRead(notificationId);
-                          // Open notifications list
-                          _showNotificationsList();
-                        },
-                        child: Container(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Text(
-                            'VIEW',
+                  const SizedBox(height: 12),
+                  // Message
+                  Text(
+                    message,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      height: 1.5,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  // Action buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            overlayEntry.remove();
+                            // Navigate to seller details or applications tab
+                            _tabController.animateTo(3); // Sellers tab
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: const Text(
+                            'Review',
                             style: TextStyle(
-                              color: notificationColor,
-                              fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              letterSpacing: 0.5,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    SizedBox(height: 8),
-                    // Dismiss button
-                    InkWell(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      },
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 20,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            overlayEntry.remove();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade200,
+                            foregroundColor: Colors.grey.shade700,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: const Text(
+                            'Later',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-        backgroundColor: notificationColor,
-        duration: Duration(seconds: 8),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        margin: EdgeInsets.all(16),
-        elevation: 8,
-        padding: EdgeInsets.all(12),
       ),
     );
+
+    overlay.insert(overlayEntry);
+
+    // Auto-dismiss after 8 seconds
+    Future.delayed(const Duration(seconds: 8), () {
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
+    });
   }
 
   /// Mark notification as read
@@ -954,6 +1033,48 @@ class _CoopDashboardState extends State<CoopDashboard>
     }
   }
 
+  // Format timestamp with both date and time ago
+  String _formatTimestampWithDate(dynamic timestamp) {
+    if (timestamp == null) return 'N/A';
+
+    try {
+      DateTime dateTime;
+      if (timestamp is Timestamp) {
+        dateTime = timestamp.toDate();
+      } else {
+        return 'N/A';
+      }
+
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      // Format: DD/MM/YYYY HH:MM (time ago)
+      String formattedDate =
+          '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
+      String formattedTime =
+          '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+
+      String timeAgo;
+      if (difference.inMinutes < 1) {
+        timeAgo = 'Just now';
+      } else if (difference.inHours < 1) {
+        timeAgo = '${difference.inMinutes}m ago';
+      } else if (difference.inDays < 1) {
+        timeAgo = '${difference.inHours}h ago';
+      } else if (difference.inDays < 7) {
+        timeAgo = '${difference.inDays}d ago';
+      } else if (difference.inDays < 30) {
+        timeAgo = '${(difference.inDays / 7).floor()}w ago';
+      } else {
+        timeAgo = '${(difference.inDays / 30).floor()}mo ago';
+      }
+
+      return '$formattedDate $formattedTime ($timeAgo)';
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+
   Future<void> _loadDashboardStats() async {
     setState(() {
       _isLoading = true;
@@ -1178,47 +1299,7 @@ class _CoopDashboardState extends State<CoopDashboard>
         title: const Text('Cooperative Dashboard'),
         backgroundColor: Colors.green,
         elevation: 0,
-        actions: [
-          // Notification bell with badge
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Stack(
-              children: [
-                IconButton(
-                  icon: Icon(Icons.notifications, color: Colors.white),
-                  onPressed: _showNotificationsList,
-                ),
-                if (_unreadNotificationCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: Text(
-                        _unreadNotificationCount > 9
-                            ? '9+'
-                            : '$_unreadNotificationCount',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+        actions: [],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -1321,6 +1402,8 @@ class _CoopDashboardState extends State<CoopDashboard>
           ),
           const SizedBox(height: 12),
 
+          const SizedBox(height: 16),
+
           StreamBuilder<QuerySnapshot>(
             stream: _firestore
                 .collection('users')
@@ -1368,76 +1451,206 @@ class _CoopDashboardState extends State<CoopDashboard>
                 );
               }
 
-              // Count sellers by status
-              int pending = sellers.where((doc) {
+              // Count sellers by category
+              final pendingCount = sellers.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 return (data['status'] ?? 'pending') == 'pending';
               }).length;
 
-              int active = sellers.where((doc) {
+              final approvedCount = sellers.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 return (data['status'] ?? '') == 'approved';
               }).length;
 
-              int inactive = sellers.where((doc) {
+              final rejectedCount = sellers.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                return (data['status'] ?? '') == 'rejected' ||
-                    (data['status'] ?? '') == 'inactive';
+                return (data['status'] ?? '') == 'rejected';
+              }).length;
+
+              final cancelledCount = sellers.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                return (data['status'] ?? '') == 'cancelled';
               }).length;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Stats
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatItem(
-                              'Pending',
-                              pending.toString(),
-                              Icons.hourglass_empty,
-                              Colors.orange,
-                            ),
+                  // Category Filter Buttons with counts
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FilterChip(
+                          label: Text('All (${sellers.length})'),
+                          selected: _selectedSellerCategory == 'All',
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedSellerCategory = 'All';
+                            });
+                          },
+                          backgroundColor: Colors.grey.shade200,
+                          selectedColor: Colors.green.shade300,
+                          labelStyle: TextStyle(
+                            color: _selectedSellerCategory == 'All'
+                                ? Colors.white
+                                : Colors.black,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatItem(
-                              'Active',
-                              active.toString(),
-                              Icons.check_circle,
-                              Colors.green,
-                            ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Pending ($pendingCount)'),
+                          selected: _selectedSellerCategory == 'Pending',
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedSellerCategory = 'Pending';
+                            });
+                          },
+                          backgroundColor: Colors.grey.shade200,
+                          selectedColor: Colors.orange.shade300,
+                          labelStyle: TextStyle(
+                            color: _selectedSellerCategory == 'Pending'
+                                ? Colors.white
+                                : Colors.black,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildStatItem(
-                              'Inactive',
-                              inactive.toString(),
-                              Icons.cancel,
-                              Colors.grey,
-                            ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Approved ($approvedCount)'),
+                          selected: _selectedSellerCategory == 'Approved',
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedSellerCategory = 'Approved';
+                            });
+                          },
+                          backgroundColor: Colors.grey.shade200,
+                          selectedColor: Colors.green.shade600,
+                          labelStyle: TextStyle(
+                            color: _selectedSellerCategory == 'Approved'
+                                ? Colors.white
+                                : Colors.black,
+                            fontWeight: FontWeight.w500,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Rejected ($rejectedCount)'),
+                          selected: _selectedSellerCategory == 'Rejected',
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedSellerCategory = 'Rejected';
+                            });
+                          },
+                          backgroundColor: Colors.grey.shade200,
+                          selectedColor: Colors.red.shade300,
+                          labelStyle: TextStyle(
+                            color: _selectedSellerCategory == 'Rejected'
+                                ? Colors.white
+                                : Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Cancelled ($cancelledCount)'),
+                          selected: _selectedSellerCategory == 'Cancelled',
+                          onSelected: (selected) {
+                            setState(() {
+                              _selectedSellerCategory = 'Cancelled';
+                            });
+                          },
+                          backgroundColor: Colors.grey.shade200,
+                          selectedColor: Colors.grey.shade600,
+                          labelStyle: TextStyle(
+                            color: _selectedSellerCategory == 'Cancelled'
+                                ? Colors.white
+                                : Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-
                   const SizedBox(height: 16),
 
-                  // Sellers List
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: sellers.length,
-                    itemBuilder: (context, index) {
-                      final sellerData =
-                          sellers[index].data() as Map<String, dynamic>;
-                      final sellerId = sellers[index].id;
-                      return _buildSellerCard(sellerData, sellerId);
+                  // Sellers List - Filtered by category
+                  Builder(
+                    builder: (context) {
+                      // Filter sellers based on selected category
+
+                      List<QueryDocumentSnapshot> filteredSellers = sellers;
+
+                      if (_selectedSellerCategory != 'All') {
+                        filteredSellers = sellers.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final status = data['status'] ?? 'pending';
+
+                          switch (_selectedSellerCategory) {
+                            case 'Pending':
+                              return status == 'pending';
+                            case 'Approved':
+                              return status == 'approved';
+                            case 'Rejected':
+                              return status == 'rejected';
+                            case 'Cancelled':
+                              return status == 'cancelled';
+                            default:
+                              return true;
+                          }
+                        }).toList();
+                      }
+
+                      // Sort by application date (latest to oldest)
+                      filteredSellers.sort((a, b) {
+                        final dataA = a.data() as Map<String, dynamic>?;
+                        final dataB = b.data() as Map<String, dynamic>?;
+
+                        final dateA =
+                            dataA?['sellerApplicationDate'] as Timestamp?;
+                        final dateB =
+                            dataB?['sellerApplicationDate'] as Timestamp?;
+
+                        if (dateA == null || dateB == null) {
+                          return 0;
+                        }
+
+                        return dateB.compareTo(
+                            dateA); // Latest first (descending order)
+                      });
+
+                      if (filteredSellers.isEmpty) {
+                        return Card(
+                          elevation: 2,
+                          child: Padding(
+                            padding: const EdgeInsets.all(40),
+                            child: Column(
+                              children: [
+                                Icon(Icons.person_off,
+                                    size: 64, color: Colors.grey.shade400),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No ${_selectedSellerCategory.toLowerCase()} sellers found',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filteredSellers.length,
+                        itemBuilder: (context, index) {
+                          final sellerData = filteredSellers[index].data()
+                              as Map<String, dynamic>;
+                          final sellerId = filteredSellers[index].id;
+                          return _buildSellerCard(sellerData, sellerId);
+                        },
+                      );
                     },
                   ),
                 ],
@@ -1453,8 +1666,10 @@ class _CoopDashboardState extends State<CoopDashboard>
   Widget _buildSellerCard(Map<String, dynamic> seller, String sellerId) {
     final status = seller['status'] ?? 'pending';
     final name = seller['name'] ?? 'Unknown';
-    final email = seller['email'] ?? '';
-    final phone = seller['phone'] ?? 'N/A';
+    final createdAt = seller['sellerApplicationDate'] as Timestamp?;
+
+    // Try to get location from users collection first, then fallback to default
+    String location = 'Not specified';
 
     Color statusColor;
     IconData statusIcon;
@@ -1473,105 +1688,180 @@ class _CoopDashboardState extends State<CoopDashboard>
         statusIcon = Icons.hourglass_empty;
     }
 
+    // Format date
+    String dateApplied = 'N/A';
+    if (createdAt != null) {
+      final date = createdAt.toDate();
+      dateApplied = '${date.month}/${date.day}/${date.year}';
+    }
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor: statusColor.withOpacity(0.2),
-          child: Icon(Icons.person, color: statusColor),
-        ),
-        title: Text(
-          name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(email, style: const TextStyle(fontSize: 12)),
-            Text('Phone: $phone', style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _showSellerDetails(seller, sellerId),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(statusIcon, size: 16, color: statusColor),
-              const SizedBox(width: 4),
-              Text(
-                status.toUpperCase(),
-                style: TextStyle(
-                  color: statusColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              // Avatar with status indicator
+              Stack(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: statusColor.withOpacity(0.2),
+                    radius: 30,
+                    child: Icon(Icons.person, color: statusColor, size: 32),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Icon(statusIcon, size: 14, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              // Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Full Name
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    // Date Applied
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today,
+                            size: 14, color: Colors.grey.shade600),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Applied: $dateApplied',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Location - Fetch from sellers collection
+                    FutureBuilder<DocumentSnapshot>(
+                      future: _firestore
+                          .collection('sellers')
+                          .where('userId', isEqualTo: sellerId)
+                          .limit(1)
+                          .get()
+                          .then((snapshot) {
+                        if (snapshot.docs.isNotEmpty) {
+                          return Future.value(snapshot.docs.first);
+                        }
+                        throw Exception('Seller not found');
+                      }),
+                      builder: (context, snapshot) {
+                        String displayLocation = location;
+                        if (snapshot.hasData) {
+                          final sellerDoc =
+                              snapshot.data?.data() as Map<String, dynamic>?;
+                          if (sellerDoc != null) {
+                            final address =
+                                sellerDoc['address'] as Map<String, dynamic>? ??
+                                    {};
+                            displayLocation =
+                                address['city'] ?? 'Not specified';
+                          }
+                        }
+                        return Row(
+                          children: [
+                            Icon(Icons.location_on,
+                                size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                displayLocation,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Status Badge
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: statusColor, width: 1.5),
+                ),
+                child: Text(
+                  status.toUpperCase(),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        onTap: () => _showSellerDetails(seller, sellerId),
       ),
     );
   }
 
   // Show seller details dialog
   void _showSellerDetails(Map<String, dynamic> seller, String sellerId) {
-    final status = seller['status'] ?? 'pending';
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(seller['name'] ?? 'Seller Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetailRow('Email', seller['email'] ?? 'N/A'),
-              _buildDetailRow('Phone', seller['phone'] ?? 'N/A'),
-              _buildDetailRow('Status', status.toUpperCase()),
-              _buildDetailRow(
-                  'Registered',
-                  seller['createdAt']?.toDate().toString().split(' ')[0] ??
-                      'N/A'),
-            ],
-          ),
+    final userId = sellerId; // This is the user ID (Firebase Auth ID)
+    final actualSellerId =
+        seller['sellerId'] ?? sellerId; // Get the actual seller doc ID
+
+    print('📋 Opening seller review:');
+    print('   userId (from users collection): $userId');
+    print('   sellerId (from seller doc): $actualSellerId');
+
+    // Navigate to the new seller review screen instead of showing a dialog
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SellerReviewScreen(
+          sellerId: actualSellerId,
+          userId: userId,
         ),
-        actions: [
-          if (status == 'pending') ...[
-            TextButton.icon(
-              onPressed: () async {
-                await _updateSellerStatus(sellerId, 'rejected');
-                if (context.mounted) Navigator.pop(context);
-              },
-              icon: const Icon(Icons.cancel, color: Colors.red),
-              label: const Text('Reject'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-            ),
-            ElevatedButton.icon(
-              onPressed: () async {
-                await _updateSellerStatus(sellerId, 'approved');
-                if (context.mounted) Navigator.pop(context);
-              },
-              icon: const Icon(Icons.check_circle),
-              label: const Text('Approve'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            ),
-          ] else ...[
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        ],
       ),
-    );
+    ).then((result) {
+      // Refresh the sellers list if status was changed
+      if (result != null) {
+        _loadDashboardStats();
+      }
+    });
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -1714,59 +2004,6 @@ class _CoopDashboardState extends State<CoopDashboard>
 
           const SizedBox(height: 16),
 
-          // Quick Stats
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Product Overview',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatItem(
-                          'Pending Review',
-                          '0',
-                          Icons.pending,
-                          Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildStatItem(
-                          'Approved',
-                          '0',
-                          Icons.check_circle,
-                          Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildStatItem(
-                          'Rejected',
-                          '0',
-                          Icons.cancel,
-                          Colors.red,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
           // Products List
           const Text(
             'All Products',
@@ -1849,78 +2086,15 @@ class _CoopDashboardState extends State<CoopDashboard>
                 return bTime.compareTo(aTime);
               });
 
-              // Count products by status
+              // Count pending products
               int pending = products.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 return (data['status'] ?? 'pending') == 'pending';
               }).length;
 
-              int approved = products.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return (data['status'] ?? '') == 'approved';
-              }).length;
-
-              int rejected = products.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return (data['status'] ?? '') == 'rejected';
-              }).length;
-
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Update Stats in the Card above
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Live Product Statistics',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildStatItem(
-                                  'Pending Review',
-                                  pending.toString(),
-                                  Icons.pending,
-                                  Colors.orange,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatItem(
-                                  'Approved',
-                                  approved.toString(),
-                                  Icons.check_circle,
-                                  Colors.green,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildStatItem(
-                                  'Rejected',
-                                  rejected.toString(),
-                                  Icons.cancel,
-                                  Colors.red,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
                   // Pending Products Alert
                   if (pending > 0) ...[
                     Container(
@@ -2069,7 +2243,32 @@ class _CoopDashboardState extends State<CoopDashboard>
             ],
           ),
         ),
-        onTap: () => _showProductDetails(product, productId),
+        onTap: () {
+          // Navigate to product approval screen for pending products
+          if (status == 'pending') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => NotificationDetailScreen(
+                  notification: {
+                    'type': 'product_approval',
+                    'title': 'Product Approval Request',
+                    'message': 'Review product details and approve or reject',
+                    'productId': productId,
+                    'productName': name,
+                    'price': price,
+                    'status': status,
+                    'timestamp': product['createdAt'] ?? Timestamp.now(),
+                    'priority': 'high',
+                  },
+                ),
+              ),
+            );
+          } else {
+            // For approved/rejected products, show the details dialog
+            _showProductDetails(product, productId);
+          }
+        },
       ),
     );
   }
@@ -2882,48 +3081,9 @@ class _CoopDashboardState extends State<CoopDashboard>
     return RefreshIndicator(
       onRefresh: _loadDashboardStats,
       child: ListView(
-        padding: const EdgeInsets.only(right: 16, top: 16, bottom: 16),
+        padding: const EdgeInsets.all(16),
         children: [
-          // Header Card
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  const Icon(Icons.shopping_cart,
-                      size: 40, color: Colors.green),
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Order Management',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'View & coordinate all orders from your farmers',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Quick Stats
+          // Compact Header with Stats
           Card(
             elevation: 2,
             child: Padding(
@@ -2931,14 +3091,25 @@ class _CoopDashboardState extends State<CoopDashboard>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Order Overview',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  // Title Row
+                  Row(
+                    children: [
+                      Icon(Icons.shopping_cart,
+                          size: 28, color: Colors.green.shade700),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Order Management',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  // Stats Row
                   Row(
                     children: [
                       Expanded(
@@ -2949,7 +3120,7 @@ class _CoopDashboardState extends State<CoopDashboard>
                           Colors.orange,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: _buildStatItem(
                           'Processing',
@@ -2958,7 +3129,7 @@ class _CoopDashboardState extends State<CoopDashboard>
                           Colors.blue,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: _buildStatItem(
                           'Shipped',
@@ -2967,7 +3138,7 @@ class _CoopDashboardState extends State<CoopDashboard>
                           Colors.purple,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: _buildStatItem(
                           'Delivered',
@@ -2983,7 +3154,7 @@ class _CoopDashboardState extends State<CoopDashboard>
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // Orders List
           const Text(
@@ -3837,249 +4008,706 @@ class _CoopDashboardState extends State<CoopDashboard>
   // ========== ORDER CARD WIDGET ==========
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final status = order['status'] ?? 'pending';
-    final paymentMethod = order['paymentMethod'] ?? 'Cash on Delivery';
     final deliveryMethod = order['deliveryMethod'] ?? '';
-    final totalAmount = (order['totalAmount'] ?? 0.0).toDouble();
     final orderId = order['id'] ?? '';
+    final quantity = order['quantity'] ?? 1;
+    final buyerName = order['customerName'] ?? 'Unknown Buyer';
+    final productName = order['productName'] ?? 'Unknown Product';
+    final productImageUrl = order['productImage'] ?? '';
+    final unitPrice = (order['price'] ?? 0.0).toDouble();
+    final deliveryFee = (order['deliveryFee'] ?? 0.0).toDouble();
+    final totalAmount = (order['totalAmount'] ?? 0.0).toDouble();
+    final buyerAddress = order['customerAddress'] ?? 'N/A';
+    final buyerContact = order['customerContact'] ?? 'N/A';
+    final sellerId = order['sellerId'] ?? '';
 
     Color statusColor = _getStatusColor(status);
     IconData statusIcon = _getStatusIcon(status);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CoopOrderDetails(orderId: orderId),
-            ),
-          ).then((_) => _loadDashboardStats());
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          children: [
-            // Header with status
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  topRight: Radius.circular(12),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(statusIcon, color: statusColor, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          status.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: statusColor,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Order #${orderId.substring(0, 8).toUpperCase()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios,
-                      size: 16, color: Colors.grey.shade400),
-                ],
-              ),
-            ),
+    // Simplified status text
+    String statusText =
+        status == 'shipped' ? 'Ready for Pickup' : status.toUpperCase();
 
-            // Order Details
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Product Name
-                  Row(
-                    children: [
+    bool isExpanded = _expandedOrders.contains(orderId);
+    bool isCoopDelivery = deliveryMethod == 'Cooperative Delivery';
+
+    // Fetch seller information from users collection
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('users').doc(sellerId).get(),
+      builder: (context, sellerSnapshot) {
+        String sellerName = 'Unknown Seller';
+        String sellerContact = 'N/A';
+        String sellerLocation = 'N/A';
+
+        if (sellerSnapshot.hasData && sellerSnapshot.data!.exists) {
+          final sellerData =
+              sellerSnapshot.data!.data() as Map<String, dynamic>?;
+          if (sellerData != null) {
+            sellerName = sellerData['name'] ??
+                sellerData['fullName'] ??
+                'Unknown Seller';
+            sellerContact =
+                sellerData['phone'] ?? sellerData['contact'] ?? 'N/A';
+            sellerLocation =
+                sellerData['location'] ?? sellerData['address'] ?? 'N/A';
+          }
+        }
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: 2,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Buyer Name
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.person,
+                          color: Colors.blue.shade700, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Buyer Name',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            buyerName,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // 2. Product Name with Image
+                Row(
+                  children: [
+                    // Product Image (clickable)
+                    if (productImageUrl.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          // Show full image dialog
+                          showDialog(
+                            context: context,
+                            builder: (context) => Dialog(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  AppBar(
+                                    title: const Text('Product Image'),
+                                    automaticallyImplyLeading: false,
+                                    actions: [
+                                      IconButton(
+                                        icon: const Icon(Icons.close),
+                                        onPressed: () => Navigator.pop(context),
+                                      ),
+                                    ],
+                                  ),
+                                  InteractiveViewer(
+                                    child: Image.network(
+                                      productImageUrl,
+                                      fit: BoxFit.contain,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Container(
+                                          padding: const EdgeInsets.all(40),
+                                          child: const Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.broken_image,
+                                                  size: 48, color: Colors.grey),
+                                              SizedBox(height: 8),
+                                              Text('Image not available'),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.orange.shade200, width: 1.5),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.network(
+                              productImageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.shopping_bag,
+                                    color: Colors.orange.shade700, size: 24);
+                              },
+                            ),
+                          ),
+                        ),
+                      )
+                    else
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.green.shade50,
+                          color: Colors.orange.shade50,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(Icons.shopping_basket,
-                            color: Colors.green.shade700, size: 20),
+                        child: Icon(Icons.shopping_bag,
+                            color: Colors.orange.shade700, size: 18),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Product',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Product Name',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            productName,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // 3. Quantity
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.inventory_2,
+                          color: Colors.green.shade700, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quantity',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '$quantity items',
                               style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              order['productName'] ?? 'Unknown Product',
-                              style: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
+                                color: Colors.green.shade900,
                               ),
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // 4. Delivery Option
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        deliveryMethod == 'Pickup at Coop'
+                            ? Icons.store
+                            : Icons.local_shipping,
+                        color: Colors.purple.shade700,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Delivery Option',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Text(
+                                deliveryMethod.isEmpty
+                                    ? 'Standard Delivery'
+                                    : deliveryMethod,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isCoopDelivery) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade700,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'COOP',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // 5. Current Status
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(statusIcon, color: statusColor, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Current Status',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: statusColor.withOpacity(0.3)),
+                            ),
+                            child: Text(
+                              statusText,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 18),
+
+                // View Details Button (toggles expansion)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedOrders.remove(orderId);
+                        } else {
+                          _expandedOrders.add(orderId);
+                        }
+                      });
+                    },
+                    icon: Icon(
+                        isExpanded ? Icons.expand_less : Icons.visibility,
+                        size: 18),
+                    label: Text(
+                      isExpanded ? 'Hide Details' : 'View Details',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+
+                // EXPANDED VIEW - Full Details
+                if (isExpanded) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Order ID Section
+                        _buildDetailSection(
+                          title: 'Order ID',
+                          icon: Icons.receipt_long,
+                          color: Colors.indigo,
+                          children: [
+                            _buildExpandedDetailRow('Transaction ID',
+                                orderId.substring(0, 12).toUpperCase()),
+                            _buildExpandedDetailRow(
+                                'Order Date',
+                                order['timestamp'] != null
+                                    ? _formatTimestampWithDate(
+                                        order['timestamp'])
+                                    : order['createdAt'] != null
+                                        ? _formatTimestampWithDate(
+                                            order['createdAt'])
+                                        : 'N/A'),
                           ],
                         ),
-                      ),
-                    ],
+
+                        const SizedBox(height: 16),
+
+                        // Product Details Section
+                        _buildDetailSection(
+                          title: 'Product Details',
+                          icon: Icons.shopping_bag,
+                          color: Colors.orange,
+                          children: [
+                            _buildExpandedDetailRow(
+                                'Product Name', productName),
+                            _buildExpandedDetailRow(
+                                'Quantity', '$quantity items'),
+                            _buildExpandedDetailRow('Unit Price',
+                                '₱${unitPrice.toStringAsFixed(2)}'),
+                            _buildExpandedDetailRow('Subtotal',
+                                '₱${(unitPrice * quantity).toStringAsFixed(2)}',
+                                isBold: true),
+                            if (deliveryFee > 0)
+                              _buildExpandedDetailRow('Delivery Fee',
+                                  '₱${deliveryFee.toStringAsFixed(2)}'),
+                            _buildExpandedDetailRow('Total Amount',
+                                '₱${totalAmount.toStringAsFixed(2)}',
+                                isBold: true, isHighlight: true),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Buyer Information Section
+                        _buildDetailSection(
+                          title: 'Buyer Information',
+                          icon: Icons.person,
+                          color: Colors.blue,
+                          children: [
+                            _buildExpandedDetailRow('Name', buyerName),
+                            _buildExpandedDetailRow('Address', buyerAddress),
+                            _buildExpandedDetailRow('Contact', buyerContact),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Seller Information Section
+                        _buildDetailSection(
+                          title: 'Seller Information',
+                          icon: Icons.store,
+                          color: Colors.green,
+                          children: [
+                            _buildExpandedDetailRow('Name', sellerName),
+                            _buildExpandedDetailRow('Contact', sellerContact),
+                            if (sellerLocation != 'N/A')
+                              _buildExpandedDetailRow(
+                                  'Location', sellerLocation),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Delivery Option Section
+                        _buildDetailSection(
+                          title: 'Delivery Option',
+                          icon: Icons.local_shipping,
+                          color: Colors.purple,
+                          children: [
+                            _buildDetailRow(
+                                'Method',
+                                deliveryMethod.isEmpty
+                                    ? 'Standard Delivery'
+                                    : deliveryMethod),
+                            if (isCoopDelivery) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border:
+                                      Border.all(color: Colors.purple.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        color: Colors.purple.shade700,
+                                        size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Cooperative handles this delivery',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.purple.shade900,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Status Tracker Section
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                statusColor.withOpacity(0.1),
+                                statusColor.withOpacity(0.05),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            border:
+                                Border.all(color: statusColor.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.timeline,
+                                      color: statusColor, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Status Tracker',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              _buildStatusProgressBar(status),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(statusIcon,
+                                        color: statusColor, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Current: $statusText',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Action Buttons Section
+                        const Text(
+                          'Actions',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildActionButtons(
+                            orderId, status, deliveryMethod, isCoopDelivery),
+                      ],
+                    ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // Customer & Amount
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildOrderDetailItem(
-                          Icons.person_outline,
-                          'Customer',
-                          order['customerName'] ?? 'Unknown',
-                          Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildOrderDetailItem(
-                          Icons.payments_outlined,
-                          'Amount',
-                          '₱${totalAmount.toStringAsFixed(2)}',
-                          Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Delivery & Payment Method
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildOrderDetailItem(
-                          deliveryMethod == 'Pickup at Coop'
-                              ? Icons.store_outlined
-                              : Icons.local_shipping_outlined,
-                          'Delivery',
-                          deliveryMethod,
-                          Colors.purple,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildOrderDetailItem(
-                          Icons.payment,
-                          'Payment',
-                          paymentMethod,
-                          Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Contact & Address (if available)
-                  if (order['customerContact'] != null ||
-                      order['customerAddress'] != null) ...[
-                    const SizedBox(height: 12),
-                    if (order['customerContact'] != null)
-                      _buildOrderDetailItem(
-                        Icons.phone_outlined,
-                        'Contact',
-                        order['customerContact'],
-                        Colors.teal,
-                      ),
-                    if (order['customerAddress'] != null) ...[
-                      const SizedBox(height: 12),
-                      _buildOrderDetailItem(
-                        Icons.location_on_outlined,
-                        'Address',
-                        order['customerAddress'],
-                        Colors.red,
-                      ),
-                    ],
-                  ],
-
-                  // Action Buttons
-                  const SizedBox(height: 16),
-                  _buildOrderActionButtons(orderId, status, deliveryMethod),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Helper method to build detail sections with colored borders
+  Widget _buildDetailSection({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
       ),
     );
   }
 
-  Widget _buildOrderDetailItem(
-    IconData icon,
-    String label,
-    String value,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
+  // Helper method to build detail rows for expanded view
+  Widget _buildExpandedDetailRow(String label, String value,
+      {bool isBold = false, bool isHighlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+                color: isHighlight ? Colors.green.shade700 : Colors.black87,
+              ),
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -4087,72 +4715,142 @@ class _CoopDashboardState extends State<CoopDashboard>
     );
   }
 
-  Widget _buildOrderActionButtons(
-    String orderId,
-    String status,
-    String deliveryMethod,
-  ) {
+  // Helper method to build status progress bar
+  Widget _buildStatusProgressBar(String status) {
+    final steps = ['pending', 'processing', 'shipped', 'delivered'];
+    final currentIndex = steps.indexOf(status.toLowerCase());
+    final progress =
+        currentIndex >= 0 ? (currentIndex + 1) / steps.length : 0.0;
+
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 8,
+            backgroundColor: Colors.grey.shade300,
+            valueColor: AlwaysStoppedAnimation<Color>(_getStatusColor(status)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildProgressLabel('Pending', currentIndex >= 0, Colors.orange),
+            _buildProgressLabel('Processing', currentIndex >= 1, Colors.blue),
+            _buildProgressLabel('Shipped', currentIndex >= 2, Colors.purple),
+            _buildProgressLabel('Delivered', currentIndex >= 3, Colors.green),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // Helper method to build progress labels
+  Widget _buildProgressLabel(String label, bool isActive, Color color) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+        color: isActive ? color : Colors.grey.shade500,
+      ),
+    );
+  }
+
+  // Helper method to build action buttons based on status and delivery method
+  Widget _buildActionButtons(String orderId, String status,
+      String deliveryMethod, bool isCoopDelivery) {
     List<Widget> buttons = [];
 
-    // Pending orders can be started (moved to processing)
-    if (status == 'pending') {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _updateOrderStatus(orderId, 'processing'),
-            icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('Start Processing'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+    // For pending or processing orders
+    if (status == 'pending' || status == 'processing') {
+      if (deliveryMethod == 'Pickup at Coop') {
+        // Pickup orders - mark as ready for pickup
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _updateOrderStatus(orderId, 'shipped'),
+              icon: const Icon(Icons.check_circle, size: 18),
+              label: const Text('Mark as Ready for Pickup'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
-        ),
-      );
-    }
-
-    // Processing orders can be marked as shipped
-    if (status == 'processing') {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _updateOrderStatus(orderId, 'shipped'),
-            icon: const Icon(Icons.local_shipping, size: 18),
-            label: const Text('Mark Shipped'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.purple,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        );
+      } else if (isCoopDelivery) {
+        // Coop delivery - mark as out for delivery
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _updateOrderStatus(orderId, 'shipped'),
+              icon: const Icon(Icons.local_shipping, size: 18),
+              label: const Text('Mark as Out for Delivery'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    // Shipped orders can be marked as delivered
+    // For shipped orders
     if (status == 'shipped') {
       buttons.add(
         Expanded(
           child: ElevatedButton.icon(
             onPressed: () => _updateOrderStatus(orderId, 'delivered'),
             icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Mark Delivered'),
+            label: const Text('Mark as Delivered'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
           ),
+        ),
+      );
+    }
+
+    // For delivered orders
+    if (status == 'delivered') {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Order Completed',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.green.shade700,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -4162,12 +4860,7 @@ class _CoopDashboardState extends State<CoopDashboard>
     }
 
     return Row(
-      children: [
-        for (int i = 0; i < buttons.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
-          buttons[i],
-        ],
-      ],
+      children: buttons,
     );
   }
 

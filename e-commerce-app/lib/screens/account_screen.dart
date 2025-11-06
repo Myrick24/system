@@ -11,6 +11,7 @@ import 'cooperative/coop_dashboard.dart'; // Import Coop Dashboard
 import 'buyer/buyer_main_dashboard.dart'; // Import BuyerOrdersScreen
 import 'seller/seller_profile_management.dart'; // Import Seller Profile Management
 import 'help_support/help_support_screen.dart'; // Import Help & Support
+import 'profile_settings_screen.dart'; // Import Profile Settings Screen
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({Key? key}) : super(key: key);
@@ -25,6 +26,9 @@ class _AccountScreenState extends State<AccountScreen>
   final _firestore = FirebaseFirestore.instance;
   User? _currentUser;
   String? _userName;
+  String? _userPhone;
+  String? _userAddress;
+  String? _userProfileImage;
   bool _isLoading = true;
   bool _isRegisteredSeller = false;
   bool _isSellerApproved = false; // Flag to track if seller is approved
@@ -78,17 +82,45 @@ class _AccountScreenState extends State<AccountScreen>
         try {
           final userDoc = await userDocRef.get();
           if (userDoc.exists) {
-            // Get the user name from Firestore
+            // Get the user data from Firestore
             final userData = userDoc.data();
-            if (userData != null &&
-                userData.containsKey('name') &&
-                userData['name'] != null) {
+            if (userData != null) {
               setState(() {
-                _userName = userData['name'];
+                if (userData.containsKey('name') && userData['name'] != null) {
+                  _userName = userData['name'];
+                  print(
+                      'User name set from users collection: ${userData['name']}');
+                }
+                // Check both 'phone' and 'mobile' fields
+                if (userData.containsKey('phone') &&
+                    userData['phone'] != null) {
+                  _userPhone = userData['phone'];
+                  print('User phone loaded: ${userData['phone']}');
+                } else if (userData.containsKey('mobile') &&
+                    userData['mobile'] != null) {
+                  _userPhone = userData['mobile'];
+                  print('User mobile loaded: ${userData['mobile']}');
+                }
+                // Load address
+                if (userData.containsKey('address') &&
+                    userData['address'] != null) {
+                  // Handle both string and map formats
+                  final address = userData['address'];
+                  if (address is String) {
+                    _userAddress = address;
+                  } else if (address is Map) {
+                    // If address is stored as a map with fullAddress field
+                    _userAddress = address['fullAddress'] ?? address.toString();
+                  }
+                  print('User address loaded: $_userAddress');
+                }
+                if (userData.containsKey('profileImage') &&
+                    userData['profileImage'] != null) {
+                  _userProfileImage = userData['profileImage'];
+                }
               });
-              print('User name set from users collection: ${userData['name']}');
             } else {
-              print('No name found in users collection');
+              print('No data found in users collection');
             }
 
             // Check if user is a cooperative
@@ -302,6 +334,117 @@ class _AccountScreenState extends State<AccountScreen>
     }
   }
 
+  // Helper method to send seller application cancellation notification to cooperative
+  Future<void> _sendSellerApplicationCancellationNotification(
+    String cooperativeId,
+    String sellerName,
+    String sellerId,
+  ) async {
+    try {
+      print(
+          '📤 Sending seller application cancellation notification to cooperative: $cooperativeId');
+
+      // Get the cooperative user document
+      final coopUserDoc =
+          await _firestore.collection('users').doc(cooperativeId).get();
+
+      if (!coopUserDoc.exists) {
+        print(
+            '⚠️  Warning: Cooperative user not found with ID: $cooperativeId');
+        return;
+      }
+
+      final coopUserData = coopUserDoc.data() as Map<String, dynamic>;
+      final cooperativeName = coopUserData['name'] ?? 'Cooperative';
+      final userRole = coopUserData['role'] ?? '';
+
+      if (userRole != 'cooperative' && userRole != 'admin') {
+        print(
+            '⚠️  Warning: User $cooperativeId is not a cooperative (role: $userRole)');
+        return;
+      }
+
+      print(
+          '✅ Creating cancellation notification for cooperative: $cooperativeName ($cooperativeId)');
+
+      // Create cancellation notification
+      final notificationData = {
+        'userId': cooperativeId,
+        'title': 'Seller Application Cancelled',
+        'body': '$sellerName has cancelled their seller application.',
+        'payload': 'seller_application_cancelled',
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'seller_application_cancelled',
+        'cooperativeId': cooperativeId,
+        'priority': 'medium',
+        'sellerName': sellerName,
+        'sellerId': sellerId,
+      };
+
+      // Add notification to 'notifications' collection
+      await _firestore.collection('notifications').add(notificationData);
+
+      print(
+          '✅ Successfully created cancellation notification for cooperative: $cooperativeName');
+
+      // Also notify staff members linked to this cooperative
+      final staffQuery = await _firestore
+          .collection('users')
+          .where('cooperativeId', isEqualTo: cooperativeId)
+          .where('role', isEqualTo: 'cooperative')
+          .get();
+
+      if (staffQuery.docs.isNotEmpty) {
+        print(
+            '👥 Found ${staffQuery.docs.length} staff members linked to this cooperative');
+
+        for (var staffDoc in staffQuery.docs) {
+          try {
+            String staffUserId = staffDoc.id;
+            Map<String, dynamic> staffData = staffDoc.data();
+            String staffName = staffData['name'] ?? 'Staff Member';
+
+            print(
+                '📤 Creating cancellation notification for staff member: $staffName ($staffUserId)');
+
+            final staffNotificationData = {
+              'userId': staffUserId,
+              'title': 'Seller Application Cancelled',
+              'body': '$sellerName has cancelled their seller application.',
+              'payload': 'seller_application_cancelled',
+              'read': false,
+              'createdAt': FieldValue.serverTimestamp(),
+              'type': 'seller_application_cancelled',
+              'cooperativeId': cooperativeId,
+              'priority': 'medium',
+              'sellerName': sellerName,
+              'sellerId': sellerId,
+            };
+
+            await _firestore
+                .collection('notifications')
+                .add(staffNotificationData);
+
+            print(
+                '✅ Successfully created cancellation notification for staff: $staffName');
+          } catch (e) {
+            print(
+                '❌ Error creating cancellation notification for staff ${staffDoc.id}: $e');
+          }
+        }
+      } else {
+        print('ℹ️  No additional staff members found for this cooperative');
+      }
+
+      print(
+          '✅ Seller application cancellation notification process complete for cooperative $cooperativeId');
+    } catch (e) {
+      print('❌ Error sending seller application cancellation notification: $e');
+      print('Stack trace: ${StackTrace.current}');
+    }
+  }
+
   @override
   @override
   Widget build(BuildContext context) {
@@ -376,14 +519,19 @@ class _AccountScreenState extends State<AccountScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 30,
                     backgroundColor: Colors.white,
-                    child: Icon(
-                      Icons.person,
-                      size: 40,
-                      color: Colors.green,
-                    ),
+                    backgroundImage: _userProfileImage != null
+                        ? NetworkImage(_userProfileImage!)
+                        : null,
+                    child: _userProfileImage == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 40,
+                            color: Colors.green,
+                          )
+                        : null,
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -780,7 +928,7 @@ class _AccountScreenState extends State<AccountScreen>
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // Action button for refreshing status
+                      // Action buttons for refreshing status, editing, and canceling
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
@@ -821,6 +969,175 @@ class _AccountScreenState extends State<AccountScreen>
                             ),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Edit and Cancel buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                // Navigate to registration screen to edit application
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const RegistrationScreen(),
+                                  ),
+                                );
+                                // Refresh status after editing
+                                if (result == true && mounted) {
+                                  setState(() {
+                                    _isLoading = true;
+                                  });
+                                  await _getCurrentUser();
+                                }
+                              },
+                              icon: const Icon(Icons.edit, size: 18),
+                              label: const Text('Edit'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                // Show confirmation dialog before canceling
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Cancel Application?'),
+                                    content: const Text(
+                                      'Are you sure you want to cancel your seller application? This action cannot be undone.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('Keep It'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () async {
+                                          Navigator.pop(context);
+                                          // Delete seller application
+                                          try {
+                                            final userId = _currentUser?.uid;
+                                            if (userId != null) {
+                                              // Get seller data BEFORE deletion to extract cooperativeId
+                                              final sellerDocs =
+                                                  await _firestore
+                                                      .collection('sellers')
+                                                      .where('userId',
+                                                          isEqualTo: userId)
+                                                      .get();
+
+                                              // Extract seller info before deletion
+                                              String? cooperativeId;
+                                              String? sellerName;
+
+                                              for (var doc in sellerDocs.docs) {
+                                                final sellerData = doc.data();
+                                                cooperativeId =
+                                                    sellerData['cooperativeId'];
+                                                sellerName =
+                                                    sellerData['storeName'] ??
+                                                        'Seller';
+                                                String sellerId = doc.id;
+
+                                                // Send cancellation notification to cooperative
+                                                if (cooperativeId != null &&
+                                                    sellerName != null) {
+                                                  await _sendSellerApplicationCancellationNotification(
+                                                    cooperativeId,
+                                                    sellerName,
+                                                    sellerId,
+                                                  );
+                                                }
+
+                                                // Now delete the seller document
+                                                await doc.reference.delete();
+                                              }
+
+                                              // Update users collection to remove seller role
+                                              await _firestore
+                                                  .collection('users')
+                                                  .doc(userId)
+                                                  .update({
+                                                'role': 'customer',
+                                                'sellerId': FieldValue.delete(),
+                                              });
+
+                                              setState(() {
+                                                _isRegisteredSeller = false;
+                                                _isSellerApproved = false;
+                                              });
+
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Application cancelled successfully',
+                                                    ),
+                                                    duration:
+                                                        Duration(seconds: 2),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          } catch (e) {
+                                            print(
+                                                'Error canceling application: $e');
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Error: ${e.toString()}',
+                                                  ),
+                                                  duration: const Duration(
+                                                      seconds: 2),
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                        child: const Text(
+                                          'Yes, Cancel',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.close, size: 18),
+                              label: const Text('Cancel'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Colors.red,
+                                  width: 1.5,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1382,138 +1699,33 @@ class _AccountScreenState extends State<AccountScreen>
     );
   }
 
-  void _showProfileDialog() {
-    final TextEditingController nameController =
-        TextEditingController(text: _userName);
-    final TextEditingController emailController =
-        TextEditingController(text: _currentUser?.email);
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(Icons.person, color: Colors.green.shade600),
-              const SizedBox(width: 8),
-              const Text('Profile Settings'),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Update your profile information',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: const Icon(Icons.person_outline),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: emailController,
-                  enabled: false,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Email cannot be changed',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                nameController.dispose();
-                emailController.dispose();
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final newName = nameController.text.trim();
-                if (newName.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Name cannot be empty'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-
-                try {
-                  // Update user name in Firestore
-                  await _firestore
-                      .collection('users')
-                      .doc(_currentUser!.uid)
-                      .update({'name': newName});
-
-                  // Update local state
-                  setState(() {
-                    _userName = newName;
-                  });
-
-                  nameController.dispose();
-                  emailController.dispose();
-                  Navigator.pop(context);
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Profile updated successfully'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error updating profile: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Save Changes'),
-            ),
-          ],
-        );
-      },
+  void _showProfileDialog() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileSettingsScreen(
+          userName: _userName,
+          userEmail: _currentUser?.email,
+          userPhone: _userPhone,
+          userAddress: _userAddress,
+          userProfileImage: _userProfileImage,
+          userId: _currentUser!.uid,
+        ),
+      ),
     );
+
+    // Update state if profile was updated
+    if (result != null && result is Map<String, dynamic>) {
+      setState(() {
+        _userName = result['name'];
+        _userPhone = result['phone'];
+        _userAddress = result['address'];
+        _userProfileImage = result['profileImage'];
+      });
+
+      // Reload user data to ensure everything is synced
+      _getCurrentUser();
+    }
   }
 
   void _showSellerInfoDialog() {

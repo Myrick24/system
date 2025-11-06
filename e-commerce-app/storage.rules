@@ -2,6 +2,15 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    // Allow access to profile images
+    match /profile_images/{allFiles=**} {
+      // Anyone can read profile images (to display in app)
+      allow read: if true;
+      
+      // Only authenticated users can upload their profile images
+      allow create, update, delete: if request.auth != null;
+    }
+    
     // Allow read access to all users for product images
     match /product_images/{productId}/{filename} {
       // Anyone can read product images

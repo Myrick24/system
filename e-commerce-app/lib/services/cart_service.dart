@@ -384,24 +384,25 @@ class CartService extends ChangeNotifier {
                   .collection('products')
                   .doc(item.productId)
                   .get();
-              
+
               if (productDoc.exists) {
                 final productData = productDoc.data() as Map<String, dynamic>;
                 final cooperativeId = productData['cooperativeId'] as String?;
-                
+
                 if (cooperativeId != null) {
                   // Get the cooperative's location
                   final coopDoc = await _firestore
                       .collection('users')
                       .doc(cooperativeId)
                       .get();
-                  
+
                   if (coopDoc.exists) {
                     final coopData = coopDoc.data() as Map<String, dynamic>;
                     final location = coopData['location'] as String?;
                     if (location != null && location.isNotEmpty) {
                       productCoopLocations[item.productId] = location;
-                      print('Found cooperative location for ${item.productName}: $location');
+                      print(
+                          'Found cooperative location for ${item.productName}: $location');
                     }
                   }
                 }
@@ -498,30 +499,40 @@ class CartService extends ChangeNotifier {
           final orderItemRef = orderRef.collection('items').doc(item.id);
           batch.set(orderItemRef, item.toMap());
 
-          // Create notification for the seller
-          final notificationId =
-              'notification_${DateTime.now().millisecondsSinceEpoch}_${item.sellerId}';
-          final notificationRef =
-              _firestore.collection('seller_notifications').doc(notificationId);
-          batch.set(notificationRef, {
-            'id': notificationId,
-            'sellerId': item.sellerId,
+          // Create notification for the seller (in main notifications collection)
+          final sellerNotificationRef =
+              _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': item.sellerId,
+            'title': '🛒 New Order Received',
+            'body':
+                '${orderData['customerName'] ?? 'Customer'} ordered ${item.quantity} ${item.unit} of ${item.productName}',
+            'message':
+                '${orderData['customerName'] ?? 'Customer'} ordered ${item.quantity} ${item.unit} of ${item.productName}',
+            'type': 'new_order',
             'orderId': orderId,
             'productId': item.productId,
             'productName': item.productName,
+            'productImage': item.imageUrl ?? '',
             'quantity': item.quantity,
+            'unit': item.unit,
             'totalAmount': item.price * item.quantity,
-            'timestamp': FieldValue.serverTimestamp(),
-            'status': 'unread',
-            'type': 'new_order',
-            'message':
-                'New order for ${item.productName} (${item.quantity} ${item.unit}) needs approval',
-            'needsApproval':
-                true, // Add this flag to indicate approval is needed
             'customerName': orderData['customerName'] ?? 'Customer',
+            'customerContact': orderData['customerContact'],
+            'customerEmail': orderData['userEmail'],
+            'userEmail': orderData['userEmail'],
             'paymentMethod': paymentMethod,
             'deliveryMethod': deliveryMethod,
-            'meetupLocation': meetupLocation,
+            // Add location-specific fields
+            if (orderData.containsKey('meetupLocation'))
+              'meetupLocation': orderData['meetupLocation'],
+            if (orderData.containsKey('deliveryAddress'))
+              'deliveryAddress': orderData['deliveryAddress'],
+            if (orderData.containsKey('pickupLocation'))
+              'pickupLocation': orderData['pickupLocation'],
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
           });
 
           // Add reference to the order document
@@ -624,48 +635,24 @@ class CartService extends ChangeNotifier {
         // Get current user info for buyer name
         User? currentUser = FirebaseAuth.instance.currentUser;
         String buyerName = 'Customer';
-        
+
         if (currentUser != null) {
           try {
-            DocumentSnapshot userDoc = await _firestore
-                .collection('users')
-                .doc(currentUser.uid)
-                .get();
+            DocumentSnapshot userDoc =
+                await _firestore.collection('users').doc(currentUser.uid).get();
             if (userDoc.exists) {
-              Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
-              buyerName = userData['name'] ?? userData['fullName'] ?? 'Customer';
+              Map<String, dynamic> userData =
+                  userDoc.data() as Map<String, dynamic>;
+              buyerName =
+                  userData['name'] ?? userData['fullName'] ?? 'Customer';
             }
           } catch (e) {
             print('Error loading user name: $e');
           }
         }
 
-        // Send notifications for each order placed
-        for (final item in purchaseItems) {
-          final orderId =
-              'order_${orderTime.millisecondsSinceEpoch}_${item.productId}';
-
-          // Notify buyer about order confirmation
-          await NotificationManager.sendCheckoutConfirmationToBuyer(
-            buyerId: userId,
-            productName: item.productName,
-            quantity: item.quantity,
-            unit: item.unit,
-            totalAmount: item.price * item.quantity,
-            orderId: orderId,
-          );
-
-          // Notify seller about new purchase
-          await NotificationManager.sendCheckoutNotificationToSeller(
-            sellerId: item.sellerId,
-            productName: item.productName,
-            quantity: item.quantity,
-            unit: item.unit,
-            totalAmount: item.price * item.quantity,
-            buyerName: buyerName,
-            orderId: orderId,
-          );
-        }
+        // Buyer notifications removed - buyers don't need notifications for their own orders
+        // Notification is already created in batch above with title "🛒 New Order Received" for sellers only
 
         // Send notifications for each reservation made
         for (final item in reservationItems) {

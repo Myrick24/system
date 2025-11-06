@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/push_notification_service.dart';
+import '../services/realtime_notification_service.dart';
 
 class QuickNotificationValidator {
   static Future<Map<String, bool>> validateNotificationSystem() async {
@@ -10,16 +10,16 @@ class QuickNotificationValidator {
       results['service_initialized'] = true;
 
       // Test 2: Check if permissions are granted
-      bool hasPermission = await PushNotificationService.hasPermission();
+      bool hasPermission = await RealtimeNotificationService.hasPermission();
       results['permissions_granted'] = hasPermission;
 
       // Test 3: Check if FCM token exists
-      String? token = await PushNotificationService.getCurrentToken();
+      String? token = await RealtimeNotificationService.getCurrentToken();
       results['fcm_token_available'] = token != null;
 
       // Test 4: Test basic local notification
       try {
-        await PushNotificationService.sendTestNotification(
+        await RealtimeNotificationService.sendTestNotification(
           title: 'Validation Test',
           body: 'Testing notification system functionality',
           payload: 'validation_test',
