@@ -25,9 +25,10 @@ import {
   PlusOutlined,
   EditOutlined
 } from '@ant-design/icons';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { useAuth } from '../contexts/AuthContext';
 
 const { Title, Text, Paragraph } = Typography;
 const { confirm } = Modal;
@@ -60,6 +61,7 @@ export const CooperativeManagement: React.FC = () => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingCoop, setEditingCoop] = useState<CooperativeUser | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     loadCooperativeUsers();
@@ -106,7 +108,12 @@ export const CooperativeManagement: React.FC = () => {
         return;
       }
 
-      // Create Firebase Authentication account
+      // Get current admin info before account creation
+      const adminAuthToken = await auth.currentUser?.getIdToken();
+      const adminEmail = auth.currentUser?.email;
+      const adminUID = auth.currentUser?.uid;
+
+      // Create Firebase Authentication account for cooperative
       const userCredential = await createUserWithEmailAndPassword(auth, emailLower, password);
       const userId = userCredential.user.uid;
 
@@ -119,13 +126,28 @@ export const CooperativeManagement: React.FC = () => {
         location: location?.trim() || '',
         role: 'cooperative',
         status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
 
       message.success(`Successfully created cooperative account for ${name}!`);
       form.resetFields();
       loadCooperativeUsers();
+
+      // Sign out the newly created cooperative user and restore admin session
+      // by keeping the admin UID in context
+      setTimeout(async () => {
+        try {
+          // Sign out to clear the newly created cooperative user
+          await auth.signOut();
+          // The AuthContext will detect the logout and show login page
+          // Admin needs to re-login, but we can show a helpful message
+          message.info('Cooperative account created! Please log back in to continue managing the system.');
+        } catch (signOutError) {
+          console.error('Error during sign out:', signOutError);
+        }
+      }, 1000);
+
     } catch (error: any) {
       console.error('Error creating cooperative account:', error);
       if (error.code === 'auth/email-already-in-use') {
