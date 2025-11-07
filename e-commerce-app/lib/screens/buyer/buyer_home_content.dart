@@ -114,17 +114,34 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 // Don't show back button when used in unified dashboard
                 // Only show when navigated to as a separate screen
                 // Search Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: const TextField(
-                    decoration: InputDecoration(
-                      icon: Icon(Icons.search),
-                      hintText: 'Search for farm products',
-                      border: InputBorder.none,
+                GestureDetector(
+                  onTap: () {
+                    // Navigate to the browse products screen for full search functionality
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const BuyerProductBrowse(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.search, color: Colors.grey),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Search for farm products',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -91,15 +91,13 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
       filtered = filtered.where((product) {
         final data = product.data() as Map<String, dynamic>;
         final productName =
-            (data['productName'] ?? '').toString().toLowerCase();
+            (data['productName'] ?? data['name'] ?? '').toString().toLowerCase();
         final description =
             (data['description'] ?? '').toString().toLowerCase();
-        final category = (data['category'] ?? '').toString().toLowerCase();
         final query = _searchQuery.toLowerCase();
 
         return productName.contains(query) ||
-            description.contains(query) ||
-            category.contains(query);
+            description.contains(query);
       }).toList();
     }
 

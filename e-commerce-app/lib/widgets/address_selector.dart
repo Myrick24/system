@@ -25,8 +25,6 @@ class _AddressSelectorState extends State<AddressSelector> {
   String? _selectedMunicipality;
   String? _selectedBarangay;
 
-  List<String> _regionCodes = [];
-  List<String> _provinces = [];
   List<String> _municipalities = [];
   List<String> _barangays = [];
 
@@ -56,7 +54,23 @@ class _AddressSelectorState extends State<AddressSelector> {
 
       setState(() {
         _locationData = data;
-        _regionCodes = data.keys.toList()..sort();
+        
+        // Populate all municipalities from all regions and provinces
+        Set<String> allMunicipalities = {};
+        for (var regionCode in data.keys) {
+          final regionData = data[regionCode];
+          if (regionData != null && regionData['province_list'] != null) {
+            final provinces = regionData['province_list'] as Map<String, dynamic>;
+            for (var provinceData in provinces.values) {
+              if (provinceData != null && provinceData['municipality_list'] != null) {
+                final municipalities = provinceData['municipality_list'] as Map<String, dynamic>;
+                allMunicipalities.addAll(municipalities.keys);
+              }
+            }
+          }
+        }
+        _municipalities = allMunicipalities.toList()..sort();
+        
         _isLoading = false;
       });
     } catch (e) {
@@ -67,75 +81,39 @@ class _AddressSelectorState extends State<AddressSelector> {
     }
   }
 
-  void _onRegionChanged(String? regionCode) {
-    if (regionCode == null) return;
-
-    setState(() {
-      _selectedRegionCode = regionCode;
-      _selectedProvince = null;
-      _selectedMunicipality = null;
-      _selectedBarangay = null;
-
-      final regionData = _locationData[regionCode];
-      if (regionData != null && regionData['province_list'] != null) {
-        _provinces = (regionData['province_list'] as Map<String, dynamic>)
-            .keys
-            .toList()
-          ..sort();
-      } else {
-        _provinces = [];
-      }
-      _municipalities = [];
-      _barangays = [];
-    });
-
-    _notifyAddressChange();
-  }
-
-  void _onProvinceChanged(String? province) {
-    if (province == null || _selectedRegionCode == null) return;
-
-    setState(() {
-      _selectedProvince = province;
-      _selectedMunicipality = null;
-      _selectedBarangay = null;
-
-      final provinceData =
-          _locationData[_selectedRegionCode!]['province_list'][province];
-      if (provinceData != null && provinceData['municipality_list'] != null) {
-        _municipalities = (provinceData['municipality_list']
-                as Map<String, dynamic>)
-            .keys
-            .toList()
-          ..sort();
-      } else {
-        _municipalities = [];
-      }
-      _barangays = [];
-    });
-
-    _notifyAddressChange();
-  }
-
   void _onMunicipalityChanged(String? municipality) {
-    if (municipality == null ||
-        _selectedRegionCode == null ||
-        _selectedProvince == null) return;
+    if (municipality == null) return;
 
     setState(() {
       _selectedMunicipality = municipality;
       _selectedBarangay = null;
 
-      final municipalityData = _locationData[_selectedRegionCode!]
-              ['province_list'][_selectedProvince!]['municipality_list']
-          [municipality];
-      if (municipalityData != null &&
-          municipalityData['barangay_list'] != null) {
-        _barangays = List<String>.from(municipalityData['barangay_list'])
-          ..sort();
-      } else {
-        _barangays = [];
+      // Find barangays for the selected municipality across all regions and provinces
+      Set<String> foundBarangays = {};
+      for (var regionCode in _locationData.keys) {
+        final regionData = _locationData[regionCode];
+        if (regionData != null && regionData['province_list'] != null) {
+          final provinces = regionData['province_list'] as Map<String, dynamic>;
+          for (var provinceData in provinces.values) {
+            if (provinceData != null && provinceData['municipality_list'] != null) {
+              final municipalities = provinceData['municipality_list'] as Map<String, dynamic>;
+              if (municipalities.containsKey(municipality)) {
+                final municipalityData = municipalities[municipality];
+                if (municipalityData != null && municipalityData['barangay_list'] != null) {
+                  foundBarangays.addAll(List<String>.from(municipalityData['barangay_list']));
+                  // Also store region and province for this municipality
+                  _selectedRegionCode = regionCode;
+                  _selectedProvince = provinces.keys.firstWhere(
+                    (key) => provinces[key]['municipality_list']?.containsKey(municipality) ?? false,
+                    orElse: () => '',
+                  );
+                }
+              }
+            }
+          }
+        }
       }
+      _barangays = foundBarangays.toList()..sort();
     });
 
     _notifyAddressChange();
@@ -191,9 +169,7 @@ class _AddressSelectorState extends State<AddressSelector> {
   }
 
   bool isComplete() {
-    return _selectedRegionCode != null &&
-        _selectedProvince != null &&
-        _selectedMunicipality != null &&
+    return _selectedMunicipality != null &&
         _selectedBarangay != null;
   }
 
@@ -211,60 +187,7 @@ class _AddressSelectorState extends State<AddressSelector> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Row 1: Region and Province
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: InputDecoration(
-                  labelText: 'Region *',
-                  labelStyle: const TextStyle(fontSize: 12),
-                  border: const OutlineInputBorder(),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                  isDense: true,
-                ),
-                isExpanded: true,
-                value: _selectedRegionCode,
-                style: const TextStyle(fontSize: 13, color: Colors.black87),
-                items: _regionCodes.map((code) {
-                  final regionName = _locationData[code]['region_name'] ?? code;
-                  return DropdownMenuItem(
-                    value: code,
-                    child: Text(regionName, overflow: TextOverflow.ellipsis),
-                  );
-                }).toList(),
-                onChanged: _onRegionChanged,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: InputDecoration(
-                  labelText: 'Province *',
-                  labelStyle: const TextStyle(fontSize: 12),
-                  border: const OutlineInputBorder(),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                  isDense: true,
-                ),
-                isExpanded: true,
-                value: _selectedProvince,
-                style: const TextStyle(fontSize: 13, color: Colors.black87),
-                items: _provinces.map((province) {
-                  return DropdownMenuItem(
-                    value: province,
-                    child: Text(province, overflow: TextOverflow.ellipsis),
-                  );
-                }).toList(),
-                onChanged: _provinces.isEmpty ? null : _onProvinceChanged,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // Row 2: Municipality and Barangay
+        // Row 1: Municipality and Barangay
         Row(
           children: [
             Expanded(

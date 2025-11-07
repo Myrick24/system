@@ -11,6 +11,7 @@ import 'reserve_screen.dart';
 import 'cart_screen.dart';
 import 'notification_screen.dart';
 import 'messages_screen.dart'; // Keep import for messages screen
+import 'buyer/buyer_product_browse.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart'; // Fixed import path
 
@@ -425,17 +426,34 @@ class _HomeScreenState extends State<HomeScreen> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 // Search Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: const TextField(
-                    decoration: InputDecoration(
-                      icon: Icon(Icons.search),
-                      hintText: 'Search for farm products',
-                      border: InputBorder.none,
+                GestureDetector(
+                  onTap: () {
+                    // Navigate to the browse products screen for full search functionality
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const BuyerProductBrowse(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.search, color: Colors.grey),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Search for farm products',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Admin Account</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .alert {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .alert strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #856404;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Fix Admin Account</h1>
+        <p class="subtitle">Create admin account in both Firebase Auth and Firestore</p>
+        
+        <div class="alert">
+            <strong>⚡ This tool will:</strong>
+            <ul style="margin: 5px 0 0 0; padding-left: 20px;">
+                <li>Create account in Firebase Authentication</li>
+                <li>Create matching Firestore document</li>
+                <li>Set admin role and permissions</li>
+            </ul>
+        </div>
+
+        <form id="adminForm">
+            <div class="form-group">
+                <label for="email">📧 Email Address</label>
+                <input type="email" id="email" value="admin@gmail.com" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">🔑 Password</label>
+                <input type="password" id="password" value="admin123" required>
+            </div>
+
+            <div class="form-group">
+                <label for="name">👤 Display Name</label>
+                <input type="text" id="name" value="Admin" required>
+            </div>
+
+            <button type="submit" id="createBtn">
+                ✨ Create Complete Admin Account
+            </button>
+        </form>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA9m8T0oO4iPvG_zU02QarC8Wqek0H8N14",
+            authDomain: "e-commerce-app-5cda8.firebaseapp.com",
+            projectId: "e-commerce-app-5cda8",
+            storageBucket: "e-commerce-app-5cda8.firebasestorage.app",
+            messagingSenderId: "630973639309",
+            appId: "1:630973639309:web:967af659d31635e2fa50c4",
+            measurementId: "G-DGHNCV3T0J"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const form = document.getElementById('adminForm');
+        const messageDiv = document.getElementById('message');
+        const createBtn = document.getElementById('createBtn');
+
+        function showMessage(html, type) {
+            messageDiv.innerHTML = html;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const name = document.getElementById('name').value.trim();
+
+            createBtn.disabled = true;
+            createBtn.innerHTML = '<span class="spinner"></span>Creating account...';
+            messageDiv.style.display = 'none';
+
+            try {
+                // Create Firebase Auth account
+                showMessage('⏳ Creating Firebase Authentication account...', 'success');
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // Create Firestore document
+                showMessage(`✓ Auth account created!<br>⏳ Creating Firestore document...`, 'success');
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, {
+                    name: name,
+                    email: email,
+                    role: 'admin',  // This is the critical field!
+                    status: 'active',
+                    isMainAdmin: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                });
+
+                showMessage(
+                    `<strong style="font-size: 18px;">✅ SUCCESS!</strong><br><br>` +
+                    `Your admin account is ready!<br><br>` +
+                    `<strong>Login Credentials:</strong><br>` +
+                    `📧 Email: <strong>${email}</strong><br>` +
+                    `🔑 Password: <strong>${password}</strong><br>` +
+                    `🆔 UID: <code style="background:#f0f0f0;padding:2px 6px;border-radius:3px;">${user.uid}</code><br><br>` +
+                    `<a href="/login" style="display:inline-block;margin-top:10px;padding:10px 20px;background:#28a745;color:white;text-decoration:none;border-radius:5px;font-weight:bold;">🚀 Go to Login Page</a>`,
+                    'success'
+                );
+
+                form.reset();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                let errorMsg = error.message;
+                
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMsg = `<strong>⚠️ Account Already Exists!</strong><br><br>` +
+                              `The email <strong>${email}</strong> is already registered.<br><br>` +
+                              `Try logging in at: <a href="/login">/login</a><br>` +
+                              `Or use a different email address.`;
+                } else if (error.code === 'auth/weak-password') {
+                    errorMsg = '<strong>Weak Password!</strong><br>Password must be at least 6 characters.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMsg = '<strong>Invalid Email!</strong><br>Please enter a valid email address.';
+                }
+                
+                showMessage(`❌ ${errorMsg}`, 'error');
+            } finally {
+                createBtn.disabled = false;
+                createBtn.innerHTML = '✨ Create Complete Admin Account';
+            }
+        });
+    </script>
+</body>
+</html>

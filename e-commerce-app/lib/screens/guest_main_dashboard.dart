@@ -311,14 +311,12 @@ class _GuestBrowseScreenState extends State<_GuestBrowseScreen> {
     
     return docs.where((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      final name = (data['name'] ?? '').toString().toLowerCase();
+      final name = (data['name'] ?? data['productName'] ?? '').toString().toLowerCase();
       final description = (data['description'] ?? '').toString().toLowerCase();
-      final category = (data['category'] ?? '').toString().toLowerCase();
       final searchLower = _searchQuery.toLowerCase();
       
       return name.contains(searchLower) || 
-             description.contains(searchLower) || 
-             category.contains(searchLower);
+             description.contains(searchLower);
     }).toList();
   }
 

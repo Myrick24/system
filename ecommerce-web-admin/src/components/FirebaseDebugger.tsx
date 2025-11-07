@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Input, Typography, Space, Alert, Divider } from 'antd';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { Card, Button, Input, Typography, Space, Alert, Divider, message } from 'antd';
+import { collection, query, where, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../services/firebase';
 
@@ -209,6 +209,68 @@ export const FirebaseDebugger: React.FC = () => {
     }
   };
 
+  const assignAdminRole = async () => {
+    if (!email) {
+      setResult({ error: 'Please enter an email address' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Find user by email
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('email', '==', email)
+      );
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      if (usersSnapshot.empty) {
+        setResult({ 
+          error: 'No user found with this email in Firestore',
+          suggestion: 'Make sure the user account exists in Firestore first'
+        });
+        return;
+      }
+
+      const userDoc = usersSnapshot.docs[0];
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+
+      // Update user role to admin
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        role: 'admin',
+        status: 'active',
+        isMainAdmin: true,
+        updatedAt: new Date()
+      });
+
+      message.success('Successfully assigned admin role!');
+      setResult({
+        success: true,
+        message: 'Admin role assigned successfully!',
+        userData: {
+          id: userId,
+          name: userData.name,
+          email: userData.email,
+          role: 'admin',
+          status: 'active',
+          isAdmin: true
+        }
+      });
+
+      // Refresh admin list
+      await checkAllAdmins();
+    } catch (error: any) {
+      setResult({ 
+        error: 'Error assigning admin role: ' + error.message 
+      });
+      message.error('Failed to assign admin role');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
       <Card title="Firebase Authentication Debugger">
@@ -283,6 +345,31 @@ export const FirebaseDebugger: React.FC = () => {
               </Button>
             </Space>
           </div>
+
+          <Divider />
+
+          <div>
+            <Text strong>Step 3.5: Assign Admin Role to User</Text>
+            <Alert
+              message="Make Admin"
+              description="Enter an email above and click this button to make that user an admin. This will update their role in Firestore to 'admin'."
+              type="info"
+              showIcon
+              style={{ marginTop: '8px', marginBottom: '8px' }}
+            />
+            <Space style={{ marginTop: '8px' }}>
+              <Button 
+                type="primary"
+                danger
+                onClick={assignAdminRole}
+                loading={loading}
+              >
+                🔐 Assign Admin Role
+              </Button>
+            </Space>
+          </div>
+
+          <Divider />
 
           <div>
             <Text strong>Step 4: List all admin users</Text>
