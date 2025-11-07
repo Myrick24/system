@@ -55,21 +55,23 @@ class _AddressSelectorState extends State<AddressSelector> {
       setState(() {
         _locationData = data;
         
-        // Populate all municipalities from all regions and provinces
-        Set<String> allMunicipalities = {};
+        // Populate municipalities from PANGASINAN province only
+        Set<String> pangasinanMunicipalities = {};
         for (var regionCode in data.keys) {
           final regionData = data[regionCode];
           if (regionData != null && regionData['province_list'] != null) {
             final provinces = regionData['province_list'] as Map<String, dynamic>;
-            for (var provinceData in provinces.values) {
-              if (provinceData != null && provinceData['municipality_list'] != null) {
-                final municipalities = provinceData['municipality_list'] as Map<String, dynamic>;
-                allMunicipalities.addAll(municipalities.keys);
+            // Only get municipalities from Pangasinan province
+            if (provinces.containsKey('PANGASINAN')) {
+              final pangasinanData = provinces['PANGASINAN'];
+              if (pangasinanData != null && pangasinanData['municipality_list'] != null) {
+                final municipalities = pangasinanData['municipality_list'] as Map<String, dynamic>;
+                pangasinanMunicipalities.addAll(municipalities.keys);
               }
             }
           }
         }
-        _municipalities = allMunicipalities.toList()..sort();
+        _municipalities = pangasinanMunicipalities.toList()..sort();
         
         _isLoading = false;
       });
@@ -88,25 +90,24 @@ class _AddressSelectorState extends State<AddressSelector> {
       _selectedMunicipality = municipality;
       _selectedBarangay = null;
 
-      // Find barangays for the selected municipality across all regions and provinces
+      // Find barangays for the selected municipality in Pangasinan province only
       Set<String> foundBarangays = {};
       for (var regionCode in _locationData.keys) {
         final regionData = _locationData[regionCode];
         if (regionData != null && regionData['province_list'] != null) {
           final provinces = regionData['province_list'] as Map<String, dynamic>;
-          for (var provinceData in provinces.values) {
-            if (provinceData != null && provinceData['municipality_list'] != null) {
-              final municipalities = provinceData['municipality_list'] as Map<String, dynamic>;
+          // Only search in Pangasinan province
+          if (provinces.containsKey('PANGASINAN')) {
+            final pangasinanData = provinces['PANGASINAN'];
+            if (pangasinanData != null && pangasinanData['municipality_list'] != null) {
+              final municipalities = pangasinanData['municipality_list'] as Map<String, dynamic>;
               if (municipalities.containsKey(municipality)) {
                 final municipalityData = municipalities[municipality];
                 if (municipalityData != null && municipalityData['barangay_list'] != null) {
                   foundBarangays.addAll(List<String>.from(municipalityData['barangay_list']));
-                  // Also store region and province for this municipality
+                  // Store region and province (Pangasinan)
                   _selectedRegionCode = regionCode;
-                  _selectedProvince = provinces.keys.firstWhere(
-                    (key) => provinces[key]['municipality_list']?.containsKey(municipality) ?? false,
-                    orElse: () => '',
-                  );
+                  _selectedProvince = 'PANGASINAN';
                 }
               }
             }

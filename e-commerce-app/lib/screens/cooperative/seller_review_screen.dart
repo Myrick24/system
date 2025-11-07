@@ -24,6 +24,7 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
   Map<String, dynamic>? _sellerData;
   String _currentStatus = 'pending';
   bool _isProcessing = false;
+  String? _actualSellerId; // Store the actual seller document ID
 
   @override
   void initState() {
@@ -56,8 +57,10 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
 
         if (fallbackQuery.docs.isNotEmpty) {
           print('   ✅ Found seller via fallback query');
+          final sellerDocFromQuery = fallbackQuery.docs.first;
           setState(() {
-            _sellerData = fallbackQuery.docs.first.data();
+            _sellerData = sellerDocFromQuery.data();
+            _actualSellerId = sellerDocFromQuery.id; // Store the actual document ID
             _currentStatus = _sellerData?['status'] ?? 'pending';
             _isLoading = false;
           });
@@ -67,6 +70,7 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
 
       setState(() {
         _sellerData = sellerDoc.data();
+        _actualSellerId = widget.sellerId; // Store the actual document ID
         _currentStatus = _sellerData?['status'] ?? 'pending';
         _isLoading = false;
       });
@@ -86,19 +90,29 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
     });
 
     try {
+      // Use the actual seller document ID (from fallback query if needed)
+      final sellerDocId = _actualSellerId ?? widget.sellerId;
+      
+      print('🔄 Updating seller status to: $newStatus');
+      print('   Using seller document ID: $sellerDocId');
+      
       // Update sellers collection
-      await _firestore.collection('sellers').doc(widget.sellerId).update({
+      await _firestore.collection('sellers').doc(sellerDocId).update({
         'status': newStatus,
         'verified': newStatus == 'approved',
         'verifiedAt': FieldValue.serverTimestamp(),
         'verifiedBy': _auth.currentUser?.uid,
       });
 
+      print('   ✅ Seller document updated successfully');
+
       // Update users collection
       await _firestore.collection('users').doc(widget.userId).update({
         'status': newStatus,
         'verified': newStatus == 'approved',
       });
+
+      print('   ✅ User document updated successfully');
 
       setState(() {
         _currentStatus = newStatus;

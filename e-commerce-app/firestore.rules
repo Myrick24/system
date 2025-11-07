@@ -84,7 +84,7 @@ service cloud.firestore {
       allow update: if isCoop() && 
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['status', 'updatedAt']);
+                        .hasOnly(['status', 'verified', 'updatedAt']);
     }
     
     // Admin audit logs - only admins can create and read
@@ -119,7 +119,9 @@ service cloud.firestore {
                       resource.data.userId == request.auth.uid;
       // Allow cooperatives to update status and verification fields
       allow update: if isCoop() && 
-                      resource.data.cooperativeId == request.auth.uid;
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['status', 'verified', 'verifiedAt', 'verifiedBy', 'updatedAt']);
       allow update: if request.auth != null && isAdmin();
       allow delete: if request.auth != null && isAdmin();
     }
