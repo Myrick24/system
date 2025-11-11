@@ -83,43 +83,75 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
           print('address: ${orderData['address']}');
           print('customerAddress: ${orderData['customerAddress']}');
 
-          // Get customer info
-          if (orderData.containsKey('userId')) {
+          // Get customer info - check both buyerId and userId for backward compatibility
+          final customerId = orderData['buyerId'] ?? orderData['userId'];
+          if (customerId != null) {
             try {
               final userDoc = await _firestore
                   .collection('users')
-                  .doc(orderData['userId'])
+                  .doc(customerId)
                   .get();
               if (userDoc.exists) {
                 final userData = userDoc.data() as Map<String, dynamic>;
                 orderData['customerName'] = userData['name'] ??
                     userData['fullName'] ??
                     'Unknown Customer';
-                orderData['customerContact'] = userData['phone'] ??
-                    userData['phoneNumber'] ??
-                    'No contact';
+                
+                // Safely get phone number - handle different field types and names
+                String phoneNumber = 'No contact information';
+                
+                // Check all possible phone field names
+                final possiblePhoneFields = [
+                  'mobile',        // Most common from signup
+                  'phone',
+                  'phoneNumber',
+                  'contactNumber',
+                  'mobileNumber',
+                ];
+                
+                for (final field in possiblePhoneFields) {
+                  if (userData[field] != null && userData[field] is String && userData[field].toString().trim().isNotEmpty) {
+                    phoneNumber = userData[field].toString().trim();
+                    break;
+                  }
+                }
+                
+                orderData['customerContact'] = phoneNumber;
                 orderData['customerEmail'] = userData['email'] ?? 'No email';
 
                 // Debug: Print all user fields
                 print('===== USER DATA DEBUG =====');
-                print('User ID: ${orderData['userId']}');
+                print('Customer ID: $customerId');
                 print('All user fields: ${userData.keys.toList()}');
-                print('fullAddress: ${userData['fullAddress']}');
-                print('address: ${userData['address']}');
-                print('deliveryAddress: ${userData['deliveryAddress']}');
-                print('location: ${userData['location']}');
-                print('street: ${userData['street']}');
-                print('city: ${userData['city']}');
-                print('state: ${userData['state']}');
-                print('postalCode: ${userData['postalCode']}');
+                print('name: ${userData['name']}');
+                print('fullName: ${userData['fullName']}');
+                print('mobile: ${userData['mobile']} (type: ${userData['mobile']?.runtimeType})');
+                print('phone: ${userData['phone']} (type: ${userData['phone']?.runtimeType})');
+                print('phoneNumber: ${userData['phoneNumber']} (type: ${userData['phoneNumber']?.runtimeType})');
+                print('contactNumber: ${userData['contactNumber']} (type: ${userData['contactNumber']?.runtimeType})');
+                print('mobileNumber: ${userData['mobileNumber']} (type: ${userData['mobileNumber']?.runtimeType})');
+                print('Selected phone number: $phoneNumber');
 
                 // Get BUYER'S address from user profile (their signup address)
-                // Priority: fullAddress > address > location > deliveryAddress > No address
-                final buyerAddr = userData['fullAddress'] ??
-                    userData['address'] ??
-                    userData['location'] ??
-                    userData['deliveryAddress'] ??
-                    'No address';
+                // Safely handle address fields that might be Maps or Strings
+                String buyerAddr = 'No address';
+                
+                if (userData['fullAddress'] != null && userData['fullAddress'] is String) {
+                  buyerAddr = userData['fullAddress'];
+                } else if (userData['address'] != null) {
+                  if (userData['address'] is String) {
+                    buyerAddr = userData['address'];
+                  } else if (userData['address'] is Map) {
+                    // Handle address as Map (e.g., {street, city, state})
+                    final addrMap = userData['address'] as Map;
+                    buyerAddr = addrMap['fullAddress'] ?? addrMap.values.where((v) => v != null).join(', ');
+                  }
+                } else if (userData['location'] != null && userData['location'] is String) {
+                  buyerAddr = userData['location'];
+                } else if (userData['deliveryAddress'] != null && userData['deliveryAddress'] is String) {
+                  buyerAddr = userData['deliveryAddress'];
+                }
+                
                 orderData['buyerAddress'] = buyerAddr;
                 orderData['customerAddress'] = buyerAddr;
 

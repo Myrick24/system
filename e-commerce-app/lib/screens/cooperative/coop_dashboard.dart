@@ -4331,6 +4331,51 @@ class _CoopDashboardState extends State<CoopDashboard>
                   ],
                 ),
 
+                // Show delivery address for Cooperative Delivery
+                if (isCoopDelivery && order['deliveryAddress'] != null && order['deliveryAddress'].toString().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.location_on,
+                            color: Colors.blue.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Delivery Address',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.blue.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                order['deliveryAddress'],
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.blue.shade900,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 14),
 
                 // 5. Current Status
@@ -4520,6 +4565,13 @@ class _CoopDashboardState extends State<CoopDashboard>
                                 deliveryMethod.isEmpty
                                     ? 'Standard Delivery'
                                     : deliveryMethod),
+                            // Show delivery address if it's Cooperative Delivery
+                            if (isCoopDelivery && order['deliveryAddress'] != null && order['deliveryAddress'].toString().isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              _buildDetailRow(
+                                  'Delivery Address',
+                                  order['deliveryAddress']),
+                            ],
                             if (isCoopDelivery) ...[
                               const SizedBox(height: 8),
                               Container(

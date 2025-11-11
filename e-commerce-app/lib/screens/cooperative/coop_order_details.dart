@@ -37,11 +37,62 @@ class _CoopOrderDetailsState extends State<CoopOrderDetails> {
           await _firestore.collection('orders').doc(widget.orderId).get();
 
       if (orderDoc.exists) {
-        setState(() {
-          _orderData = orderDoc.data();
-          _orderData!['id'] = orderDoc.id;
-          _isLoading = false;
-        });
+        final orderData = orderDoc.data();
+        if (orderData != null) {
+          orderData['id'] = orderDoc.id;
+          
+          // Fetch buyer information from users collection
+          final buyerId = orderData['buyerId'] ?? orderData['userId'];
+          if (buyerId != null) {
+            try {
+              final userDoc = await _firestore.collection('users').doc(buyerId).get();
+              if (userDoc.exists) {
+                final userData = userDoc.data() as Map<String, dynamic>;
+                
+                // Get phone number from mobile field (primary) or other fields
+                String phoneNumber = 'No contact information';
+                final possiblePhoneFields = ['mobile', 'phone', 'phoneNumber', 'contactNumber', 'mobileNumber'];
+                for (final field in possiblePhoneFields) {
+                  if (userData[field] != null && userData[field] is String && userData[field].toString().trim().isNotEmpty) {
+                    phoneNumber = userData[field].toString().trim();
+                    break;
+                  }
+                }
+                
+                // Update order data with fresh buyer contact info
+                orderData['customerContact'] = phoneNumber;
+                
+                // Get buyer address
+                String buyerAddress = 'No address';
+                if (userData['fullAddress'] != null && userData['fullAddress'] is String) {
+                  buyerAddress = userData['fullAddress'];
+                } else if (userData['address'] != null) {
+                  if (userData['address'] is String) {
+                    buyerAddress = userData['address'];
+                  } else if (userData['address'] is Map) {
+                    final addrMap = userData['address'] as Map;
+                    buyerAddress = addrMap['fullAddress'] ?? addrMap.values.where((v) => v != null).join(', ');
+                  }
+                } else if (userData['location'] != null && userData['location'] is String) {
+                  buyerAddress = userData['location'];
+                } else if (userData['deliveryAddress'] != null && userData['deliveryAddress'] is String) {
+                  buyerAddress = userData['deliveryAddress'];
+                }
+                
+                orderData['customerAddress'] = buyerAddress;
+                
+                print('✅ Loaded buyer info - Phone: $phoneNumber, Address: $buyerAddress');
+              }
+            } catch (e) {
+              print('⚠️ Error fetching buyer data: $e');
+            }
+          }
+          
+          setState(() {
+            _orderData = orderData;
+            _isLoading = false;
+          });
+        }
       } else {
         setState(() {
           _isLoading = false;
