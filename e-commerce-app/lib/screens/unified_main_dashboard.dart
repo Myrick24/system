@@ -430,13 +430,18 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Order #${order['id'].toString().substring(0, 8)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    'Order #${_getOrderNumber(order['id'])}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -557,6 +562,26 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         ],
       ),
     );
+  }
+
+  // Generate a clean order number from the order ID
+  String _getOrderNumber(String orderId) {
+    // If the ID is already in a nice format (like "order_17"), extract the number
+    if (orderId.startsWith('order_')) {
+      return orderId.replaceFirst('order_', '').toUpperCase();
+    }
+    
+    // For long Firebase IDs, take first 6 characters for readability
+    if (orderId.length > 12) {
+      return orderId.substring(0, 12).toUpperCase();
+    }
+    
+    // Otherwise use first 8 characters
+    if (orderId.length > 8) {
+      return orderId.substring(0, 8).toUpperCase();
+    }
+    
+    return orderId.toUpperCase();
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -685,13 +710,18 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Order #${order['id'].toString().substring(0, 8)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        Expanded(
+                          child: Text(
+                            'Order #${_getOrderNumber(order['id'])}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),

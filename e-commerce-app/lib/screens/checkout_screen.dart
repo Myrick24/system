@@ -209,6 +209,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  // Generate a clean order number from the order ID
+  String _getOrderNumber(String orderId) {
+    // If the ID is already in a nice format (like "order_17"), extract the number
+    if (orderId.startsWith('order_')) {
+      return orderId.replaceFirst('order_', '').toUpperCase();
+    }
+    
+    // For long Firebase IDs, take first 6 characters for readability
+    if (orderId.length > 12) {
+      return orderId.substring(0, 12).toUpperCase();
+    }
+    
+    // Otherwise use first 8 characters
+    if (orderId.length > 8) {
+      return orderId.substring(0, 8).toUpperCase();
+    }
+    
+    return orderId.toUpperCase();
+  }
+
   Widget _buildOrderStatusChip(String status) {
     Color chipColor;
     IconData iconData;
@@ -342,8 +362,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               children: [
                                 Text(
                                   isReservation
-                                      ? 'Reservation #${order['id'].toString().substring(0, 8)}'
-                                      : 'Order #${order['id'].toString().substring(0, 8)}',
+                                      ? 'Reservation #${_getOrderNumber(order['id'])}'
+                                      : 'Order #${_getOrderNumber(order['id'])}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                   ),

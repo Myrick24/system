@@ -5,6 +5,7 @@ import 'dart:async';
 import 'coop_payment_management.dart';
 import 'seller_review_screen.dart';
 import '../notification_detail_screen.dart';
+import '../../services/realtime_notification_service.dart';
 
 /// Cooperative Dashboard for managing deliveries and payments
 /// This dashboard allows cooperatives to:
@@ -4764,16 +4765,38 @@ class _CoopDashboardState extends State<CoopDashboard>
       String deliveryMethod, bool isCoopDelivery) {
     List<Widget> buttons = [];
 
-    // For pending or processing orders
-    if (status == 'pending' || status == 'processing') {
-      if (deliveryMethod == 'Pickup at Coop') {
-        // Pickup orders - mark as ready for pickup
+    // FOR PICKUP AT COOP: Show only "Mark Delivered" button
+    if (deliveryMethod == 'Pickup at Coop') {
+      if (status != 'delivered' && status != 'completed' && status != 'cancelled') {
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () => _updateOrderStatus(orderId, 'shipped'),
+              onPressed: () => _updateOrderStatus(orderId, 'delivered'),
+              icon: const Icon(Icons.done_all, size: 18),
+              label: const Text('Mark as Delivered'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    } else if (isCoopDelivery) {
+      // FOR COOPERATIVE DELIVERY: Use normal flow
+      
+      // For pending orders - show Approve button
+      if (status == 'pending') {
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _updateOrderStatus(orderId, 'processing'),
               icon: const Icon(Icons.check_circle, size: 18),
-              label: const Text('Mark as Ready for Pickup'),
+              label: const Text('Approve Order'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
@@ -4785,14 +4808,16 @@ class _CoopDashboardState extends State<CoopDashboard>
             ),
           ),
         );
-      } else if (isCoopDelivery) {
-        // Coop delivery - mark as out for delivery
+      }
+      
+      // For ready_for_shipping, ready_for_pickup, or processing orders - mark as out for delivery
+      else if (status == 'ready_for_shipping' || status == 'ready_for_pickup' || status == 'processing') {
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () => _updateOrderStatus(orderId, 'shipped'),
               icon: const Icon(Icons.local_shipping, size: 18),
-              label: const Text('Mark as Out for Delivery'),
+              label: const Text('Out for Delivery'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.purple,
                 foregroundColor: Colors.white,
@@ -4805,27 +4830,27 @@ class _CoopDashboardState extends State<CoopDashboard>
           ),
         );
       }
-    }
 
-    // For shipped orders
-    if (status == 'shipped') {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _updateOrderStatus(orderId, 'delivered'),
-            icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Mark as Delivered'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+      // For shipped orders - mark as delivered
+      else if (status == 'shipped') {
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _updateOrderStatus(orderId, 'delivered'),
+              icon: const Icon(Icons.done_all, size: 18),
+              label: const Text('Mark as Delivered'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
 
     // For delivered orders
@@ -4900,17 +4925,285 @@ class _CoopDashboardState extends State<CoopDashboard>
 
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
     try {
+      // Get order details first to retrieve buyer and seller IDs
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+      
+      if (!orderDoc.exists) {
+        throw Exception('Order not found');
+      }
+      
+      final orderData = orderDoc.data()!;
+      final buyerId = orderData['buyerId'] ?? orderData['userId'];
+      final sellerId = orderData['sellerId'];
+      final productName = orderData['productName'] ?? 'Product';
+      final quantity = orderData['quantity'] ?? 1;
+      final unit = orderData['unit'] ?? '';
+      
+      // Update order status
       await _firestore.collection('orders').doc(orderId).update({
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Order status updated to ${newStatus.toUpperCase()}'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // If status is 'processing' (approved), send notifications to both buyer and seller
+      if (newStatus == 'processing') {
+        final batch = _firestore.batch();
+        
+        // Notification for BUYER
+        if (buyerId != null) {
+          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(buyerNotificationRef, {
+            'userId': buyerId,
+            'title': '✅ Order Approved',
+            'body': 'Your order for $quantity $unit of $productName has been approved!',
+            'message': 'Your order for $quantity $unit of $productName is now being prepared.',
+            'type': 'order_status',
+            'status': 'processing',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to buyer
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Approved',
+              body: 'Your order for $quantity $unit of $productName has been approved!',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to buyer about order approval');
+          } catch (e) {
+            print('⚠️ Error sending push notification to buyer: $e');
+          }
+        }
+        
+        // Notification for SELLER
+        if (sellerId != null) {
+          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': sellerId,
+            'title': '✅ Order Approved by Cooperative',
+            'body': 'Order for $quantity $unit of $productName has been approved for delivery',
+            'message': 'The cooperative has approved the order for $quantity $unit of $productName.',
+            'type': 'order_status',
+            'status': 'processing',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'customerName': orderData['customerName'] ?? 'Customer',
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to seller
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Approved by Cooperative',
+              body: 'Order for $quantity $unit of $productName has been approved for delivery',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to seller about order approval');
+          } catch (e) {
+            print('⚠️ Error sending push notification to seller: $e');
+          }
+        }
+        
+        // Commit all notifications
+        await batch.commit();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order APPROVED. Buyer and seller have been notified.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      // If status is 'shipped' (out for delivery), send notifications to both buyer and seller
+      else if (newStatus == 'shipped') {
+        final batch = _firestore.batch();
+        
+        // Notification for BUYER
+        if (buyerId != null) {
+          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(buyerNotificationRef, {
+            'userId': buyerId,
+            'title': '🚚 Order Out for Delivery',
+            'body': 'Your order for $quantity $unit of $productName is out for delivery!',
+            'message': 'Your order for $quantity $unit of $productName is on the way to you.',
+            'type': 'order_status',
+            'status': 'shipped',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to buyer
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '🚚 Order Out for Delivery',
+              body: 'Your order for $quantity $unit of $productName is out for delivery!',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to buyer about out for delivery');
+          } catch (e) {
+            print('⚠️ Error sending push notification to buyer: $e');
+          }
+        }
+        
+        // Notification for SELLER
+        if (sellerId != null) {
+          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': sellerId,
+            'title': '🚚 Order Out for Delivery',
+            'body': 'Your order for $quantity $unit of $productName is being delivered',
+            'message': 'The cooperative is delivering $quantity $unit of $productName to the customer.',
+            'type': 'order_status',
+            'status': 'shipped',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'customerName': orderData['customerName'] ?? 'Customer',
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to seller
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '🚚 Order Out for Delivery',
+              body: 'Your order for $quantity $unit of $productName is being delivered',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to seller about out for delivery');
+          } catch (e) {
+            print('⚠️ Error sending push notification to seller: $e');
+          }
+        }
+        
+        // Commit all notifications
+        await batch.commit();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order marked as OUT FOR DELIVERY. Buyer and seller have been notified.'),
+            backgroundColor: Colors.purple,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      // If status is 'delivered', send notifications to both buyer and seller
+      else if (newStatus == 'delivered') {
+        final batch = _firestore.batch();
+        
+        // Notification for BUYER
+        if (buyerId != null) {
+          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(buyerNotificationRef, {
+            'userId': buyerId,
+            'title': '✅ Order Delivered',
+            'body': 'Your order for $quantity $unit of $productName has been delivered!',
+            'message': 'Your order for $quantity $unit of $productName has been delivered successfully.',
+            'type': 'order_status',
+            'status': 'delivered',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to buyer
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Delivered',
+              body: 'Your order for $quantity $unit of $productName has been delivered!',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to buyer');
+          } catch (e) {
+            print('⚠️ Error sending push notification to buyer: $e');
+          }
+        }
+        
+        // Notification for SELLER
+        if (sellerId != null) {
+          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': sellerId,
+            'title': '✅ Order Completed',
+            'body': 'Order for $quantity $unit of $productName has been delivered to customer',
+            'message': 'The cooperative has confirmed delivery of $quantity $unit of $productName to the customer.',
+            'type': 'order_status',
+            'status': 'delivered',
+            'orderId': orderId,
+            'productId': orderData['productId'],
+            'productName': productName,
+            'productImage': orderData['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'customerName': orderData['customerName'] ?? 'Customer',
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to seller
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Completed',
+              body: 'Order for $quantity $unit of $productName has been delivered to customer',
+              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+            );
+            print('✅ Push notification sent to seller');
+          } catch (e) {
+            print('⚠️ Error sending push notification to seller: $e');
+          }
+        }
+        
+        // Commit all notifications
+        await batch.commit();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order marked as DELIVERED. Buyer and seller have been notified with push notifications.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order status updated to ${newStatus.toUpperCase()}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
 
       _loadDashboardStats();
     } catch (e) {

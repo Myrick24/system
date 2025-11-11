@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../services/realtime_notification_service.dart';
 
 /// Order Details Screen for Cooperative
 /// Shows detailed information about a specific order
@@ -367,59 +368,65 @@ class _CoopOrderDetailsState extends State<CoopOrderDetails> {
   Widget _buildActionButtons(String status, String deliveryMethod) {
     List<Widget> buttons = [];
 
-    // Start Processing
-    if (status == 'pending' || status == 'confirmed') {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: _isProcessing ? null : () => _updateStatus('processing'),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Start Processing'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+    // FOR PICKUP AT COOP: Show only "Mark Delivered" button for any active status
+    if (deliveryMethod == 'Pickup at Coop') {
+      if (status != 'delivered' && status != 'completed' && status != 'cancelled') {
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing ? null : () => _updateStatus('delivered'),
+              icon: const Icon(Icons.done_all),
+              label: const Text('Mark Delivered'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
             ),
           ),
-        ),
-      );
-    }
-
-    // Mark Ready for Pickup
-    if (status == 'processing' && deliveryMethod == 'Pickup at Coop') {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: _isProcessing ? null : () => _updateStatus('ready'),
-            icon: const Icon(Icons.check_circle),
-            label: const Text('Mark Ready'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+        );
+      }
+    } else {
+      // FOR COOPERATIVE DELIVERY: Use the normal flow
+      
+      // Start Processing
+      if (status == 'pending' || status == 'confirmed') {
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing ? null : () => _updateStatus('processing'),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Start Processing'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
             ),
           ),
-        ),
-      );
-    }
+        );
+      }
 
-    // Mark as Delivered
-    if (status == 'ready' ||
-        (status == 'processing' && deliveryMethod == 'Cooperative Delivery')) {
-      buttons.add(
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: _isProcessing ? null : () => _updateStatus('delivered'),
-            icon: const Icon(Icons.done_all),
-            label: const Text('Mark Delivered'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              padding: const EdgeInsets.symmetric(vertical: 12),
+      // Mark as Delivered
+      if (status == 'processing' || 
+          status == 'ready' ||
+          status == 'ready_for_pickup' ||
+          status == 'ready_for_shipping') {
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing ? null : () => _updateStatus('delivered'),
+              icon: const Icon(Icons.done_all),
+              label: const Text('Mark Delivered'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
 
-    // Cancel Order
+    // Cancel Order (for both delivery methods)
     if (status != 'delivered' &&
         status != 'completed' &&
         status != 'cancelled') {
@@ -464,17 +471,109 @@ class _CoopOrderDetailsState extends State<CoopOrderDetails> {
     });
 
     try {
+      // Update order status
       await _firestore.collection('orders').doc(widget.orderId).update({
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Order status updated to ${newStatus.toUpperCase()}'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // If status is 'delivered', send notifications to both buyer and seller
+      if (newStatus == 'delivered' && _orderData != null) {
+        final buyerId = _orderData!['buyerId'] ?? _orderData!['userId'];
+        final sellerId = _orderData!['sellerId'];
+        final productName = _orderData!['productName'] ?? 'Product';
+        final quantity = _orderData!['quantity'] ?? 1;
+        final unit = _orderData!['unit'] ?? '';
+        
+        final batch = _firestore.batch();
+        
+        // Notification for BUYER
+        if (buyerId != null) {
+          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(buyerNotificationRef, {
+            'userId': buyerId,
+            'title': '✅ Order Delivered',
+            'body': 'Your order for $quantity $unit of $productName has been delivered!',
+            'message': 'Your order for $quantity $unit of $productName has been delivered successfully.',
+            'type': 'order_status',
+            'status': 'delivered',
+            'orderId': widget.orderId,
+            'productId': _orderData!['productId'],
+            'productName': productName,
+            'productImage': _orderData!['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to buyer
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Delivered',
+              body: 'Your order for $quantity $unit of $productName has been delivered!',
+              payload: 'order_status|${widget.orderId}|${_orderData!['productId']}|$productName',
+            );
+            print('✅ Push notification sent to buyer');
+          } catch (e) {
+            print('⚠️ Error sending push notification to buyer: $e');
+          }
+        }
+        
+        // Notification for SELLER
+        if (sellerId != null) {
+          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': sellerId,
+            'title': '✅ Order Completed',
+            'body': 'Order for $quantity $unit of $productName has been delivered to customer',
+            'message': 'The cooperative has confirmed delivery of $quantity $unit of $productName to the customer.',
+            'type': 'order_status',
+            'status': 'delivered',
+            'orderId': widget.orderId,
+            'productId': _orderData!['productId'],
+            'productName': productName,
+            'productImage': _orderData!['productImage'] ?? '',
+            'quantity': quantity,
+            'unit': unit,
+            'customerName': _orderData!['customerName'] ?? 'Customer',
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+          
+          // Send PUSH NOTIFICATION to seller
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '✅ Order Completed',
+              body: 'Order for $quantity $unit of $productName has been delivered to customer',
+              payload: 'order_status|${widget.orderId}|${_orderData!['productId']}|$productName',
+            );
+            print('✅ Push notification sent to seller');
+          } catch (e) {
+            print('⚠️ Error sending push notification to seller: $e');
+          }
+        }
+        
+        // Commit all notifications
+        await batch.commit();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Order marked as DELIVERED. Buyer and seller have been notified with push notifications.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order status updated to ${newStatus.toUpperCase()}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
 
       _loadOrderDetails();
     } catch (e) {
@@ -546,6 +645,8 @@ class _CoopOrderDetailsState extends State<CoopOrderDetails> {
       case 'processing':
         return Colors.purple;
       case 'ready':
+      case 'ready_for_pickup':
+      case 'ready_for_shipping':
         return Colors.green;
       case 'shipped':
       case 'delivered':
@@ -568,6 +669,8 @@ class _CoopOrderDetailsState extends State<CoopOrderDetails> {
       case 'processing':
         return Icons.autorenew;
       case 'ready':
+      case 'ready_for_pickup':
+      case 'ready_for_shipping':
         return Icons.check_circle;
       case 'shipped':
         return Icons.local_shipping;

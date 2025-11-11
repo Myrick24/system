@@ -353,7 +353,10 @@ service cloud.firestore {
     }
     
     match /orders/{orderId} {
-      allow create: if request.auth != null;
+      // Allow any authenticated user to create orders
+      allow create: if request.auth != null && 
+        (request.resource.data.buyerId == request.auth.uid || 
+         request.resource.data.userId == request.auth.uid);
       
       // Allow reading individual orders
       allow read: if request.auth != null && 
@@ -373,6 +376,7 @@ service cloud.firestore {
         return product.data.sellerId == request.auth.uid;
       }
       
+      // Allow updates from buyer, seller, cooperative, or admin
       allow update: if request.auth != null && 
         ((resource.data.buyerId == request.auth.uid || 
          resource.data.userId == request.auth.uid ||
@@ -382,8 +386,11 @@ service cloud.firestore {
           .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates'])) ||
         (isCoop() && 
          request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt']));
-      allow read, update: if request.auth != null && isAdmin();
+          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt'])) ||
+        isAdmin();
+      
+      // Allow delete only for admins
+      allow delete: if request.auth != null && isAdmin();
       
       match /items/{itemId} {
         allow read, write: if request.auth != null;

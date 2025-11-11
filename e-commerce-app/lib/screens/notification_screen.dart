@@ -147,36 +147,48 @@ class _NotificationScreenState extends State<NotificationScreen> {
     try {
       _notificationSubscription?.cancel();
 
-      // Use a try-catch block to handle missing index errors
-      try {
-        // First attempt with ideal query that might require index
-        final ordersQuery = _firestore
-            .collection('orders')
-            .where('userId', isEqualTo: userId)
-            .orderBy('timestamp', descending: true)
-            .limit(20);
-            
-        _notificationSubscription = ordersQuery.snapshots().listen(
-          _processOrdersSnapshot,
-          onError: (error) {
-            print('Error in buyer notifications listener (with index): $error');
-            
-            // If there's an index error, fall back to the simpler query
-            if (error.toString().contains('index')) {
-              _setupBuyerNotificationsWithoutIndex(userId);
-            } else if (mounted) {
-              setState(() {
-                _errorMessage = 'Failed to load orders: $error';
-                _isLoading = false;
-              });
-            }
-          },
-        );
-      } catch (queryError) {
-        // Fall back to simpler query without orderBy
-        print('Error setting up buyer notifications: $queryError');
-        _setupBuyerNotificationsWithoutIndex(userId);
-      }
+      // Listen to the notifications collection for buyer notifications
+      final notificationsQuery = _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .limit(50);
+
+      _notificationSubscription = notificationsQuery.snapshots().listen(
+        (snapshot) {
+          List<Map<String, dynamic>> notifications = [];
+
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            notifications.add(data);
+          }
+
+          // Sort notifications by timestamp locally (newest first)
+          notifications.sort((a, b) {
+            var aTime = a['timestamp'] as Timestamp?;
+            var bTime = b['timestamp'] as Timestamp?;
+            if (aTime == null || bTime == null) return 0;
+            return bTime.compareTo(aTime);
+          });
+
+          if (mounted) {
+            setState(() {
+              _notifications = notifications;
+              _isLoading = false;
+              _errorMessage = '';
+            });
+          }
+        },
+        onError: (error) {
+          print('Error in buyer notifications listener: $error');
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Failed to load notifications: $error';
+              _isLoading = false;
+            });
+          }
+        },
+      );
     } catch (e) {
       print('Exception in _setupBuyerNotificationsListener: $e');
       if (mounted) {
@@ -187,107 +199,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
     }
   }
-  
-  // Helper method for processing order snapshots
-  void _processOrdersSnapshot(QuerySnapshot snapshot) {
-    List<Map<String, dynamic>> notifications = [];
-    
-    for (var doc in snapshot.docs) {
-      final orderData = doc.data() as Map<String, dynamic>;
-      // Handle potential null values more robustly
-      final notification = {
-        'id': doc.id,
-        'type': 'order_status',
-        'orderId': doc.id,
-        'status': orderData['status'] ?? 'pending',
-        'timestamp': orderData['timestamp'] ?? Timestamp.now(),
-        'totalAmount': orderData['totalAmount'] ?? 0.0,
-        'productName': orderData['productName'] ?? 'Unknown Product',
-        'quantity': orderData['quantity'] ?? 1,
-        'message': _getStatusMessage(orderData['status'] ?? 'pending'),
-        'isRead': true,
-      };
-      
-      notifications.add(notification);
-    }
-    
-    if (mounted) {
-      setState(() {
-        _notifications = notifications;
-        _isLoading = false;
-        _errorMessage = ''; // Clear any previous errors
-      });
-    }
-  }
-  
-  // Fallback method when index doesn't exist
-  void _setupBuyerNotificationsWithoutIndex(String userId) async {
-    try {
-      final ordersQuery = _firestore
-          .collection('orders')
-          .where('userId', isEqualTo: userId)
-          // No orderBy clause to avoid index requirements
-          .limit(50);
-          
-      _notificationSubscription = ordersQuery.snapshots().listen(
-        (snapshot) {
-          List<Map<String, dynamic>> notifications = [];
-          
-          for (var doc in snapshot.docs) {
-            final orderData = doc.data();
-            final notification = {
-              'id': doc.id,
-              'type': 'order_status',
-              'orderId': doc.id,
-              'status': orderData['status'] ?? 'pending',
-              'timestamp': orderData['timestamp'] ?? Timestamp.now(),
-              'totalAmount': orderData['totalAmount'] ?? 0.0,
-              'productName': orderData['productName'] ?? 'Unknown Product',
-              'quantity': orderData['quantity'] ?? 1,
-              'message': _getStatusMessage(orderData['status'] ?? 'pending'),
-              'isRead': true,
-            };
-            
-            notifications.add(notification);
-          }
-          
-          // Sort notifications by timestamp locally instead of in the query
-          notifications.sort((a, b) {
-            var aTime = a['timestamp'] as Timestamp?;
-            var bTime = b['timestamp'] as Timestamp?;
-            if (aTime == null || bTime == null) return 0;
-            return bTime.compareTo(aTime); // descending order (newest first)
-          });
-          
-          if (mounted) {
-            setState(() {
-              _notifications = notifications;
-              _isLoading = false;
-              _errorMessage = ''; // Clear any previous errors
-            });
-          }
-        },
-        onError: (error) {
-          print('Error in buyer notifications listener (without index): $error');
-          if (mounted) {
-            setState(() {
-              _errorMessage = 'Failed to load orders: $error';
-              _isLoading = false;
-            });
-          }
-        },
-      );
-    } catch (e) {
-      print('Exception in fallback buyer notifications: $e');
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Failed to load notifications: $e';
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
   Future<void> _markNotificationsAsRead(List<String> notificationIds) async {
     try {
       if (notificationIds.isEmpty) return;
@@ -295,32 +206,24 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final batch = _firestore.batch();
 
       for (String notificationId in notificationIds) {
-        final notificationRef = _firestore
-            .collection('seller_notifications')
-            .doc(notificationId);
-        batch.update(notificationRef, {'status': 'read'});
+        // For sellers, use seller_notifications collection
+        if (_isSeller) {
+          final notificationRef = _firestore
+              .collection('seller_notifications')
+              .doc(notificationId);
+          batch.update(notificationRef, {'status': 'read'});
+        } else {
+          // For buyers, use notifications collection
+          final notificationRef = _firestore
+              .collection('notifications')
+              .doc(notificationId);
+          batch.update(notificationRef, {'read': true});
+        }
       }
 
       await batch.commit();
     } catch (e) {
       print('Error marking notifications as read: $e');
-    }
-  }
-
-  String _getStatusMessage(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'Your order has been placed and is awaiting confirmation';
-      case 'processing':
-        return 'Your order is being processed';
-      case 'shipped':
-        return 'Your order has been shipped';
-      case 'delivered':
-        return 'Your order has been delivered';
-      case 'cancelled':
-        return 'Your order has been cancelled';
-      default:
-        return 'Order status updated';
     }
   }
 
@@ -766,7 +669,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                       ),
                                     ),
                                   Text(
-                                    notification['message'] ?? 'Notification',
+                                    notification['title'] ?? notification['message'] ?? notification['body'] ?? 'Notification',
                                     style: TextStyle(
                                       fontWeight: isUnread
                                           ? FontWeight.bold
@@ -775,6 +678,17 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
+                                  if (notification.containsKey('body') && notification['title'] != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        notification['body'],
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
                                   if (notification.containsKey('productName'))
                                     Padding(
                                       padding: const EdgeInsets.only(bottom: 4),

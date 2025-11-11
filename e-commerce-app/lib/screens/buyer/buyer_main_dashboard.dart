@@ -7,6 +7,7 @@ import 'buyer_home_content.dart';
 import '../account_screen.dart';
 import '../cart_screen.dart';
 import '../messages_screen.dart';
+import '../notification_screen.dart';
 
 class BuyerMainDashboard extends StatefulWidget {
   const BuyerMainDashboard({Key? key}) : super(key: key);
@@ -20,6 +21,9 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
   int _selectedIndex = 0;
   final GlobalKey<_BuyerOrdersScreenState> _ordersKey =
       GlobalKey<_BuyerOrdersScreenState>();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  int _unreadNotificationCount = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -38,6 +42,25 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
           key: PageStorageKey(
               'AccountScreen')), // Account and seller registration
     ];
+    _listenToNotifications();
+  }
+
+  void _listenToNotifications() {
+    final userId = _auth.currentUser?.uid;
+    if (userId != null) {
+      _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: userId)
+          .where('read', isEqualTo: false)
+          .snapshots()
+          .listen((snapshot) {
+        if (mounted) {
+          setState(() {
+            _unreadNotificationCount = snapshot.docs.length;
+          });
+        }
+      });
+    }
   }
 
   @override
@@ -45,6 +68,58 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
     super.build(context); // Required for AutomaticKeepAliveClientMixin
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('AgriConnect'),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          // Notification Bell Icon with Badge
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationScreen(),
+                    ),
+                  );
+                },
+              ),
+              if (_unreadNotificationCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      _unreadNotificationCount > 99
+                          ? '99+'
+                          : '$_unreadNotificationCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
       body: IndexedStack(
         index: _selectedIndex,
         children: _pages,
@@ -225,10 +300,10 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
       switch (tabIndex) {
         case 0: // Active
-          statuses = ['pending', 'processing', 'shipped'];
+          statuses = ['pending', 'processing', 'ready', 'ready_for_pickup', 'ready_for_shipping', 'shipped'];
           break;
         case 1: // Completed
-          statuses = ['delivered'];
+          statuses = ['delivered', 'completed'];
           break;
         case 2: // Cancelled
           statuses = ['cancelled', 'rejected'];
@@ -365,26 +440,38 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Order #${order['id'].toString().substring(0, 8)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Order #${_getOrderNumber(order['id'])}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(order['status']),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    (order['status'] ?? 'PENDING').toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                const SizedBox(width: 12),
+                Flexible(
+                  flex: 2,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(order['status']),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _formatStatusText(order['status']),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -494,6 +581,26 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     );
   }
 
+  // Generate a clean order number from the order ID
+  String _getOrderNumber(String orderId) {
+    // If the ID is already in a nice format (like "order_17"), extract the number
+    if (orderId.startsWith('order_')) {
+      return orderId.replaceFirst('order_', '').toUpperCase();
+    }
+    
+    // For long Firebase IDs, take first 6 characters for readability
+    if (orderId.length > 12) {
+      return orderId.substring(0, 12).toUpperCase();
+    }
+    
+    // Otherwise use first 8 characters
+    if (orderId.length > 8) {
+      return orderId.substring(0, 8).toUpperCase();
+    }
+    
+    return orderId.toUpperCase();
+  }
+
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -534,16 +641,29 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         return Colors.orange;
       case 'processing':
         return Colors.blue;
+      case 'ready':
+      case 'ready_for_pickup':
+      case 'ready_for_shipping':
+        return Colors.purple;
       case 'shipped':
         return Colors.indigo;
       case 'delivered':
         return Colors.green;
+      case 'completed':
+        return Colors.teal;
       case 'cancelled':
       case 'rejected':
         return Colors.red;
       default:
         return Colors.grey;
     }
+  }
+
+  String _formatStatusText(String? status) {
+    if (status == null) return 'PENDING';
+    
+    // Replace underscores with spaces and convert to uppercase
+    return status.replaceAll('_', ' ').toUpperCase();
   }
 
   @override
@@ -631,26 +751,38 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Order #${order['id'].toString().substring(0, 8)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            'Order #${_getOrderNumber(order['id'])}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(order['status']),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            (order['status'] ?? 'PENDING').toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
+                        const SizedBox(width: 12),
+                        Flexible(
+                          flex: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(order['status']),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _formatStatusText(order['status']),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
                             ),
                           ),
                         ),

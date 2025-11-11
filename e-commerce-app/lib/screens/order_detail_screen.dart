@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../services/realtime_notification_service.dart';
 
 class OrderDetailScreen extends StatefulWidget {
   final Map<String, dynamic> order;
@@ -513,7 +514,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-<<<<<<< HEAD
               
               // Conditional buttons based on order status
               if (status == 'pending' || status == 'confirmed') ...[
@@ -527,63 +527,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     label: const Text('Accept Order'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green.shade600,
-=======
-              // Show different buttons based on order status
-              if (widget.order['status'] == 'pending' ||
-                  widget.order['status'] == null)
-                Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed:
-                            _isProcessing ? null : () => _acceptOrder(orderId!),
-                        icon: const Icon(Icons.check_circle),
-                        label: const Text('Accept Order'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.all(16),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _isProcessing
-                            ? null
-                            : () => _declineOrder(orderId!),
-                        icon: const Icon(Icons.cancel),
-                        label: const Text('Decline Order'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red.shade600,
-                          side:
-                              BorderSide(color: Colors.red.shade600, width: 2),
-                          padding: const EdgeInsets.all(16),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else if (widget.order['status'] == 'processing')
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing
-                        ? null
-                        : () => _markAsReadyForPickup(orderId!),
-                    icon: const Icon(Icons.local_shipping),
-                    label: const Text('Mark as Ready for Pickup'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade600,
->>>>>>> d22e04245da246de0243f3f2c4876ca75f51afad
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.all(16),
                     ),
                   ),
                 ),
-<<<<<<< HEAD
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -600,21 +548,40 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
               ] else if (status == 'processing') ...[
-                // Show Ready to Ship button for processing orders
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed:
-                        _isProcessing ? null : () => _markAsReadyToShip(orderId!),
-                    icon: const Icon(Icons.local_shipping),
-                    label: const Text('Mark as Ready to Ship'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade600,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.all(16),
+                // Show appropriate button based on delivery method
+                if (deliveryMethod == 'Pickup at Coop') ...[
+                  // Pickup at Coop - Mark as Ready for Pickup
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          _isProcessing ? null : () => _markAsReadyForPickup(orderId!),
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text('Mark as Ready for Pickup'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.all(16),
+                      ),
                     ),
                   ),
-                ),
+                ] else ...[
+                  // Cooperative Delivery - Mark as Ready to Ship
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          _isProcessing ? null : () => _markAsReadyToShip(orderId!),
+                      icon: const Icon(Icons.local_shipping),
+                      label: const Text('Mark as Ready to Ship'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.all(16),
+                      ),
+                    ),
+                  ),
+                ],
               ] else ...[
                 // Show status indicator for other statuses
                 Container(
@@ -640,8 +607,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
               ],
-=======
->>>>>>> d22e04245da246de0243f3f2c4876ca75f51afad
             ],
           ),
         ),
@@ -727,17 +692,35 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       // Send notification to buyer
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
       if (buyerId != null) {
+        final productName = widget.order['productName'] ?? 'Product';
+        
         await _firestore.collection('notifications').add({
           'userId': buyerId,
           'orderId': orderId,
           'type': 'order_status',
           'status': 'ready_for_pickup',
-          'message':
-              'Your order for ${widget.order['productName']} is ready for pickup!',
-          'productName': widget.order['productName'],
+          'title': '✅ Order Ready for Pickup!',
+          'body': 'Your order for $productName is ready for pickup at the cooperative!',
+          'message': 'Your order for $productName is ready for pickup!',
+          'productName': productName,
+          'productId': widget.order['productId'],
+          'productImage': widget.order['productImage'] ?? '',
           'timestamp': FieldValue.serverTimestamp(),
+          'read': false,
           'isRead': false,
         });
+        
+        // Send PUSH NOTIFICATION
+        try {
+          await RealtimeNotificationService.sendTestNotification(
+            title: '✅ Order Ready for Pickup!',
+            body: 'Your order for $productName is ready for pickup at the cooperative!',
+            payload: 'order_status|$orderId|${widget.order['productId']}|$productName',
+          );
+          print('✅ Push notification sent to buyer about ready for pickup');
+        } catch (e) {
+          print('⚠️ Error sending push notification: $e');
+        }
       }
 
       if (mounted) {
@@ -871,18 +854,36 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       // Send push notification to buyer
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
       if (buyerId != null) {
+        final productName = widget.order['productName'] ?? 'Product';
+        
         await _firestore.collection('notifications').add({
           'userId': buyerId,
           'orderId': orderId,
           'type': 'order_status',
           'status': 'ready_for_shipping',
-          'message':
-              'Good news! Your order for ${widget.order['productName']} is ready to ship! 📦',
-          'productName': widget.order['productName'],
+          'title': '📦 Order Ready to Ship!',
+          'body': 'Good news! Your order for $productName is ready to ship!',
+          'message': 'Good news! Your order for $productName is ready to ship! 📦',
+          'productName': productName,
+          'productId': widget.order['productId'],
+          'productImage': widget.order['productImage'] ?? '',
           'timestamp': FieldValue.serverTimestamp(),
+          'read': false,
           'isRead': false,
           'priority': 'high',
         });
+        
+        // Send PUSH NOTIFICATION
+        try {
+          await RealtimeNotificationService.sendTestNotification(
+            title: '📦 Order Ready to Ship!',
+            body: 'Good news! Your order for $productName is ready to ship!',
+            payload: 'order_status|$orderId|${widget.order['productId']}|$productName',
+          );
+          print('✅ Push notification sent to buyer about ready to ship');
+        } catch (e) {
+          print('⚠️ Error sending push notification: $e');
+        }
       }
 
       if (mounted) {
