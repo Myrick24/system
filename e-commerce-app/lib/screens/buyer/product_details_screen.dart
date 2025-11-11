@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../services/cart_service.dart';
 import '../../services/rating_service.dart';
+import '../../services/cooperative_chat_service.dart';
 import '../../models/rating_model.dart';
 import '../../widgets/rating_widgets.dart';
 import '../buy_now_screen.dart';
@@ -1010,6 +1011,139 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 16),
+
+                  // Contact Cooperative Button
+                  Card(
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: Colors.blue.shade200),
+                    ),
+                    child: InkWell(
+                      onTap: () async {
+                        final currentUser = _auth.currentUser;
+                        if (currentUser == null) {
+                          _showLoginPrompt();
+                          return;
+                        }
+
+                        try {
+                          final sellerId = widget.product['sellerId'];
+                          if (sellerId == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Seller information not available'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Get seller's cooperative
+                          final sellerDoc = await _firestore
+                              .collection('users')
+                              .doc(sellerId)
+                              .get();
+
+                          if (sellerDoc.exists) {
+                            final sellerData =
+                                sellerDoc.data() as Map<String, dynamic>;
+                            final cooperativeId =
+                                sellerData['cooperativeId'] as String?;
+
+                            if (cooperativeId != null) {
+                              final coopDoc = await _firestore
+                                  .collection('users')
+                                  .doc(cooperativeId)
+                                  .get();
+
+                              if (coopDoc.exists) {
+                                final cooperativeName =
+                                    coopDoc.data()?['name'] ?? 'Cooperative';
+
+                                await CooperativeChatService
+                                    .startBuyerCooperativeChat(
+                                  context: context,
+                                  cooperativeId: cooperativeId,
+                                  cooperativeName: cooperativeName,
+                                );
+                              }
+                            } else {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'This seller is not part of a cooperative'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.support_agent,
+                                color: Colors.blue.shade700,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Need Help?',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Contact the cooperative for support',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: Colors.grey.shade400,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
 
                   const SizedBox(height: 32),
 

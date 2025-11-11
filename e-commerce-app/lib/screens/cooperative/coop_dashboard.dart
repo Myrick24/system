@@ -6,6 +6,7 @@ import 'coop_payment_management.dart';
 import 'seller_review_screen.dart';
 import '../notification_detail_screen.dart';
 import '../../services/realtime_notification_service.dart';
+import '../cooperative_messages_screen.dart';
 
 /// Cooperative Dashboard for managing deliveries and payments
 /// This dashboard allows cooperatives to:
@@ -1300,7 +1301,21 @@ class _CoopDashboardState extends State<CoopDashboard>
         title: const Text('Cooperative Dashboard'),
         backgroundColor: Colors.green,
         elevation: 0,
-        actions: [],
+        actions: [
+          // Messages Icon Button
+          IconButton(
+            icon: const Icon(Icons.chat),
+            tooltip: 'Messages',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CooperativeMessagesScreen(),
+                ),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,

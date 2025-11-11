@@ -372,14 +372,14 @@ class CartService extends ChangeNotifier {
       final orderTime = DateTime.now();
 
       // Fetch cooperative pickup location if delivery method is "Pickup at Coop"
-      // We'll get the location from each product's cooperative
+      // We'll get the location from each product's seller's cooperative
       Map<String, String> productCoopLocations = {};
       if (deliveryMethod == 'Pickup at Coop') {
         try {
-          // Get cooperative location for each product
+          // Get cooperative location for each product based on seller's cooperative
           for (final item in _cartItems) {
             if (!productCoopLocations.containsKey(item.productId)) {
-              // Get the product to find its cooperative
+              // Get the product to find its seller
               final productDoc = await _firestore
                   .collection('products')
                   .doc(item.productId)
@@ -387,22 +387,35 @@ class CartService extends ChangeNotifier {
 
               if (productDoc.exists) {
                 final productData = productDoc.data() as Map<String, dynamic>;
-                final cooperativeId = productData['cooperativeId'] as String?;
+                final sellerId = productData['sellerId'] as String?;
 
-                if (cooperativeId != null) {
-                  // Get the cooperative's location
-                  final coopDoc = await _firestore
+                if (sellerId != null) {
+                  // Get the seller document to find their cooperative ID
+                  final sellerDoc = await _firestore
                       .collection('users')
-                      .doc(cooperativeId)
+                      .doc(sellerId)
                       .get();
 
-                  if (coopDoc.exists) {
-                    final coopData = coopDoc.data() as Map<String, dynamic>;
-                    final location = coopData['location'] as String?;
-                    if (location != null && location.isNotEmpty) {
-                      productCoopLocations[item.productId] = location;
-                      print(
-                          'Found cooperative location for ${item.productName}: $location');
+                  if (sellerDoc.exists) {
+                    final sellerData = sellerDoc.data() as Map<String, dynamic>;
+                    final cooperativeId = sellerData['cooperativeId'] as String?;
+
+                    if (cooperativeId != null) {
+                      // Get the cooperative's location
+                      final coopDoc = await _firestore
+                          .collection('users')
+                          .doc(cooperativeId)
+                          .get();
+
+                      if (coopDoc.exists) {
+                        final coopData = coopDoc.data() as Map<String, dynamic>;
+                        final location = coopData['location'] as String?;
+                        if (location != null && location.isNotEmpty) {
+                          productCoopLocations[item.productId] = location;
+                          print(
+                              'Found cooperative location from seller for ${item.productName}: $location');
+                        }
+                      }
                     }
                   }
                 }

@@ -459,6 +459,40 @@ service cloud.firestore {
       allow delete: if request.auth != null && isAdmin();
     }
     
+    // Cooperative Chats collection (Seller-Cooperative and Buyer-Cooperative conversations)
+    match /cooperative_chats/{chatId} {
+      // Allow read/write if user is part of the chat (either the user or the cooperative)
+      allow read, write: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.cooperativeId == request.auth.uid);
+      
+      // Allow create if user is creating a chat for themselves
+      allow create: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || 
+         request.resource.data.cooperativeId == request.auth.uid);
+      
+      // Allow listing for authenticated users (to query their own chats)
+      allow list: if request.auth != null;
+      
+      // Admins can manage all cooperative chats
+      allow read, write: if request.auth != null && isAdmin();
+      
+      // Messages sub-collection
+      match /messages/{messageId} {
+        // Allow read/create if user is part of the parent chat
+        allow read, create: if request.auth != null && 
+          (get(/databases/$(database)/documents/cooperative_chats/$(chatId)).data.userId == request.auth.uid || 
+           get(/databases/$(database)/documents/cooperative_chats/$(chatId)).data.cooperativeId == request.auth.uid);
+        
+        // Allow update only for the message sender (to mark as read, etc.)
+        allow update: if request.auth != null && 
+          resource.data.senderId == request.auth.uid;
+        
+        // Admins can manage all messages
+        allow read, write: if request.auth != null && isAdmin();
+      }
+    }
+    
     match /{document=**} {
       allow read, write: if false;
     }

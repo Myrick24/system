@@ -54,7 +54,7 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
           .where((item) => widget.selectedItemIds.contains(item.id))
           .toList();
       
-      // Try to get pickup location from the first product
+      // Try to get pickup location from the first product's seller's cooperative
       if (selectedItems.isNotEmpty) {
         final firstProductId = selectedItems.first.productId;
         final productDoc = await _firestore
@@ -64,35 +64,36 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
         
         if (productDoc.exists) {
           final productData = productDoc.data() as Map<String, dynamic>;
+          final sellerId = productData['sellerId'] as String?;
           
-          // First, try to get the pickup location directly from the product
-          final pickupLocation = productData['pickupLocation'] as String?;
-          
-          if (pickupLocation != null && pickupLocation.isNotEmpty) {
-            setState(() {
-              _coopPickupLocation = pickupLocation;
-            });
-            print('Found pickup location from product: $pickupLocation');
-            return;
-          }
-          
-          // Fallback: Get cooperative location from the product's cooperativeId
-          final cooperativeId = productData['cooperativeId'] as String?;
-          
-          if (cooperativeId != null && cooperativeId.isNotEmpty) {
-            final coopDoc = await _firestore
+          if (sellerId != null) {
+            // Get the seller document to find their cooperative ID
+            final sellerDoc = await _firestore
                 .collection('users')
-                .doc(cooperativeId)
+                .doc(sellerId)
                 .get();
             
-            if (coopDoc.exists) {
-              final coopData = coopDoc.data() as Map<String, dynamic>;
-              final location = coopData['location'] as String?;
-              setState(() {
-                _coopPickupLocation = location;
-              });
-              print('Found cooperative location: $location');
-              return;
+            if (sellerDoc.exists) {
+              final sellerData = sellerDoc.data() as Map<String, dynamic>;
+              final cooperativeId = sellerData['cooperativeId'] as String?;
+              
+              if (cooperativeId != null) {
+                // Get the cooperative document to retrieve the location
+                final coopDoc = await _firestore
+                    .collection('users')
+                    .doc(cooperativeId)
+                    .get();
+                
+                if (coopDoc.exists) {
+                  final coopData = coopDoc.data() as Map<String, dynamic>;
+                  final location = coopData['location'] as String?;
+                  setState(() {
+                    _coopPickupLocation = location;
+                  });
+                  print('Found cooperative location from seller: $location');
+                  return;
+                }
+              }
             }
           }
         }

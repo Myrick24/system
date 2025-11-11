@@ -100,7 +100,48 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     });
 
     try {
-      // Query for a cooperative user to get the pickup location
+      // Get the product to find the seller ID
+      final productDoc = await _firestore
+          .collection('products')
+          .doc(widget.productId)
+          .get();
+      
+      if (productDoc.exists) {
+        final productData = productDoc.data() as Map<String, dynamic>;
+        final sellerId = productData['sellerId'] as String?;
+        
+        if (sellerId != null) {
+          // Get the seller document to find their cooperative ID
+          final sellerDoc = await _firestore
+              .collection('users')
+              .doc(sellerId)
+              .get();
+          
+          if (sellerDoc.exists) {
+            final sellerData = sellerDoc.data() as Map<String, dynamic>;
+            final cooperativeId = sellerData['cooperativeId'] as String?;
+            
+            if (cooperativeId != null) {
+              // Get the cooperative document to retrieve the location
+              final coopDoc = await _firestore
+                  .collection('users')
+                  .doc(cooperativeId)
+                  .get();
+              
+              if (coopDoc.exists) {
+                final coopData = coopDoc.data() as Map<String, dynamic>;
+                setState(() {
+                  _coopPickupLocation = coopData['location'] as String?;
+                });
+                print('Found cooperative location from seller: $_coopPickupLocation');
+                return;
+              }
+            }
+          }
+        }
+      }
+      
+      // Fallback: Query for any cooperative user if seller's cooperative not found
       final coopQuery = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'cooperative')
