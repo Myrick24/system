@@ -215,13 +215,6 @@ export const EnhancedDashboard: React.FC = () => {
         </Col>
       </Row>
 
-      <Title level={4} style={{ marginBottom: '16px' }}>🏆 Top Active Cooperatives by Performance</Title>
-      <Card style={{ marginBottom: '32px' }}>
-        <Table columns={cooperativeColumns} dataSource={topCooperatives} rowKey="id"
-          pagination={false} locale={{ emptyText: 'No cooperative data available' }}
-        />
-      </Card>
-
       <Title level={4} style={{ marginBottom: '16px' }}>📋 Recent Activity</Title>
       <Card>
         <List dataSource={recentActivities} locale={{ emptyText: 'No recent activities' }}
