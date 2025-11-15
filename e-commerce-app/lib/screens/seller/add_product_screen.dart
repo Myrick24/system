@@ -35,6 +35,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
   DateTime? _estimatedAvailabilityDate;
   bool _isLoading = false;
 
+  // Timespan for perishable products
+  final _timespanController = TextEditingController();
+  String _selectedTimespanUnit = 'Hours';
+  final List<String> _timespanUnits = ['Hours', 'Days'];
+
   // Cooperative selection
   List<Map<String, dynamic>> _cooperatives = [];
   String? _selectedCoopId;
@@ -50,8 +55,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     'Cooperative Delivery': false,
     'Pick Up': true, // Default to Pick Up
   };
-
-  final List<String> _orderTypes = ['Available Now', 'Pre Order'];
 
   final List<String> _units = [
     'Kilo (kg)',
@@ -398,6 +401,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return;
     }
 
+    // Check if harvest date is selected
+    if (_harvestDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a harvest date'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
+    // Check if timespan is provided
+    if (_timespanController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please specify the product timespan'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
+
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -490,6 +517,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'orderType': _selectedOrderType,
         'harvestDate': _harvestDate,
         'estimatedAvailabilityDate': _estimatedAvailabilityDate,
+        'timespan': _timespanController.text.isNotEmpty
+            ? int.tryParse(_timespanController.text)
+            : null,
+        'timespanUnit': _selectedTimespanUnit,
         'sellerId': currentUser.uid,
         'sellerName': sellerName,
         'sellerEmail': currentUser.email,
@@ -1328,92 +1359,300 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Date of Harvest (Optional)
+                    // Info Banner for Harvest Date
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              color: Colors.blue.shade700, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Select when the product was harvested - Required for all products',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade800,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Date of Harvest (Required)
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: ListTile(
-                        leading: Icon(Icons.calendar_today,
-                            color: Colors.grey.shade600),
-                        title: Text(
-                          _harvestDate == null
-                              ? 'Date of Harvest (Optional)'
-                              : 'Harvest Date: ${_harvestDate!.day}/${_harvestDate!.month}/${_harvestDate!.year}',
-                          style: TextStyle(
+                        border: Border.all(
                             color: _harvestDate == null
-                                ? Colors.grey.shade700
-                                : Colors.black87,
+                                ? Colors.red.shade300
+                                : Colors.grey.shade300,
+                            width: _harvestDate == null ? 2 : 1),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.calendar_today,
+                                  color: _harvestDate == null
+                                      ? Colors.red.shade600
+                                      : Colors.grey.shade600,
+                                  size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Date of Harvest*',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: _harvestDate == null
+                                      ? Colors.red.shade700
+                                      : Colors.grey.shade700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        trailing: _harvestDate != null
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
+                          const SizedBox(height: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: ListTile(
+                              leading: Icon(Icons.event,
+                                  color: _harvestDate == null
+                                      ? Colors.red.shade600
+                                      : Colors.grey.shade600),
+                              title: Text(
+                                _harvestDate == null
+                                    ? 'Tap to select harvest date'
+                                    : 'Harvest Date: ${_harvestDate!.day}/${_harvestDate!.month}/${_harvestDate!.year}',
+                                style: TextStyle(
+                                  color: _harvestDate == null
+                                      ? Colors.grey.shade600
+                                      : Colors.black87,
+                                  fontWeight: _harvestDate == null
+                                      ? FontWeight.normal
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                              trailing: _harvestDate != null
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      color: Colors.grey.shade600,
+                                      onPressed: () {
+                                        setState(() {
+                                          _harvestDate = null;
+                                        });
+                                      },
+                                    )
+                                  : null,
+                              onTap: () async {
+                                final DateTime now = DateTime.now();
+                                final DateTime? picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: _harvestDate ?? now,
+                                  firstDate: DateTime(
+                                      now.year - 1, now.month, now.day),
+                                  lastDate: DateTime(
+                                      now.year + 1, now.month, now.day),
+                                  helpText: 'Select Harvest Date',
+                                  errorFormatText: 'Enter valid date',
+                                  errorInvalidText:
+                                      'Please select a valid date',
+                                );
+                                if (picked != null) {
                                   setState(() {
-                                    _harvestDate = null;
+                                    _harvestDate = picked;
                                   });
-                                },
-                              )
-                            : null,
-                        onTap: () async {
-                          final DateTime now = DateTime.now();
-                          final DateTime? picked = await showDatePicker(
-                            context: context,
-                            initialDate: _harvestDate ?? now,
-                            firstDate:
-                                DateTime(now.year - 1, now.month, now.day),
-                            lastDate:
-                                DateTime(now.year + 1, now.month, now.day),
-                            helpText: 'Select Harvest Date',
-                            errorFormatText: 'Enter valid date',
-                            errorInvalidText: 'Please select a valid date',
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _harvestDate = picked;
-                            });
-                          }
-                        },
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Text(
+                              '💡 Example: Today\'s date for freshly harvested products',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue.shade800,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
                     const SizedBox(height: 16),
 
-                    // Order Type
+                    // Timespan for Perishable Products
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              color: Colors.orange.shade700, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Specify the product timespan (how long it stays fresh) - Required for all products',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade800,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Timespan Input Section
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(
+                            color: _timespanController.text.isEmpty
+                                ? Colors.red.shade300
+                                : Colors.grey.shade300,
+                            width: _timespanController.text.isEmpty ? 2 : 1),
                       ),
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedOrderType,
-                        decoration: InputDecoration(
-                          labelText: 'Order Type*',
-                          prefixIcon: Icon(Icons.shopping_cart,
-                              color: Colors.grey.shade600),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          labelStyle: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        items: _orderTypes.map((type) {
-                          return DropdownMenuItem<String>(
-                            value: type,
-                            child: Text(type),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedOrderType = value!;
-                            if (_selectedOrderType == 'Available Now') {
-                              _estimatedAvailabilityDate = null;
-                            }
-                          });
-                        },
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.schedule,
+                                  color: _timespanController.text.isEmpty
+                                      ? Colors.red.shade600
+                                      : Colors.grey.shade600,
+                                  size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Product Timespan*',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: _timespanController.text.isEmpty
+                                      ? Colors.red.shade700
+                                      : Colors.grey.shade700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: TextFormField(
+                                  controller: _timespanController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    hintText: 'Enter timespan',
+                                    labelText: 'Timespan Value',
+                                    prefixIcon: Icon(Icons.hourglass_bottom,
+                                        color: Colors.grey.shade600),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                          color: Colors.grey.shade300),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                          color: Colors.grey.shade300),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                          color: AppTheme.primaryGreen,
+                                          width: 2),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border:
+                                        Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: DropdownButtonFormField<String>(
+                                    value: _selectedTimespanUnit,
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                    ),
+                                    items: _timespanUnits.map((unit) {
+                                      return DropdownMenuItem<String>(
+                                        value: unit,
+                                        child: Text(unit),
+                                      );
+                                    }).toList(),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedTimespanUnit = value!;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Text(
+                              '💡 Example: Set "24" + "Hours" for products lasting 1 day, or "7" + "Days" for products lasting a week',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue.shade800,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 

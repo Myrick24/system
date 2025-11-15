@@ -300,7 +300,14 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
       switch (tabIndex) {
         case 0: // Active
-          statuses = ['pending', 'processing', 'ready', 'ready_for_pickup', 'ready_for_shipping', 'shipped'];
+          statuses = [
+            'pending',
+            'processing',
+            'ready',
+            'ready_for_pickup',
+            'ready_for_shipping',
+            'shipped'
+          ];
           break;
         case 1: // Completed
           statuses = ['delivered', 'completed'];
@@ -400,10 +407,32 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
   Future<void> _cancelOrder(String orderId) async {
     try {
+      // Get order details to restore stock
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+      final orderData = orderDoc.data();
+
       await _firestore.collection('orders').doc(orderId).update({
         'status': 'cancelled',
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Return stock to product inventory
+      if (orderData != null) {
+        final productId = orderData['productId'];
+        final quantity = orderData['quantity'] ?? 0;
+
+        if (productId != null && quantity > 0) {
+          try {
+            await _firestore.collection('products').doc(productId).update({
+              'currentStock': FieldValue.increment(quantity),
+            });
+            print('Stock restored: +$quantity to product $productId');
+          } catch (e) {
+            print('Error restoring stock: $e');
+            // Continue even if stock restoration fails
+          }
+        }
+      }
 
       _loadOrdersByTab(_tabController.index);
 
@@ -587,17 +616,17 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     if (orderId.startsWith('order_')) {
       return orderId.replaceFirst('order_', '').toUpperCase();
     }
-    
+
     // For long Firebase IDs, take first 6 characters for readability
     if (orderId.length > 12) {
       return orderId.substring(0, 12).toUpperCase();
     }
-    
+
     // Otherwise use first 8 characters
     if (orderId.length > 8) {
       return orderId.substring(0, 8).toUpperCase();
     }
-    
+
     return orderId.toUpperCase();
   }
 
@@ -661,7 +690,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
   String _formatStatusText(String? status) {
     if (status == null) return 'PENDING';
-    
+
     // Replace underscores with spaces and convert to uppercase
     return status.replaceAll('_', ' ').toUpperCase();
   }

@@ -26,7 +26,6 @@ import { AdminSettings } from './AdminSettings';
 import { LoginPage } from './LoginPage';
 import { FirebaseDebugger } from './FirebaseDebugger';
 import { CooperativeManagement } from './CooperativeManagement';
-import { UserFeedbackReports } from './UserFeedbackReports';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -76,11 +75,6 @@ const AdminLayout: React.FC = () => {
       key: '/announcements',
       icon: <BellOutlined />,
       label: 'Announcements',
-    },
-    {
-      key: '/feedback',
-      icon: <CommentOutlined />,
-      label: 'User Feedback',
     },
     {
       key: '/settings',
@@ -195,7 +189,6 @@ const AdminLayout: React.FC = () => {
             <Route path="/products" element={<ProductManagement />} />
             <Route path="/transactions" element={<OrderMonitoring />} />
             <Route path="/announcements" element={<AnnouncementManagement />} />
-            <Route path="/feedback" element={<UserFeedbackReports />} />
             <Route path="/settings" element={<AdminSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

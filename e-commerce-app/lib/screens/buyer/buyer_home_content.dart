@@ -18,6 +18,79 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
   final _auth = FirebaseAuth.instance;
   String? _selectedCategory; // Track currently selected category filter
 
+  // Calculate remaining time from when product was approved
+  String _calculateRemainingTime(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      final remaining = expiryTime.difference(now);
+
+      // If expired
+      if (remaining.isNegative) {
+        return 'Expired';
+      }
+
+      // Format remaining time
+      if (remaining.inHours < 1) {
+        final minutes = remaining.inMinutes;
+        return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} left';
+      } else if (remaining.inDays < 1) {
+        final hours = remaining.inHours;
+        return '$hours ${hours == 1 ? 'hour' : 'hours'} left';
+      } else {
+        final days = remaining.inDays;
+        final hours = remaining.inHours % 24;
+        if (hours > 0) {
+          return '$days ${days == 1 ? 'day' : 'days'}, $hours ${hours == 1 ? 'hour' : 'hours'} left';
+        }
+        return '$days ${days == 1 ? 'day' : 'days'} left';
+      }
+    } catch (e) {
+      print('Error calculating remaining time: $e');
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+  }
+
+  // Check if product is expired
+  bool _isProductExpired(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return false;
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      return now.isAfter(expiryTime);
+    } catch (e) {
+      print('Error checking if product expired: $e');
+      return false;
+    }
+  }
+
   Future<void> _startChatWithSeller(String sellerId, String sellerName,
       {Map<String, dynamic>? product, String? productId}) async {
     final currentUser = _auth.currentUser;
@@ -125,7 +198,8 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 12.0),
                     decoration: BoxDecoration(
                       color: Colors.grey[200],
                       borderRadius: BorderRadius.circular(25),
@@ -493,6 +567,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
       required String productId,
       String? unit}) {
     bool hasStock = currentStock != null && currentStock > 0;
+    bool isExpired = _isProductExpired(product);
 
     return Card(
       elevation: 4,
@@ -501,17 +576,28 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProductDetailsScreen(
-                product: product,
-                productId: productId,
-              ),
-            ),
-          );
-        },
+        onTap: isExpired
+            ? () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'This product has expired and is no longer available for purchase'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductDetailsScreen(
+                      product: product,
+                      productId: productId,
+                    ),
+                  ),
+                );
+              },
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -575,7 +661,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                           ),
                   ),
                   // Message Icon
-                  if (hasStock && product['sellerId'] != null)
+                  if (hasStock && !isExpired && product['sellerId'] != null)
                     Positioned(
                       top: 8,
                       right: 8,
@@ -608,6 +694,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         ),
                       ),
                     ),
+                  // Out of stock overlay
                   if (!hasStock)
                     Positioned.fill(
                       child: Container(
@@ -621,6 +708,29 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         child: const Center(
                           child: Text(
                             'OUT OF STOCK',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Expired overlay
+                  if (isExpired && hasStock)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.7),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'EXPIRED',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -732,12 +842,45 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                             ],
                           ),
                         ),
+                      const SizedBox(height: 4),
+                      // Timespan display
+                      if (product['timespan'] != null &&
+                          product['timespanUnit'] != null)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: Colors.orange.shade200, width: 1),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 3),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.timer,
+                                size: 11,
+                                color: Colors.orange.shade700,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                _calculateRemainingTime(product),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.orange.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const Spacer(),
                       // View Button - full width and bold
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: hasStock
+                          onPressed: (hasStock && !isExpired)
                               ? () {
                                   Navigator.push(
                                     context,
@@ -752,8 +895,9 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                hasStock ? Colors.green : Colors.grey,
+                            backgroundColor: (hasStock && !isExpired)
+                                ? Colors.green
+                                : Colors.grey,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),

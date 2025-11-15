@@ -20,6 +20,70 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
   String _sortBy = 'name';
   bool _ascending = true;
 
+  // Check if product is expired
+  bool _isProductExpired(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return false;
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      return now.isAfter(expiryTime);
+    } catch (e) {
+      print('Error checking if product expired: $e');
+      return false;
+    }
+  }
+
+  // Calculate remaining time for product
+  String _calculateRemainingTime(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return 'N/A';
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+
+      if (now.isAfter(expiryTime)) {
+        return 'Expired';
+      }
+
+      final remaining = expiryTime.difference(now);
+      if (remaining.inDays > 0) {
+        final hours = remaining.inHours % 24;
+        return '${remaining.inDays} ${remaining.inDays == 1 ? 'day' : 'days'}${hours > 0 ? ', $hours ${hours == 1 ? 'hour' : 'hours'}' : ''} left';
+      } else if (remaining.inHours > 0) {
+        return '${remaining.inHours} ${remaining.inHours == 1 ? 'hour' : 'hours'} left';
+      } else {
+        return '${remaining.inMinutes} ${remaining.inMinutes == 1 ? 'minute' : 'minutes'} left';
+      }
+    } catch (e) {
+      print('Error calculating remaining time: $e');
+      return 'N/A';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -199,6 +263,220 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
     );
   }
 
+  void _showExpiredProductRecommendations(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.lightbulb_outline, color: Colors.orange, size: 28),
+            const SizedBox(width: 8),
+            const Text('Expired Product - Best Practices'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Product: ${product['name']}',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Recommended Actions:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              _buildRecommendationItem(
+                Icons.delete_outline,
+                'Remove from Inventory',
+                'Delete or archive this expired product to keep your inventory clean and accurate.',
+                Colors.red,
+              ),
+              _buildRecommendationItem(
+                Icons.block,
+                'Already Hidden from Buyers',
+                'Expired products are automatically hidden from customers and cannot be purchased.',
+                Colors.blue,
+              ),
+              _buildRecommendationItem(
+                Icons.refresh,
+                'Restock with Fresh Product',
+                'If you have fresh stock of the same product, update the timespan and mark it as newly approved.',
+                Colors.green,
+              ),
+              _buildRecommendationItem(
+                Icons.analytics,
+                'Review Sales Data',
+                'Analyze why the product expired. Consider adjusting timespan, pricing, or stock quantities.',
+                Colors.purple,
+              ),
+              _buildRecommendationItem(
+                Icons.recycling,
+                'Proper Disposal',
+                'For organic products, ensure proper composting or disposal according to environmental guidelines.',
+                Colors.teal,
+              ),
+              _buildRecommendationItem(
+                Icons.warning_amber,
+                'Quality Check',
+                'Never sell expired products. Customer safety and trust are paramount.',
+                Colors.orange,
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.tips_and_updates,
+                            color: Colors.blue.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Pro Tip',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Set realistic timespans based on actual product freshness. Monitor your inventory daily to minimize expired products and maximize sales.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              // Could add delete functionality here
+              _showDeleteExpiredProductDialog(product);
+            },
+            icon: const Icon(Icons.delete),
+            label: const Text('Remove Product'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecommendationItem(
+      IconData icon, String title, String description, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteExpiredProductDialog(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Expired Product'),
+        content: Text(
+          'Are you sure you want to remove "${product['name']}" from your inventory? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await _firestore
+                    .collection('products')
+                    .doc(product['id'])
+                    .delete();
+                Navigator.pop(context); // Close dialog
+                Navigator.pop(context); // Close recommendations
+                Navigator.pop(context); // Close product details
+                _loadProducts(); // Refresh list
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Product removed successfully')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to remove product: $e')),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showProductDetails(Map<String, dynamic> product) {
     showModalBottomSheet(
       context: context,
@@ -225,7 +503,7 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
                     ),
                   ),
                 ),
-                _buildStockBadge(product['quantity'] ?? 0),
+                _buildStockBadge(product),
               ],
             ),
             const SizedBox(height: 20),
@@ -250,8 +528,9 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
                           'Reserved', '${product['reserved'] ?? 0}'),
                       _buildDetailRow('Available',
                           '${(product['quantity'] ?? 0) - (product['reserved'] ?? 0)}'),
+                      _buildDetailRow('Status', _getStockStatus(product)),
                       _buildDetailRow(
-                          'Status', _getStockStatus(product['quantity'] ?? 0)),
+                          'Freshness', _calculateRemainingTime(product)),
                     ]),
                     _buildDetailCard('Description', [
                       Padding(
@@ -272,15 +551,19 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _showUpdateQuantityDialog(product);
-                    },
+                    onPressed: _isProductExpired(product)
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            _showUpdateQuantityDialog(product);
+                          },
                     icon: const Icon(Icons.edit),
                     label: const Text('Update Stock'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey,
+                      disabledForegroundColor: Colors.white70,
                     ),
                   ),
                 ),
@@ -301,6 +584,19 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
                 ),
               ],
             ),
+            // Show expired product recommendations
+            if (_isProductExpired(product)) ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () => _showExpiredProductRecommendations(product),
+                icon: const Icon(Icons.lightbulb_outline),
+                label: const Text('View Expired Product Recommendations'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -348,11 +644,16 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
     );
   }
 
-  Widget _buildStockBadge(int quantity) {
+  Widget _buildStockBadge(Map<String, dynamic> product) {
     Color color;
     String label;
+    final quantity = product['quantity'] ?? 0;
+    final isExpired = _isProductExpired(product);
 
-    if (quantity == 0) {
+    if (isExpired) {
+      color = Colors.red.shade700;
+      label = 'EXPIRED';
+    } else if (quantity == 0) {
       color = Colors.red;
       label = 'OUT OF STOCK';
     } else if (quantity < 10) {
@@ -380,7 +681,11 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
     );
   }
 
-  String _getStockStatus(int quantity) {
+  String _getStockStatus(Map<String, dynamic> product) {
+    final quantity = product['quantity'] ?? 0;
+    final isExpired = _isProductExpired(product);
+
+    if (isExpired) return 'Expired - Not Available';
     if (quantity == 0) return 'Out of Stock';
     if (quantity < 10) return 'Low Stock';
     return 'Good Stock';
@@ -468,96 +773,146 @@ class _SellerInventoryManagementState extends State<SellerInventoryManagement> {
 
                             return Card(
                               margin: const EdgeInsets.only(bottom: 12),
-                              child: InkWell(
-                                onTap: () => _showProductDetails(product),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      // Product Image Placeholder
-                                      Container(
-                                        width: 60,
-                                        height: 60,
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[200],
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: product['imageUrl'] != null
-                                            ? ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image.network(
-                                                  product['imageUrl'],
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (context, error,
-                                                      stackTrace) {
-                                                    return const Icon(Icons
-                                                        .image_not_supported);
-                                                  },
-                                                ),
-                                              )
-                                            : const Icon(
-                                                Icons.image_not_supported),
-                                      ),
-
-                                      const SizedBox(width: 16),
-
-                                      // Product Info
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              product['name'] ??
-                                                  'Unknown Product',
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                              child: Stack(
+                                children: [
+                                  InkWell(
+                                    onTap: () => _showProductDetails(product),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Row(
+                                        children: [
+                                          // Product Image Placeholder
+                                          Container(
+                                            width: 60,
+                                            height: 60,
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[200],
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                             ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${product['category'] ?? 'N/A'} • ₱${(product['price'] ?? 0).toStringAsFixed(2)}',
-                                              style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Row(
+                                            child: product['imageUrl'] != null
+                                                ? ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    child: Image.network(
+                                                      product['imageUrl'],
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context,
+                                                          error, stackTrace) {
+                                                        return const Icon(Icons
+                                                            .image_not_supported);
+                                                      },
+                                                    ),
+                                                  )
+                                                : const Icon(
+                                                    Icons.image_not_supported),
+                                          ),
+
+                                          const SizedBox(width: 16),
+
+                                          // Product Info
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
-                                                Icon(
-                                                  Icons.inventory,
-                                                  size: 16,
-                                                  color: Colors.grey[600],
-                                                ),
-                                                const SizedBox(width: 4),
                                                 Text(
-                                                  '$quantity ${product['unit'] ?? ''}',
+                                                  product['name'] ??
+                                                      'Unknown Product',
                                                   style: const TextStyle(
-                                                      fontSize: 14),
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                 ),
-                                                const Spacer(),
-                                                _buildStockBadge(quantity),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '${product['category'] ?? 'N/A'} • ₱${(product['price'] ?? 0).toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    color: Colors.grey[600],
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.inventory,
+                                                      size: 16,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '$quantity ${product['unit'] ?? ''}',
+                                                      style: const TextStyle(
+                                                          fontSize: 14),
+                                                    ),
+                                                    const Spacer(),
+                                                    _buildStockBadge(product),
+                                                  ],
+                                                ),
+                                                // Show remaining time for non-expired products
+                                                if (!_isProductExpired(
+                                                    product)) ...[
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.timer_outlined,
+                                                        size: 14,
+                                                        color: Colors.orange,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        _calculateRemainingTime(
+                                                            product),
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors
+                                                              .orange[700],
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
                                               ],
                                             ),
-                                          ],
+                                          ),
+
+                                          // Quick Update Button
+                                          IconButton(
+                                            onPressed: _isProductExpired(
+                                                    product)
+                                                ? null
+                                                : () =>
+                                                    _showUpdateQuantityDialog(
+                                                        product),
+                                            icon: const Icon(Icons.edit),
+                                            color: Colors.blue,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  // Expired overlay
+                                  if (_isProductExpired(product))
+                                    Positioned.fill(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: Colors.red.shade300,
+                                            width: 2,
+                                          ),
                                         ),
                                       ),
-
-                                      // Quick Update Button
-                                      IconButton(
-                                        onPressed: () =>
-                                            _showUpdateQuantityDialog(product),
-                                        icon: const Icon(Icons.edit),
-                                        color: Colors.blue,
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                    ),
+                                ],
                               ),
                             );
                           },

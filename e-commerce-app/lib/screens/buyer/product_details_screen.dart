@@ -37,6 +37,88 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   bool _isLoadingRating = true;
   int _quantity = 1;
 
+  // Check if product is expired
+  bool _isProductExpired() {
+    final product = widget.product;
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return false;
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      return now.isAfter(expiryTime);
+    } catch (e) {
+      print('Error checking if product expired: $e');
+      return false;
+    }
+  }
+
+  // Check if product is out of stock
+  bool _isOutOfStock() {
+    final currentStock = widget.product['currentStock'];
+    if (currentStock == null) return false;
+    return currentStock <= 0;
+  }
+
+  // Calculate remaining time from when product was approved
+  String _calculateRemainingTime() {
+    final product = widget.product;
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      final remaining = expiryTime.difference(now);
+
+      // If expired
+      if (remaining.isNegative) {
+        return 'Expired';
+      }
+
+      // Format remaining time
+      if (remaining.inHours < 1) {
+        final minutes = remaining.inMinutes;
+        return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} left';
+      } else if (remaining.inDays < 1) {
+        final hours = remaining.inHours;
+        return '$hours ${hours == 1 ? 'hour' : 'hours'} left';
+      } else {
+        final days = remaining.inDays;
+        final hours = remaining.inHours % 24;
+        if (hours > 0) {
+          return '$days ${days == 1 ? 'day' : 'days'}, $hours ${hours == 1 ? 'hour' : 'hours'} left';
+        }
+        return '$days ${days == 1 ? 'day' : 'days'} left';
+      }
+    } catch (e) {
+      print('Error calculating remaining time: $e');
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -374,6 +456,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   Widget _buildProductImageGallery(List<String> images) {
+    final bool isExpired = _isProductExpired();
+    final bool isOutOfStock = _isOutOfStock();
+
     if (images.isEmpty) {
       return Container(
         width: double.infinity,
@@ -400,30 +485,72 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ),
           );
         },
-        child: Container(
-          width: double.infinity,
-          height: 300,
-          color: Colors.grey.shade200,
-          child: Image.network(
-            images[0],
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: Colors.grey.shade300,
-                child: const Icon(
-                  Icons.image_not_supported,
-                  color: Colors.grey,
-                  size: 80,
+        child: Stack(
+          children: [
+            Container(
+              width: double.infinity,
+              height: 300,
+              color: Colors.grey.shade200,
+              child: Image.network(
+                images[0],
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(
+                      Icons.image_not_supported,
+                      color: Colors.grey,
+                      size: 80,
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Out of stock overlay
+            if (isOutOfStock)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.6),
+                  child: const Center(
+                    child: Text(
+                      'OUT OF STOCK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 24,
+                      ),
+                    ),
+                  ),
                 ),
-              );
-            },
-          ),
+              ),
+            // Expired overlay
+            if (isExpired && !isOutOfStock)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.red.withOpacity(0.7),
+                  child: const Center(
+                    child: Text(
+                      'EXPIRED',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 24,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     }
 
     // Multiple images - use custom widget with PageView
-    return _ProductImageGalleryWidget(images: images);
+    return _ProductImageGalleryWidget(
+      images: images,
+      isExpired: isExpired,
+      isOutOfStock: isOutOfStock,
+    );
   }
 
   @override
@@ -560,52 +687,131 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
-
-                  // Order Type
-                  if (widget.product['orderType'] != null) ...[
+                  // Timespan Display
+                  if (widget.product['timespan'] != null &&
+                      widget.product['timespanUnit'] != null) ...[
+                    const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: widget.product['orderType'] == 'Available Now'
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: widget.product['orderType'] == 'Available Now'
-                              ? Colors.green
-                              : Colors.orange,
+                          color: Colors.orange.shade200,
                           width: 1,
                         ),
                       ),
                       child: Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            widget.product['orderType'] == 'Available Now'
-                                ? Icons.check_circle
-                                : Icons.schedule,
-                            size: 16,
-                            color:
-                                widget.product['orderType'] == 'Available Now'
-                                    ? Colors.green
-                                    : Colors.orange,
+                            Icons.timer,
+                            size: 20,
+                            color: Colors.orange.shade700,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            widget.product['orderType'],
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color:
-                                  widget.product['orderType'] == 'Available Now'
-                                      ? Colors.green.shade700
-                                      : Colors.orange.shade700,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Product Freshness',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _calculateRemainingTime(),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  // Order Type
+                  if (widget.product['orderType'] != null) ...[
+                    Builder(
+                      builder: (context) {
+                        final isExpired = _isProductExpired();
+                        final isOutOfStock = _isOutOfStock();
+                        final orderType = widget.product['orderType'];
+
+                        // Determine display text and style
+                        String displayText;
+                        Color backgroundColor;
+                        Color borderColor;
+                        Color iconColor;
+                        Color textColor;
+                        IconData iconData;
+
+                        if (isExpired || isOutOfStock) {
+                          // Show as Not Available if expired or out of stock
+                          displayText = 'Not Available';
+                          backgroundColor = Colors.red.withOpacity(0.1);
+                          borderColor = Colors.red;
+                          iconColor = Colors.red;
+                          textColor = Colors.red.shade700;
+                          iconData = Icons.cancel;
+                        } else if (orderType == 'Available Now') {
+                          displayText = 'Available Now';
+                          backgroundColor = Colors.green.withOpacity(0.1);
+                          borderColor = Colors.green;
+                          iconColor = Colors.green;
+                          textColor = Colors.green.shade700;
+                          iconData = Icons.check_circle;
+                        } else {
+                          displayText = orderType;
+                          backgroundColor = Colors.orange.withOpacity(0.1);
+                          borderColor = Colors.orange;
+                          iconColor = Colors.orange;
+                          textColor = Colors.orange.shade700;
+                          iconData = Icons.schedule;
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: backgroundColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: borderColor,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                iconData,
+                                size: 16,
+                                color: iconColor,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                displayText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: textColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 8),
                   ],
@@ -1034,8 +1240,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           if (sellerId == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text(
-                                    'Seller information not available'),
+                                content:
+                                    Text('Seller information not available'),
                                 backgroundColor: Colors.orange,
                               ),
                             );
@@ -1263,10 +1469,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 // Stateful widget for product image gallery with multiple images
 class _ProductImageGalleryWidget extends StatefulWidget {
   final List<String> images;
+  final bool isExpired;
+  final bool isOutOfStock;
 
   const _ProductImageGalleryWidget({
     Key? key,
     required this.images,
+    this.isExpired = false,
+    this.isOutOfStock = false,
   }) : super(key: key);
 
   @override
@@ -1445,6 +1655,42 @@ class _ProductImageGalleryWidgetState
               ),
             ),
           ],
+
+          // Out of stock overlay
+          if (widget.isOutOfStock)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.6),
+                child: const Center(
+                  child: Text(
+                    'OUT OF STOCK',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Expired overlay
+          if (widget.isExpired && !widget.isOutOfStock)
+            Positioned.fill(
+              child: Container(
+                color: Colors.red.withOpacity(0.7),
+                child: const Center(
+                  child: Text(
+                    'EXPIRED',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Page indicators at the bottom
           if (widget.images.length > 1)

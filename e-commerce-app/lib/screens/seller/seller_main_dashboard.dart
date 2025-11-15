@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'seller_product_dashboard.dart';
 import 'seller_order_management.dart';
 import 'seller_inventory_management.dart';
-import 'seller_analytics.dart';
 import 'seller_profile_management.dart';
 import 'add_product_screen.dart';
 import 'notifications_screen.dart';
@@ -347,21 +346,6 @@ class _SellerMainDashboardState extends State<SellerMainDashboard> {
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const SellerInventoryManagement(),
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          _buildActionCard(
-                            'Sales Analytics',
-                            'View sales reports and performance metrics',
-                            Icons.analytics,
-                            AppTheme.accentPurple,
-                            () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const SellerAnalytics(),
                                 ),
                               );
                             },

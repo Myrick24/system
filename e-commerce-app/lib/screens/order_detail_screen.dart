@@ -19,6 +19,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isProcessing = false;
   String? _fetchedBuyerAddress;
+  int _currentImageIndex = 0;
 
   @override
   void initState() {
@@ -34,8 +35,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     print('customerAddress: ${widget.order['customerAddress']}');
     print('userId: ${widget.order['userId']}');
 
-    if ((widget.order['buyerAddress'] != null && widget.order['buyerAddress'].toString().isNotEmpty) ||
-        (widget.order['customerAddress'] != null && widget.order['customerAddress'].toString().isNotEmpty)) {
+    if ((widget.order['buyerAddress'] != null &&
+            widget.order['buyerAddress'].toString().isNotEmpty) ||
+        (widget.order['customerAddress'] != null &&
+            widget.order['customerAddress'].toString().isNotEmpty)) {
       print(
           'Address already available: ${widget.order['buyerAddress'] ?? widget.order['customerAddress']}');
       print('===== END ORDER DETAIL DEBUG =====');
@@ -83,11 +86,136 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     print('===== END ORDER DETAIL DEBUG =====');
   }
 
+  Widget _buildProductImageGallery(List<String> images) {
+    if (images.isEmpty) {
+      return Container(
+        width: double.infinity,
+        height: 200,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          Icons.image,
+          color: Colors.grey.shade400,
+          size: 60,
+        ),
+      );
+    }
+
+    // If only one image, display it directly
+    if (images.length == 1) {
+      return GestureDetector(
+        onTap: () {
+          _showImageFullScreen(context, images[0]);
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              images[0],
+              width: double.infinity,
+              height: 200,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.image_not_supported,
+                  size: 60,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Multiple images - use PageView with indicators
+    return Container(
+      height: 250,
+      child: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              itemCount: images.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentImageIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return GestureDetector(
+                  onTap: () {
+                    _showImageFullScreen(context, images[index]);
+                  },
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        images[index],
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: Colors.grey.shade300,
+                          child: Icon(
+                            Icons.image_not_supported,
+                            size: 60,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Image indicators
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              images.length,
+              (index) => Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentImageIndex == index
+                      ? Colors.blue.shade700
+                      : Colors.grey.shade400,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderId = widget.order['orderId'] ?? widget.order['id'];
     final productName = widget.order['productName'] ?? 'N/A';
     final productImage = widget.order['productImage'];
+    final productImageUrls = widget.order['productImageUrls'] as List<dynamic>?;
+
+    // Create image list - prioritize productImageUrls array, fallback to single productImage
+    final List<String> images = [];
+    if (productImageUrls != null && productImageUrls.isNotEmpty) {
+      images.addAll(productImageUrls.map((e) => e.toString()));
+    } else if (productImage != null && productImage.toString().isNotEmpty) {
+      images.add(productImage.toString());
+    }
+
     final quantity = widget.order['quantity'];
     final unit = widget.order['unit'] ?? 'units';
     final totalAmount = widget.order['totalAmount'];
@@ -104,7 +232,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final meetupLocation = widget.order['meetupLocation'];
     final pickupLocation = widget.order['pickupLocation'];
     final timestamp = widget.order['timestamp'] ?? widget.order['createdAt'];
-    final status = widget.order['status']?.toString().toLowerCase() ?? 'pending';
+    final status =
+        widget.order['status']?.toString().toLowerCase() ?? 'pending';
 
     // Debug: Print available order data
     print('Order Debug - customerAddress: $customerAddress');
@@ -140,33 +269,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              if (productImage != null && productImage.toString().isNotEmpty)
-                GestureDetector(
-                  onTap: () {
-                    _showImageFullScreen(context, productImage.toString());
-                  },
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        productImage.toString(),
-                        width: double.infinity,
-                        height: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          height: 200,
-                          color: Colors.grey.shade300,
-                          child: Icon(
-                            Icons.image_not_supported,
-                            size: 60,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // Product Images Gallery
+              if (images.isNotEmpty) _buildProductImageGallery(images),
               const SizedBox(height: 16),
               Card(
                 elevation: 2,
@@ -514,7 +618,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              
+
               // Conditional buttons based on order status
               if (status == 'pending' || status == 'confirmed') ...[
                 // Show Accept/Decline buttons for pending orders
@@ -554,8 +658,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed:
-                          _isProcessing ? null : () => _markAsReadyForPickup(orderId!),
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _markAsReadyForPickup(orderId!),
                       icon: const Icon(Icons.check_circle),
                       label: const Text('Mark as Ready for Pickup'),
                       style: ElevatedButton.styleFrom(
@@ -570,8 +675,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed:
-                          _isProcessing ? null : () => _markAsReadyToShip(orderId!),
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _markAsReadyToShip(orderId!),
                       icon: const Icon(Icons.local_shipping),
                       label: const Text('Mark as Ready to Ship'),
                       style: ElevatedButton.styleFrom(
@@ -693,14 +799,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
       if (buyerId != null) {
         final productName = widget.order['productName'] ?? 'Product';
-        
+
         await _firestore.collection('notifications').add({
           'userId': buyerId,
           'orderId': orderId,
           'type': 'order_status',
           'status': 'ready_for_pickup',
           'title': '✅ Order Ready for Pickup!',
-          'body': 'Your order for $productName is ready for pickup at the cooperative!',
+          'body':
+              'Your order for $productName is ready for pickup at the cooperative!',
           'message': 'Your order for $productName is ready for pickup!',
           'productName': productName,
           'productId': widget.order['productId'],
@@ -709,13 +816,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           'read': false,
           'isRead': false,
         });
-        
+
         // Send PUSH NOTIFICATION
         try {
           await RealtimeNotificationService.sendTestNotification(
             title: '✅ Order Ready for Pickup!',
-            body: 'Your order for $productName is ready for pickup at the cooperative!',
-            payload: 'order_status|$orderId|${widget.order['productId']}|$productName',
+            body:
+                'Your order for $productName is ready for pickup at the cooperative!',
+            payload:
+                'order_status|$orderId|${widget.order['productId']}|$productName',
           );
           print('✅ Push notification sent to buyer about ready for pickup');
         } catch (e) {
@@ -797,6 +906,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ]),
       });
 
+      // Return stock to product inventory
+      final productId = widget.order['productId'];
+      final quantity = widget.order['quantity'] ?? 0;
+
+      if (productId != null && quantity > 0) {
+        try {
+          await _firestore.collection('products').doc(productId).update({
+            'currentStock': FieldValue.increment(quantity),
+          });
+          print('Stock restored: +$quantity to product $productId');
+        } catch (e) {
+          print('Error restoring stock: $e');
+          // Continue even if stock restoration fails
+        }
+      }
+
       // Send notification to buyer
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
       if (buyerId != null) {
@@ -855,7 +980,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
       if (buyerId != null) {
         final productName = widget.order['productName'] ?? 'Product';
-        
+
         await _firestore.collection('notifications').add({
           'userId': buyerId,
           'orderId': orderId,
@@ -863,7 +988,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           'status': 'ready_for_shipping',
           'title': '📦 Order Ready to Ship!',
           'body': 'Good news! Your order for $productName is ready to ship!',
-          'message': 'Good news! Your order for $productName is ready to ship! 📦',
+          'message':
+              'Good news! Your order for $productName is ready to ship! 📦',
           'productName': productName,
           'productId': widget.order['productId'],
           'productImage': widget.order['productImage'] ?? '',
@@ -872,13 +998,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           'isRead': false,
           'priority': 'high',
         });
-        
+
         // Send PUSH NOTIFICATION
         try {
           await RealtimeNotificationService.sendTestNotification(
             title: '📦 Order Ready to Ship!',
             body: 'Good news! Your order for $productName is ready to ship!',
-            payload: 'order_status|$orderId|${widget.order['productId']}|$productName',
+            payload:
+                'order_status|$orderId|${widget.order['productId']}|$productName',
           );
           print('✅ Push notification sent to buyer about ready to ship');
         } catch (e) {
@@ -889,7 +1016,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Order marked as ready to ship! Buyer has been notified. 📦'),
+            content: Text(
+                'Order marked as ready to ship! Buyer has been notified. 📦'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3),
           ),

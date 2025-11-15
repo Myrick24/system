@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/product_service.dart';
-import '../../widgets/realtime_notification_widgets.dart';
+import 'seller_product_detail_screen.dart';
 
 class SellerProductDashboard extends StatefulWidget {
   const SellerProductDashboard({Key? key}) : super(key: key);
@@ -15,24 +15,48 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
     with SingleTickerProviderStateMixin {
   final ProductService _productService = ProductService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   late TabController _tabController;
   bool _isLoading = false;
   List<Map<String, dynamic>> _pendingProducts = [];
   List<Map<String, dynamic>> _approvedProducts = [];
   List<Map<String, dynamic>> _rejectedProducts = [];
-  int _unreadNotifications = 0;
+  List<Map<String, dynamic>> _expiredProducts = [];
+
+  // Check if product is expired
+  bool _isProductExpired(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return false;
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      return now.isAfter(expiryTime);
+    } catch (e) {
+      print('Error checking if product expired: $e');
+      return false;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       _loadProductsByTab(_tabController.index);
     });
     _loadProductsByTab(0); // Load Pending Products initially
-    _countUnreadNotifications();
   }
 
   @override
@@ -56,13 +80,23 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
           _pendingProducts = await _productService.getSellerProductsByStatus(
               sellerId, 'pending');
           break;
-        case 1: // Approved Products
-          _approvedProducts = await _productService.getSellerProductsByStatus(
+        case 1: // Approved Products (non-expired only)
+          final allApproved = await _productService.getSellerProductsByStatus(
               sellerId, 'approved');
+          _approvedProducts = allApproved
+              .where((product) => !_isProductExpired(product))
+              .toList();
           break;
         case 2: // Rejected Products
           _rejectedProducts = await _productService.getSellerProductsByStatus(
               sellerId, 'rejected');
+          break;
+        case 3: // Expired Products
+          final allApproved = await _productService.getSellerProductsByStatus(
+              sellerId, 'approved');
+          _expiredProducts = allApproved
+              .where((product) => _isProductExpired(product))
+              .toList();
           break;
       }
     } catch (e) {
@@ -76,230 +110,18 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
     }
   }
 
-  Future<void> _countUnreadNotifications() async {
-    if (_auth.currentUser == null) return;
-
-    try {
-      final userId = _auth.currentUser!.uid;
-      final querySnapshot = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .where('read', isEqualTo: false)
-          .get();
-
-      setState(() {
-        _unreadNotifications = querySnapshot.docs.length;
-      });
-    } catch (e) {
-      print('Error counting unread notifications: $e');
-    }
-  }
-
   void _showProductDetailsModal(Map<String, dynamic> product) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext context) {
-        return Container(
-          padding: const EdgeInsets.all(16.0),
-          height: MediaQuery.of(context).size.height * 0.8,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Product Status Badge
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Product Details',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  _buildStatusBadge(product['status'] ?? 'pending'),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              // Product Image
-              if (product['imageUrl'] != null)
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      product['imageUrl'],
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          height: 200,
-                          color: Colors.grey[200],
-                          child: const Center(
-                              child: Icon(Icons.image_not_supported, size: 50)),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 20),
-
-              Expanded(
-                child: ListView(
-                  children: [
-                    // Product Name
-                    _detailRow(
-                        'Product Name', product['name'] ?? 'Unnamed Product'),
-                    const Divider(),
-
-                    // Description
-                    _detailRow('Description',
-                        product['description'] ?? 'No description available'),
-                    const Divider(),
-
-                    // Price and Category
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _detailRow('Price',
-                                '₱${product['price']?.toString() ?? '0.00'}')),
-                        Expanded(
-                            child: _detailRow('Category',
-                                product['category'] ?? 'Uncategorized')),
-                      ],
-                    ),
-                    const Divider(),
-
-                    // Quantity and Unit
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _detailRow('Quantity',
-                                '${product['quantity']?.toString() ?? '0'}')),
-                        Expanded(
-                            child: _detailRow('Unit', product['unit'] ?? '')),
-                      ],
-                    ),
-                    const Divider(),
-
-                    // Organic Badge
-                    _detailRow('Organic',
-                        (product['isOrganic'] ?? false) ? 'Yes' : 'No'),
-                    const Divider(),
-
-                    // Available Date and Reservation
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _detailRow('Available Date',
-                                product['availableDate'] ?? 'Not specified')),
-                        Expanded(
-                            child: _detailRow(
-                                'Allows Reservation',
-                                (product['allowsReservation'] ?? false)
-                                    ? 'Yes'
-                                    : 'No')),
-                      ],
-                    ),
-
-                    // Show rejection reason if product was rejected
-                    if (product['status'] == 'rejected' &&
-                        product['rejectionReason'] != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Divider(),
-                          _detailRow(
-                              'Rejection Reason', product['rejectionReason']),
-                        ],
-                      ),
-
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    switch (status.toLowerCase()) {
-      case 'approved':
-        color = Colors.green;
-        break;
-      case 'rejected':
-        color = Colors.red;
-        break;
-      default:
-        color = Colors.orange;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SellerProductDetailScreen(
+          product: product,
+          onProductDeleted: () {
+            _loadProductsByTab(_tabController.index);
+          },
         ),
       ),
     );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _viewNotifications() {
-    Navigator.pushNamed(context, '/notifications');
   }
 
   @override
@@ -307,7 +129,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Harvest',
+          'Manage Products',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 20,
@@ -316,28 +138,6 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          // Browse Products Button
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            onPressed: () {
-              Navigator.pushNamed(context, '/buyer-browse');
-            },
-            tooltip: 'Browse Products',
-          ),
-          // Notification Bell with Badge
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: RealtimeNotificationBadge(
-                  child: const Icon(Icons.notifications),
-                ),
-                onPressed: _viewNotifications,
-              ),
-            ],
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -350,6 +150,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
               Tab(text: 'Pending'),
               Tab(text: 'Approved'),
               Tab(text: 'Rejected'),
+              Tab(text: 'Expired'),
             ],
           ),
           Expanded(
@@ -359,6 +160,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
                 _buildProductList(_pendingProducts),
                 _buildProductList(_approvedProducts),
                 _buildProductList(_rejectedProducts),
+                _buildProductList(_expiredProducts),
               ],
             ),
           ),
@@ -405,6 +207,7 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
 
   Widget _buildProductCard(Map<String, dynamic> product) {
     String status = product['status'] ?? 'pending';
+    bool isExpired = _isProductExpired(product);
     Color statusColor;
 
     switch (status.toLowerCase()) {
@@ -489,6 +292,23 @@ class _SellerProductDashboardState extends State<SellerProductDashboard>
                         ),
                       ),
                     ),
+                    // Expired overlay
+                    if (isExpired && status.toLowerCase() == 'approved')
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.red.withOpacity(0.7),
+                          child: const Center(
+                            child: Text(
+                              'EXPIRED',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

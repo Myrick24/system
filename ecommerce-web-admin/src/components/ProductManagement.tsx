@@ -235,37 +235,7 @@ export const ProductManagement: React.FC = () => {
   ];
 
   const pendingColumns = [
-    ...baseColumns,
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (record: Product) => (
-        <Space onClick={(e) => e.stopPropagation()}>
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleApproveProduct(record.id, record.name);
-            }}
-          >
-            Approve
-          </Button>
-          <Button
-            danger
-            icon={<CloseOutlined />}
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleRejectProduct(record.id, record.name);
-            }}
-          >
-            Reject
-          </Button>
-        </Space>
-      )
-    }
+    ...baseColumns
   ];
 
   const managementColumns = [
@@ -377,36 +347,6 @@ export const ProductManagement: React.FC = () => {
           <Button key="close" onClick={handleCloseDetailModal}>
             Close
           </Button>,
-          selectedProduct?.status === 'pending' && (
-            <Button
-              key="approve"
-              type="primary"
-              icon={<CheckOutlined />}
-              onClick={() => {
-                if (selectedProduct) {
-                  handleApproveProduct(selectedProduct.id, selectedProduct.name);
-                  handleCloseDetailModal();
-                }
-              }}
-            >
-              Approve
-            </Button>
-          ),
-          selectedProduct?.status === 'pending' && (
-            <Button
-              key="reject"
-              danger
-              icon={<CloseOutlined />}
-              onClick={() => {
-                if (selectedProduct) {
-                  handleRejectProduct(selectedProduct.id, selectedProduct.name);
-                  handleCloseDetailModal();
-                }
-              }}
-            >
-              Reject
-            </Button>
-          ),
           selectedProduct && (
             <Button
               key="delete"

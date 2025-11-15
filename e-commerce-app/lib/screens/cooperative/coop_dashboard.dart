@@ -311,17 +311,18 @@ class _CoopDashboardState extends State<CoopDashboard>
           print(
               '🔔 New seller application notification: ${notificationData['title']}');
 
-          _showCooperativeNotificationPopup(
-            title: notificationData['title'] ?? 'New Seller Application',
-            message: notificationData['message'] ?? '',
-            type: notificationData['type'] ?? 'seller_application',
-            notificationId: notificationId,
-            sellerId: notificationData['sellerId'] ?? '',
-            applicantName: notificationData['applicantName'] ??
-                (notificationData['message']?.contains('from') ?? false
-                    ? notificationData['message'].split('from').last.trim()
-                    : 'New Applicant'),
-          );
+          // Notification popups disabled - notifications only appear in the notification list
+          // _showCooperativeNotificationPopup(
+          //   title: notificationData['title'] ?? 'New Seller Application',
+          //   message: notificationData['message'] ?? '',
+          //   type: notificationData['type'] ?? 'seller_application',
+          //   notificationId: notificationId,
+          //   sellerId: notificationData['sellerId'] ?? '',
+          //   applicantName: notificationData['applicantName'] ??
+          //       (notificationData['message']?.contains('from') ?? false
+          //           ? notificationData['message'].split('from').last.trim()
+          //           : 'New Applicant'),
+          // );
 
           // Mark this notification as shown
           _shownCoopNotificationIds.add(notificationId);
@@ -1828,23 +1829,43 @@ class _CoopDashboardState extends State<CoopDashboard>
                 ),
               ),
               const SizedBox(width: 12),
-              // Status Badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: statusColor, width: 1.5),
-                ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+              // Status Badge and Actions
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Status Badge
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: statusColor, width: 1.5),
+                    ),
+                    child: Text(
+                      status.toUpperCase(),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  // Delete Button
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    color: Colors.red,
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      // Stop propagation to card's onTap
+                      _showDeleteSellerDialog(sellerId, name);
+                    },
+                    tooltip: 'Delete Seller',
+                  ),
+                ],
               ),
             ],
           ),
@@ -1878,6 +1899,117 @@ class _CoopDashboardState extends State<CoopDashboard>
         _loadDashboardStats();
       }
     });
+  }
+
+  // Show delete seller confirmation dialog
+  void _showDeleteSellerDialog(String sellerId, String sellerName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Seller'),
+        content: Text(
+          'Are you sure you want to delete "$sellerName"?\n\nThis will:\n• Remove the seller from your cooperative\n• Delete all their products\n• Cancel their pending orders\n\nThis action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteSeller(sellerId, sellerName);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Delete seller and their data
+  Future<void> _deleteSeller(String sellerId, String sellerName) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No user logged in');
+      }
+
+      print('🗑️ Deleting seller: $sellerId');
+
+      // 1. Delete all products by this seller
+      final productsSnapshot = await _firestore
+          .collection('products')
+          .where('sellerId', isEqualTo: sellerId)
+          .get();
+
+      for (var productDoc in productsSnapshot.docs) {
+        await productDoc.reference.delete();
+      }
+      print('   Deleted ${productsSnapshot.docs.length} products');
+
+      // 2. Update user role from seller to regular user
+      await _firestore.collection('users').doc(sellerId).update({
+        'role': 'buyer',
+        'status': 'active',
+        'sellerApplicationDate': FieldValue.delete(),
+        'cooperativeId': FieldValue.delete(),
+      });
+      print('   Updated user role');
+
+      // 3. Delete seller document
+      final sellerSnapshot = await _firestore
+          .collection('sellers')
+          .where('userId', isEqualTo: sellerId)
+          .get();
+
+      for (var sellerDoc in sellerSnapshot.docs) {
+        await sellerDoc.reference.delete();
+      }
+      print('   Deleted seller document');
+
+      // 4. Send notification to the seller
+      await _firestore.collection('notifications').add({
+        'title': 'Removed from Cooperative',
+        'message':
+            'You have been removed from the cooperative. Your seller account has been deactivated.',
+        'body':
+            'You have been removed from the cooperative. Your seller account has been deactivated.',
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'seller_removed',
+        'read': false,
+        'userId': sellerId,
+        'priority': 'high',
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$sellerName has been deleted successfully'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Refresh the dashboard
+      _loadDashboardStats();
+    } catch (e) {
+      print('❌ Error deleting seller: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -4347,7 +4479,9 @@ class _CoopDashboardState extends State<CoopDashboard>
                 ),
 
                 // Show delivery address for Cooperative Delivery
-                if (isCoopDelivery && order['deliveryAddress'] != null && order['deliveryAddress'].toString().isNotEmpty) ...[
+                if (isCoopDelivery &&
+                    order['deliveryAddress'] != null &&
+                    order['deliveryAddress'].toString().isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -4581,11 +4715,14 @@ class _CoopDashboardState extends State<CoopDashboard>
                                     ? 'Standard Delivery'
                                     : deliveryMethod),
                             // Show delivery address if it's Cooperative Delivery
-                            if (isCoopDelivery && order['deliveryAddress'] != null && order['deliveryAddress'].toString().isNotEmpty) ...[
+                            if (isCoopDelivery &&
+                                order['deliveryAddress'] != null &&
+                                order['deliveryAddress']
+                                    .toString()
+                                    .isNotEmpty) ...[
                               const SizedBox(height: 8),
                               _buildDetailRow(
-                                  'Delivery Address',
-                                  order['deliveryAddress']),
+                                  'Delivery Address', order['deliveryAddress']),
                             ],
                             if (isCoopDelivery) ...[
                               const SizedBox(height: 8),
@@ -4834,7 +4971,9 @@ class _CoopDashboardState extends State<CoopDashboard>
 
     // FOR PICKUP AT COOP: Show only "Mark Delivered" button
     if (deliveryMethod == 'Pickup at Coop') {
-      if (status != 'delivered' && status != 'completed' && status != 'cancelled') {
+      if (status != 'delivered' &&
+          status != 'completed' &&
+          status != 'cancelled') {
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
@@ -4855,7 +4994,7 @@ class _CoopDashboardState extends State<CoopDashboard>
       }
     } else if (isCoopDelivery) {
       // FOR COOPERATIVE DELIVERY: Use normal flow
-      
+
       // For pending orders - show Approve button
       if (status == 'pending') {
         buttons.add(
@@ -4876,9 +5015,11 @@ class _CoopDashboardState extends State<CoopDashboard>
           ),
         );
       }
-      
+
       // For ready_for_shipping, ready_for_pickup, or processing orders - mark as out for delivery
-      else if (status == 'ready_for_shipping' || status == 'ready_for_pickup' || status == 'processing') {
+      else if (status == 'ready_for_shipping' ||
+          status == 'ready_for_pickup' ||
+          status == 'processing') {
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
@@ -4994,18 +5135,18 @@ class _CoopDashboardState extends State<CoopDashboard>
     try {
       // Get order details first to retrieve buyer and seller IDs
       final orderDoc = await _firestore.collection('orders').doc(orderId).get();
-      
+
       if (!orderDoc.exists) {
         throw Exception('Order not found');
       }
-      
+
       final orderData = orderDoc.data()!;
       final buyerId = orderData['buyerId'] ?? orderData['userId'];
       final sellerId = orderData['sellerId'];
       final productName = orderData['productName'] ?? 'Product';
       final quantity = orderData['quantity'] ?? 1;
       final unit = orderData['unit'] ?? '';
-      
+
       // Update order status
       await _firestore.collection('orders').doc(orderId).update({
         'status': newStatus,
@@ -5015,15 +5156,18 @@ class _CoopDashboardState extends State<CoopDashboard>
       // If status is 'processing' (approved), send notifications to both buyer and seller
       if (newStatus == 'processing') {
         final batch = _firestore.batch();
-        
+
         // Notification for BUYER
         if (buyerId != null) {
-          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          final buyerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(buyerNotificationRef, {
             'userId': buyerId,
             'title': '✅ Order Approved',
-            'body': 'Your order for $quantity $unit of $productName has been approved!',
-            'message': 'Your order for $quantity $unit of $productName is now being prepared.',
+            'body':
+                'Your order for $quantity $unit of $productName has been approved!',
+            'message':
+                'Your order for $quantity $unit of $productName is now being prepared.',
             'type': 'order_status',
             'status': 'processing',
             'orderId': orderId,
@@ -5036,28 +5180,33 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to buyer
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '✅ Order Approved',
-              body: 'Your order for $quantity $unit of $productName has been approved!',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Your order for $quantity $unit of $productName has been approved!',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to buyer about order approval');
           } catch (e) {
             print('⚠️ Error sending push notification to buyer: $e');
           }
         }
-        
+
         // Notification for SELLER
         if (sellerId != null) {
-          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          final sellerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(sellerNotificationRef, {
             'userId': sellerId,
             'title': '✅ Order Approved by Cooperative',
-            'body': 'Order for $quantity $unit of $productName has been approved for delivery',
-            'message': 'The cooperative has approved the order for $quantity $unit of $productName.',
+            'body':
+                'Order for $quantity $unit of $productName has been approved for delivery',
+            'message':
+                'The cooperative has approved the order for $quantity $unit of $productName.',
             'type': 'order_status',
             'status': 'processing',
             'orderId': orderId,
@@ -5071,26 +5220,29 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to seller
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '✅ Order Approved by Cooperative',
-              body: 'Order for $quantity $unit of $productName has been approved for delivery',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Order for $quantity $unit of $productName has been approved for delivery',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to seller about order approval');
           } catch (e) {
             print('⚠️ Error sending push notification to seller: $e');
           }
         }
-        
+
         // Commit all notifications
         await batch.commit();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Order APPROVED. Buyer and seller have been notified.'),
+            content:
+                Text('Order APPROVED. Buyer and seller have been notified.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
           ),
@@ -5099,15 +5251,18 @@ class _CoopDashboardState extends State<CoopDashboard>
       // If status is 'shipped' (out for delivery), send notifications to both buyer and seller
       else if (newStatus == 'shipped') {
         final batch = _firestore.batch();
-        
+
         // Notification for BUYER
         if (buyerId != null) {
-          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          final buyerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(buyerNotificationRef, {
             'userId': buyerId,
             'title': '🚚 Order Out for Delivery',
-            'body': 'Your order for $quantity $unit of $productName is out for delivery!',
-            'message': 'Your order for $quantity $unit of $productName is on the way to you.',
+            'body':
+                'Your order for $quantity $unit of $productName is out for delivery!',
+            'message':
+                'Your order for $quantity $unit of $productName is on the way to you.',
             'type': 'order_status',
             'status': 'shipped',
             'orderId': orderId,
@@ -5120,28 +5275,33 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to buyer
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '🚚 Order Out for Delivery',
-              body: 'Your order for $quantity $unit of $productName is out for delivery!',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Your order for $quantity $unit of $productName is out for delivery!',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to buyer about out for delivery');
           } catch (e) {
             print('⚠️ Error sending push notification to buyer: $e');
           }
         }
-        
+
         // Notification for SELLER
         if (sellerId != null) {
-          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          final sellerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(sellerNotificationRef, {
             'userId': sellerId,
             'title': '🚚 Order Out for Delivery',
-            'body': 'Your order for $quantity $unit of $productName is being delivered',
-            'message': 'The cooperative is delivering $quantity $unit of $productName to the customer.',
+            'body':
+                'Your order for $quantity $unit of $productName is being delivered',
+            'message':
+                'The cooperative is delivering $quantity $unit of $productName to the customer.',
             'type': 'order_status',
             'status': 'shipped',
             'orderId': orderId,
@@ -5155,26 +5315,29 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to seller
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '🚚 Order Out for Delivery',
-              body: 'Your order for $quantity $unit of $productName is being delivered',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Your order for $quantity $unit of $productName is being delivered',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to seller about out for delivery');
           } catch (e) {
             print('⚠️ Error sending push notification to seller: $e');
           }
         }
-        
+
         // Commit all notifications
         await batch.commit();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Order marked as OUT FOR DELIVERY. Buyer and seller have been notified.'),
+            content: Text(
+                'Order marked as OUT FOR DELIVERY. Buyer and seller have been notified.'),
             backgroundColor: Colors.purple,
             duration: Duration(seconds: 4),
           ),
@@ -5183,15 +5346,18 @@ class _CoopDashboardState extends State<CoopDashboard>
       // If status is 'delivered', send notifications to both buyer and seller
       else if (newStatus == 'delivered') {
         final batch = _firestore.batch();
-        
+
         // Notification for BUYER
         if (buyerId != null) {
-          final buyerNotificationRef = _firestore.collection('notifications').doc();
+          final buyerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(buyerNotificationRef, {
             'userId': buyerId,
             'title': '✅ Order Delivered',
-            'body': 'Your order for $quantity $unit of $productName has been delivered!',
-            'message': 'Your order for $quantity $unit of $productName has been delivered successfully.',
+            'body':
+                'Your order for $quantity $unit of $productName has been delivered!',
+            'message':
+                'Your order for $quantity $unit of $productName has been delivered successfully.',
             'type': 'order_status',
             'status': 'delivered',
             'orderId': orderId,
@@ -5204,28 +5370,33 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to buyer
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '✅ Order Delivered',
-              body: 'Your order for $quantity $unit of $productName has been delivered!',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Your order for $quantity $unit of $productName has been delivered!',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to buyer');
           } catch (e) {
             print('⚠️ Error sending push notification to buyer: $e');
           }
         }
-        
+
         // Notification for SELLER
         if (sellerId != null) {
-          final sellerNotificationRef = _firestore.collection('notifications').doc();
+          final sellerNotificationRef =
+              _firestore.collection('notifications').doc();
           batch.set(sellerNotificationRef, {
             'userId': sellerId,
             'title': '✅ Order Completed',
-            'body': 'Order for $quantity $unit of $productName has been delivered to customer',
-            'message': 'The cooperative has confirmed delivery of $quantity $unit of $productName to the customer.',
+            'body':
+                'Order for $quantity $unit of $productName has been delivered to customer',
+            'message':
+                'The cooperative has confirmed delivery of $quantity $unit of $productName to the customer.',
             'type': 'order_status',
             'status': 'delivered',
             'orderId': orderId,
@@ -5239,26 +5410,29 @@ class _CoopDashboardState extends State<CoopDashboard>
             'createdAt': FieldValue.serverTimestamp(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-          
+
           // Send PUSH NOTIFICATION to seller
           try {
             await RealtimeNotificationService.sendTestNotification(
               title: '✅ Order Completed',
-              body: 'Order for $quantity $unit of $productName has been delivered to customer',
-              payload: 'order_status|$orderId|${orderData['productId']}|$productName',
+              body:
+                  'Order for $quantity $unit of $productName has been delivered to customer',
+              payload:
+                  'order_status|$orderId|${orderData['productId']}|$productName',
             );
             print('✅ Push notification sent to seller');
           } catch (e) {
             print('⚠️ Error sending push notification to seller: $e');
           }
         }
-        
+
         // Commit all notifications
         await batch.commit();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Order marked as DELIVERED. Buyer and seller have been notified with push notifications.'),
+            content: Text(
+                'Order marked as DELIVERED. Buyer and seller have been notified with push notifications.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
           ),

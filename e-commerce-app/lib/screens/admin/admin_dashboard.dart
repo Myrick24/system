@@ -5,7 +5,6 @@ import '../../services/user_service.dart';
 import 'dashboard_home.dart';
 import 'cooperative_management.dart';
 import 'transaction_monitoring.dart';
-import 'user_feedback.dart';
 import 'announcements.dart';
 import 'product_view_screen.dart';
 import '../login_screen.dart'; // Import for login screen
@@ -45,7 +44,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     const CooperativeManagement(),
     const ProductViewScreen(),
     const TransactionMonitoring(),
-    const UserFeedback(),
     const AnnouncementsScreen(),
   ];
 
@@ -54,7 +52,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'Cooperative Accounts',
     'Product Listings',
     'System Activities',
-    'User Issues & Feedback',
     'Announcements',
   ];
 
@@ -177,14 +174,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
               index: 3,
             ),
             _buildDrawerItem(
-              icon: Icons.feedback,
-              title: 'User Issues & Feedback',
-              index: 4,
-            ),
-            _buildDrawerItem(
               icon: Icons.announcement,
               title: 'Announcements',
-              index: 5,
+              index: 4,
             ),
             const Divider(),
             ListTile(

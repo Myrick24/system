@@ -85,6 +85,12 @@ service cloud.firestore {
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
                         .hasOnly(['status', 'verified', 'updatedAt']);
+      
+      // Cooperative users can update their sellers (for deletion: remove role, cooperativeId, etc.)
+      allow update: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['role', 'status', 'cooperativeId', 'sellerApplicationDate', 'updatedAt']);
     }
     
     // Admin audit logs - only admins can create and read
@@ -122,6 +128,9 @@ service cloud.firestore {
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
                         .hasOnly(['status', 'verified', 'verifiedAt', 'verifiedBy', 'updatedAt']);
+      // Allow cooperatives to delete sellers from their cooperative
+      allow delete: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid;
       allow update: if request.auth != null && isAdmin();
       allow delete: if request.auth != null && isAdmin();
     }
@@ -140,7 +149,10 @@ service cloud.firestore {
       allow update: if isCoop() && 
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['status', 'updatedAt', 'approvedBy', 'approvedAt']);
+                        .hasOnly(['status', 'updatedAt', 'approvedBy', 'approvedAt', 'rejectionReason']);
+      // Allow cooperatives to delete products from their sellers
+      allow delete: if isCoop() && 
+                      resource.data.cooperativeId == request.auth.uid;
       allow update: if request.auth != null && 
                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock', 'quantity']);
       allow read, update, delete: if request.auth != null && isAdmin();

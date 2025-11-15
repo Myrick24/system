@@ -163,9 +163,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       // Check if it's a reservation or regular order
       bool isReservation = false;
+      Map<String, dynamic>? orderData;
+
       for (var order in _orders) {
-        if (order['id'] == orderId && order['isReservation'] == true) {
-          isReservation = true;
+        if (order['id'] == orderId) {
+          orderData = order;
+          if (order['isReservation'] == true) {
+            isReservation = true;
+          }
           break;
         }
       }
@@ -176,6 +181,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'status': 'cancelled',
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Return stock to product inventory (only for regular orders)
+      if (!isReservation && orderData != null) {
+        final productId = orderData['productId'];
+        final quantity = orderData['quantity'] ?? 0;
+
+        if (productId != null && quantity > 0) {
+          try {
+            await _firestore.collection('products').doc(productId).update({
+              'currentStock': FieldValue.increment(quantity),
+            });
+            print('Stock restored: +$quantity to product $productId');
+          } catch (e) {
+            print('Error restoring stock: $e');
+            // Continue even if stock restoration fails
+          }
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -215,17 +238,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (orderId.startsWith('order_')) {
       return orderId.replaceFirst('order_', '').toUpperCase();
     }
-    
+
     // For long Firebase IDs, take first 6 characters for readability
     if (orderId.length > 12) {
       return orderId.substring(0, 12).toUpperCase();
     }
-    
+
     // Otherwise use first 8 characters
     if (orderId.length > 8) {
       return orderId.substring(0, 8).toUpperCase();
     }
-    
+
     return orderId.toUpperCase();
   }
 

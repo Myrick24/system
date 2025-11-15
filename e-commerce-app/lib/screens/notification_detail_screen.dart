@@ -6,10 +6,8 @@ import '../theme/app_theme.dart';
 class NotificationDetailScreen extends StatefulWidget {
   final Map<String, dynamic> notification;
 
-  const NotificationDetailScreen({
-    Key? key,
-    required this.notification,
-  }) : super(key: key);
+  const NotificationDetailScreen({Key? key, required this.notification})
+    : super(key: key);
 
   @override
   State<NotificationDetailScreen> createState() =>
@@ -144,8 +142,11 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.priority_high,
-                              color: Colors.white, size: 16),
+                          Icon(
+                            Icons.priority_high,
+                            color: Colors.white,
+                            size: 16,
+                          ),
                           SizedBox(width: 4),
                           Text(
                             'HIGH PRIORITY',
@@ -170,9 +171,7 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                  ),
+                  decoration: BoxDecoration(color: Colors.grey.shade50),
                   child: Row(
                     children: [
                       Icon(Icons.receipt_long, color: Colors.grey.shade600),
@@ -336,7 +335,7 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                                 gradient: LinearGradient(
                                   colors: [
                                     Colors.blue.shade50,
-                                    Colors.blue.shade100
+                                    Colors.blue.shade100,
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
@@ -394,7 +393,7 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                                 gradient: LinearGradient(
                                   colors: [
                                     Colors.green.shade50,
-                                    Colors.green.shade100
+                                    Colors.green.shade100,
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
@@ -608,7 +607,8 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                 builder: (context, snapshot) {
                   String orderStatus = 'pending';
                   if (snapshot.hasData && snapshot.data!.exists) {
-                    orderStatus = (snapshot.data!.data()
+                    orderStatus =
+                        (snapshot.data!.data()
                             as Map<String, dynamic>)['status'] ??
                         'pending';
                   }
@@ -633,8 +633,9 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color:
-                                _getStatusColor(orderStatus).withOpacity(0.1),
+                            color: _getStatusColor(
+                              orderStatus,
+                            ).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
@@ -663,8 +664,9 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _getStatusColor(orderStatus)
-                                      .withOpacity(0.15),
+                                  color: _getStatusColor(
+                                    orderStatus,
+                                  ).withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: _getStatusColor(orderStatus),
@@ -711,30 +713,32 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: _isProcessing
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white),
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.check_circle, size: 22),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Accept Order',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
+                        child:
+                            _isProcessing
+                                ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
                                     ),
                                   ),
-                                ],
-                              ),
+                                )
+                                : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.check_circle, size: 22),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Accept Order',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -743,9 +747,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       width: double.infinity,
                       height: 56,
                       child: OutlinedButton(
-                        onPressed: _isProcessing
-                            ? null
-                            : () => _declineOrder(orderId!),
+                        onPressed:
+                            _isProcessing
+                                ? null
+                                : () => _declineOrder(orderId!),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
                           side: const BorderSide(color: Colors.red, width: 2),
@@ -1016,13 +1021,15 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _isProcessing
-                            ? null
-                            : () => _approveProduct(productId),
+                        onPressed:
+                            _isProcessing
+                                ? null
+                                : () => _approveProduct(productId),
                         icon: const Icon(Icons.check_circle),
-                        label: _isProcessing
-                            ? const Text('Processing...')
-                            : const Text('Approve Product'),
+                        label:
+                            _isProcessing
+                                ? const Text('Processing...')
+                                : const Text('Approve Product'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
@@ -1037,9 +1044,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _isProcessing
-                            ? null
-                            : () => _rejectProduct(productId),
+                        onPressed:
+                            _isProcessing
+                                ? null
+                                : () => _rejectProduct(productId),
                         icon: const Icon(Icons.cancel),
                         label: const Text('Reject Product'),
                         style: OutlinedButton.styleFrom(
@@ -1222,6 +1230,8 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     final availableFrom = productData['availableFrom'];
     final availableTo = productData['availableTo'];
     final harvestDate = productData['harvestDate'];
+    final timespan = productData['timespan'];
+    final timespanUnit = productData['timespanUnit'];
     final cooperativeName = productData['cooperativeName'] ?? '';
     final pickupLocation = productData['pickupLocation'] ?? '';
     final deliveryMethods = productData['deliveryOptions'] ?? [];
@@ -1277,11 +1287,12 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                             if (loadingProgress == null) return child;
                             return Center(
                               child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes !=
-                                        null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
+                                value:
+                                    loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress
+                                                .cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
                               ),
                             );
                           },
@@ -1503,6 +1514,15 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       iconColor: Colors.brown,
                     ),
                   ],
+                  if (timespan != null && timespanUnit != null) ...[
+                    const SizedBox(height: 10),
+                    _buildInfoRow(
+                      icon: Icons.timer,
+                      label: 'Product Freshness',
+                      value: '$timespan $timespanUnit',
+                      iconColor: Colors.orange,
+                    ),
+                  ],
                   const SizedBox(height: 16),
                 ],
 
@@ -1677,14 +1697,18 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _isProcessing
-                              ? null
-                              : () => _approveProduct(productId),
-                          icon:
-                              const Icon(Icons.check_circle_outline, size: 22),
-                          label: _isProcessing
-                              ? const Text('Processing...')
-                              : const Text('Approve'),
+                          onPressed:
+                              _isProcessing
+                                  ? null
+                                  : () => _approveProduct(productId),
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            size: 22,
+                          ),
+                          label:
+                              _isProcessing
+                                  ? const Text('Processing...')
+                                  : const Text('Approve'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade600,
                             foregroundColor: Colors.white,
@@ -1699,9 +1723,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _isProcessing
-                              ? null
-                              : () => _rejectProduct(productId),
+                          onPressed:
+                              _isProcessing
+                                  ? null
+                                  : () => _rejectProduct(productId),
                           icon: const Icon(Icons.cancel_outlined, size: 22),
                           label: const Text('Reject'),
                           style: ElevatedButton.styleFrom(
@@ -1779,11 +1804,12 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
       }
 
       // If still not found, try querying sellers by email/ID
-      final sellerQuery = await _firestore
-          .collection('sellers')
-          .where('id', isEqualTo: sellerId)
-          .limit(1)
-          .get();
+      final sellerQuery =
+          await _firestore
+              .collection('sellers')
+              .where('id', isEqualTo: sellerId)
+              .limit(1)
+              .get();
 
       if (sellerQuery.docs.isNotEmpty) {
         return sellerQuery.docs.first.data();
@@ -1800,61 +1826,63 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            title: const Text('Product Image'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
+        builder:
+            (context) => Scaffold(
+              backgroundColor: Colors.black,
+              appBar: AppBar(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                title: const Text('Product Image'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
-            ],
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
+              body: Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.white,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Failed to load image',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          value:
+                              loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
                           color: Colors.white,
                         ),
-                        SizedBox(height: 16),
-                        Text(
-                          'Failed to load image',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CircularProgressIndicator(
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
-                      color: Colors.white,
-                    ),
-                  );
-                },
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
       ),
     );
   }
@@ -1969,12 +1997,15 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       ),
                       hint: const Text('Select reason'),
                       value: dropdownValue,
-                      items: reasons
-                          .map((reason) => DropdownMenuItem(
-                                value: reason,
-                                child: Text(reason),
-                              ))
-                          .toList(),
+                      items:
+                          reasons
+                              .map(
+                                (reason) => DropdownMenuItem(
+                                  value: reason,
+                                  child: Text(reason),
+                                ),
+                              )
+                              .toList(),
                       onChanged: (value) {
                         setState(() => dropdownValue = value);
                       },
@@ -2013,9 +2044,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                       return;
                     }
 
-                    final reason = dropdownValue == 'Other'
-                        ? reasonController.text.trim()
-                        : dropdownValue!;
+                    final reason =
+                        dropdownValue == 'Other'
+                            ? reasonController.text.trim()
+                            : dropdownValue!;
 
                     if (reason.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -2321,11 +2353,13 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
             children: [
               const Text('Please select a reason for declining this order:'),
               const SizedBox(height: 16),
-              ...reasons.map((reason) => ListTile(
-                    title: Text(reason),
-                    onTap: () => Navigator.pop(context, reason),
-                    contentPadding: EdgeInsets.zero,
-                  )),
+              ...reasons.map(
+                (reason) => ListTile(
+                  title: Text(reason),
+                  onTap: () => Navigator.pop(context, reason),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
             ],
           ),
           actions: [
@@ -2391,8 +2425,11 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
   }
 
   // Build header info row for order header card
-  Widget _buildHeaderInfoRow(String label, String value,
-      {bool isMonospace = false}) {
+  Widget _buildHeaderInfoRow(
+    String label,
+    String value, {
+    bool isMonospace = false,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -2529,11 +2566,7 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          size: isSmall ? 16 : 20,
-          color: Colors.grey.shade600,
-        ),
+        Icon(icon, size: isSmall ? 16 : 20, color: Colors.grey.shade600),
         const SizedBox(width: 12),
         Expanded(
           child: Column(

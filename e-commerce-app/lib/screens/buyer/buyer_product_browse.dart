@@ -38,6 +38,79 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
     'Others'
   ];
 
+  // Calculate remaining time from when product was approved
+  String _calculateRemainingTime(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      final remaining = expiryTime.difference(now);
+
+      // If expired
+      if (remaining.isNegative) {
+        return 'Expired';
+      }
+
+      // Format remaining time
+      if (remaining.inHours < 1) {
+        final minutes = remaining.inMinutes;
+        return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} left';
+      } else if (remaining.inDays < 1) {
+        final hours = remaining.inHours;
+        return '$hours ${hours == 1 ? 'hour' : 'hours'} left';
+      } else {
+        final days = remaining.inDays;
+        final hours = remaining.inHours % 24;
+        if (hours > 0) {
+          return '$days ${days == 1 ? 'day' : 'days'}, $hours ${hours == 1 ? 'hour' : 'hours'} left';
+        }
+        return '$days ${days == 1 ? 'day' : 'days'} left';
+      }
+    } catch (e) {
+      print('Error calculating remaining time: $e');
+      return 'Expires in ${product['timespan']} ${product['timespan'] == 1 ? (product['timespanUnit'] == 'Hours' ? 'Hour' : 'Day') : product['timespanUnit']}';
+    }
+  }
+
+  // Check if product is expired
+  bool _isProductExpired(Map<String, dynamic> product) {
+    if (product['approvedAt'] == null ||
+        product['timespan'] == null ||
+        product['timespanUnit'] == null) {
+      return false;
+    }
+
+    try {
+      final approvedAt = (product['approvedAt'] as Timestamp).toDate();
+      final timespan = product['timespan'] as int;
+      final timespanUnit = product['timespanUnit'] as String;
+
+      // Calculate expiry time
+      final expiryTime = timespanUnit == 'Hours'
+          ? approvedAt.add(Duration(hours: timespan))
+          : approvedAt.add(Duration(days: timespan));
+
+      final now = DateTime.now();
+      return now.isAfter(expiryTime);
+    } catch (e) {
+      print('Error checking if product expired: $e');
+      return false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -90,14 +163,14 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((product) {
         final data = product.data() as Map<String, dynamic>;
-        final productName =
-            (data['productName'] ?? data['name'] ?? '').toString().toLowerCase();
+        final productName = (data['productName'] ?? data['name'] ?? '')
+            .toString()
+            .toLowerCase();
         final description =
             (data['description'] ?? '').toString().toLowerCase();
         final query = _searchQuery.toLowerCase();
 
-        return productName.contains(query) ||
-            description.contains(query);
+        return productName.contains(query) || description.contains(query);
       }).toList();
     }
 
@@ -120,7 +193,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
     _filterProducts();
   }
 
-  Future<void> _startChatWithSeller(String sellerId, String sellerName, {Map<String, dynamic>? product, String? productId}) async {
+  Future<void> _startChatWithSeller(String sellerId, String sellerName,
+      {Map<String, dynamic>? product, String? productId}) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       _showLoginPrompt();
@@ -129,19 +203,20 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
 
     try {
       // Check if there's an existing chat between this customer and seller
-      final chatQuery = await _firestore.collection('chats')
+      final chatQuery = await _firestore
+          .collection('chats')
           .where('sellerId', isEqualTo: sellerId)
           .where('customerId', isEqualTo: currentUser.uid)
           .limit(1)
           .get();
 
       String chatId;
-      
+
       if (chatQuery.docs.isEmpty) {
         // Create a new chat if none exists
         final chatRef = _firestore.collection('chats').doc();
         chatId = chatRef.id;
-        
+
         Map<String, dynamic> chatData = {
           'sellerId': sellerId,
           'customerId': currentUser.uid,
@@ -152,7 +227,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
           'unreadCustomerCount': 0,
           'unreadSellerCount': 0,
         };
-        
+
         // Add product information if provided
         if (product != null) {
           chatData['product'] = {
@@ -164,12 +239,12 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
           };
           chatData['productId'] = productId;
         }
-        
+
         await chatRef.set(chatData);
       } else {
         // Use existing chat but update product info if provided
         chatId = chatQuery.docs.first.id;
-        
+
         if (product != null) {
           await _firestore.collection('chats').doc(chatId).update({
             'product': {
@@ -222,7 +297,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
       final cartItem = CartItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         productId: productId,
-        productName: product['productName'] ?? product['name'] ?? 'Unknown Product',
+        productName:
+            product['productName'] ?? product['name'] ?? 'Unknown Product',
         price: (product['price'] ?? 0).toDouble(),
         imageUrl: product['imageUrl'],
         sellerId: product['sellerId'] ?? '',
@@ -232,13 +308,14 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
       );
 
       print('DEBUG: Adding item to cart from browse - ProductID: $productId');
-      
+
       bool success = await cartService.addItem(cartItem);
-      
+
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${product['productName'] ?? product['name']} added to cart'),
+            content: Text(
+                '${product['productName'] ?? product['name']} added to cart'),
             backgroundColor: Colors.green,
             action: SnackBarAction(
               label: 'View Cart',
@@ -255,7 +332,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to add to cart - insufficient stock or other error'),
+            content: const Text(
+                'Failed to add to cart - insufficient stock or other error'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -463,7 +541,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
-                            childAspectRatio: 0.6, // Increased from 0.75 to give more height
+                            childAspectRatio:
+                                0.6, // Increased from 0.75 to give more height
                             crossAxisSpacing: 16,
                             mainAxisSpacing: 16,
                           ),
@@ -485,17 +564,23 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product, String productId) {
-    final double currentStock = (product['currentStock'] ?? product['stock'] ?? product['quantity'] ?? 0).toDouble();
+    final double currentStock = (product['currentStock'] ??
+            product['stock'] ??
+            product['quantity'] ??
+            0)
+        .toDouble();
     final bool hasStock = currentStock > 0;
-    final String productName = product['productName'] ?? product['name'] ?? 'Unknown Product';
+    final bool isExpired = _isProductExpired(product);
+    final String productName =
+        product['productName'] ?? product['name'] ?? 'Unknown Product';
     final String price = _formatPrice(product['price']);
     final String unit = product['unit'] ?? 'pcs';
     final String category = product['category'] ?? 'Others';
-    
+
     // Get icon and color based on category
     IconData icon = Icons.shopping_basket;
     Color color = Colors.green;
-    
+
     switch (category.toLowerCase()) {
       case 'vegetables':
         icon = Icons.eco;
@@ -525,7 +610,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
         icon = Icons.shopping_basket;
         color = Colors.green;
     }
-    
+
     return Card(
       elevation: 4,
       shadowColor: Colors.black26,
@@ -533,17 +618,28 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProductDetailsScreen(
-                product: product,
-                productId: productId,
-              ),
-            ),
-          );
-        },
+        onTap: isExpired
+            ? () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'This product has expired and is no longer available for purchase'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductDetailsScreen(
+                      product: product,
+                      productId: productId,
+                    ),
+                  ),
+                );
+              },
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -577,13 +673,15 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                               fit: BoxFit.cover,
                               width: double.infinity,
                               height: double.infinity,
-                              loadingBuilder: (context, child, loadingProgress) {
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
                                 if (loadingProgress == null) return child;
                                 return Center(
                                   child: CircularProgressIndicator(
                                     value: loadingProgress.expectedTotalBytes !=
                                             null
-                                        ? loadingProgress.cumulativeBytesLoaded /
+                                        ? loadingProgress
+                                                .cumulativeBytesLoaded /
                                             loadingProgress.expectedTotalBytes!
                                         : null,
                                     valueColor:
@@ -593,17 +691,19 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                               },
                               errorBuilder: (context, error, stackTrace) {
                                 return Center(
-                                  child: Icon(icon, color: Colors.grey[400], size: 40),
+                                  child: Icon(icon,
+                                      color: Colors.grey[400], size: 40),
                                 );
                               },
                             ),
                           )
                         : Center(
-                            child: Icon(icon, color: Colors.grey[400], size: 40),
+                            child:
+                                Icon(icon, color: Colors.grey[400], size: 40),
                           ),
                   ),
                   // Message Icon
-                  if (hasStock && product['sellerId'] != null)
+                  if (hasStock && !isExpired && product['sellerId'] != null)
                     Positioned(
                       top: 8,
                       right: 8,
@@ -611,7 +711,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                         onTap: () {
                           final sellerId = product['sellerId'];
                           final sellerName = product['sellerName'] ?? 'Seller';
-                          _startChatWithSeller(sellerId, sellerName, product: product, productId: productId);
+                          _startChatWithSeller(sellerId, sellerName,
+                              product: product, productId: productId);
                         },
                         child: Container(
                           width: 28,
@@ -635,6 +736,7 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                         ),
                       ),
                     ),
+                  // Out of stock overlay
                   if (!hasStock)
                     Positioned.fill(
                       child: Container(
@@ -648,6 +750,29 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                         child: const Center(
                           child: Text(
                             'OUT OF STOCK',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Expired overlay
+                  if (isExpired && hasStock)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.7),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'EXPIRED',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -707,7 +832,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           onTap: () {
                             if (product['sellerId'] != null) {
                               print('DEBUG: Navigating to seller details');
-                              print('DEBUG: Product sellerId: "${product['sellerId']}"');
+                              print(
+                                  'DEBUG: Product sellerId: "${product['sellerId']}"');
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -735,7 +861,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                               ),
                               if (hasStock) ...[
                                 const SizedBox(width: 2),
-                                Icon(Icons.star, color: Colors.grey.shade400, size: 10),
+                                Icon(Icons.star,
+                                    color: Colors.grey.shade400, size: 10),
                                 const SizedBox(width: 1),
                                 Text(
                                   '0.0',
@@ -748,17 +875,51 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                             ],
                           ),
                         ),
+                      const SizedBox(height: 4),
+                      // Timespan display
+                      if (product['timespan'] != null &&
+                          product['timespanUnit'] != null)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: Colors.orange.shade200, width: 1),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 3),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.timer,
+                                size: 11,
+                                color: Colors.orange.shade700,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                _calculateRemainingTime(product),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.orange.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const Spacer(),
                       // View Button - full width and bold
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: hasStock
+                          onPressed: (hasStock && !isExpired)
                               ? () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => ProductDetailsScreen(
+                                      builder: (context) =>
+                                          ProductDetailsScreen(
                                         product: product,
                                         productId: productId,
                                       ),
@@ -767,7 +928,9 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: hasStock ? Colors.green : Colors.grey,
+                            backgroundColor: (hasStock && !isExpired)
+                                ? Colors.green
+                                : Colors.grey,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
@@ -777,7 +940,8 @@ class _BuyerProductBrowseState extends State<BuyerProductBrowse> {
                           ),
                           child: const Text(
                             'View',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
