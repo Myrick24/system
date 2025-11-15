@@ -149,7 +149,7 @@ service cloud.firestore {
       allow update: if isCoop() && 
                       resource.data.cooperativeId == request.auth.uid &&
                       request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['status', 'updatedAt', 'approvedBy', 'approvedAt', 'rejectionReason']);
+                        .hasOnly(['status', 'updatedAt', 'approvedBy', 'approvedAt', 'rejectedAt', 'rejectionReason']);
       // Allow cooperatives to delete products from their sellers
       allow delete: if isCoop() && 
                       resource.data.cooperativeId == request.auth.uid;

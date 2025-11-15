@@ -568,6 +568,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
       String? unit}) {
     bool hasStock = currentStock != null && currentStock > 0;
     bool isExpired = _isProductExpired(product);
+    bool isOwnProduct = _auth.currentUser?.uid == product['sellerId'];
 
     return Card(
       elevation: 4,
@@ -587,17 +588,27 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                   ),
                 );
               }
-            : () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ProductDetailsScreen(
-                      product: product,
-                      productId: productId,
-                    ),
-                  ),
-                );
-              },
+            : isOwnProduct
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('This is your own product'),
+                        backgroundColor: Colors.orange,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProductDetailsScreen(
+                          product: product,
+                          productId: productId,
+                        ),
+                      ),
+                    );
+                  },
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -740,6 +751,56 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         ),
                       ),
                     ),
+                  // Timespan display overlay on image
+                  if (product['timespan'] != null &&
+                      product['timespanUnit'] != null &&
+                      hasStock &&
+                      !isExpired)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      right: 8,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50.withOpacity(0.95),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: Colors.orange.shade300, width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.timer,
+                              size: 12,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                _calculateRemainingTime(product),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
               // Product Info with better spacing and styling
@@ -756,13 +817,13 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                         title,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 15, // Further reduced from 12
+                          fontSize: 13,
                           color: Colors.black87,
                         ),
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2), // Further reduced from 3
+                      const SizedBox(height: 2),
                       // Price with unit
                       Row(
                         children: [
@@ -771,31 +832,25 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                             style: const TextStyle(
                               color: Colors.green,
                               fontWeight: FontWeight.bold,
-                              fontSize: 15, // Further reduced from 14
+                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 2),
                           Text(
                             '/${unit ?? 'pcs'}',
                             style: TextStyle(
                               color: Colors.grey[600],
-                              fontSize: 12,
+                              fontSize: 10,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 1), // Further reduced from 2
+                      const SizedBox(height: 2),
                       // Seller info with rating
                       if (product['sellerName'] != null)
                         GestureDetector(
                           onTap: () {
                             if (product['sellerId'] != null) {
-                              print('DEBUG: Navigating to seller details');
-                              print(
-                                  'DEBUG: Product sellerId: "${product['sellerId']}"');
-                              print(
-                                  'DEBUG: Product sellerId type: ${product['sellerId'].runtimeType}');
-                              print('DEBUG: Product data: $product');
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -806,9 +861,6 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                   ),
                                 ),
                               );
-                            } else {
-                              print(
-                                  'DEBUG: No sellerId found in product: $product');
                             }
                           },
                           child: Row(
@@ -816,9 +868,9 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               Expanded(
                                 child: Text(
                                   product['sellerName'],
-                                  style: TextStyle(
-                                    color: const Color.fromARGB(255, 0, 0, 0),
-                                    fontSize: 10, // Further reduced from 10
+                                  style: const TextStyle(
+                                    color: Color.fromARGB(255, 0, 0, 0),
+                                    fontSize: 9,
                                     decoration: TextDecoration.underline,
                                   ),
                                   maxLines: 1,
@@ -829,49 +881,16 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                 const SizedBox(width: 2),
                                 Icon(Icons.star,
                                     color: Colors.grey.shade400,
-                                    size: 10), // Gray star for 0.0 rating
+                                    size: 9),
                                 const SizedBox(width: 1),
                                 Text(
-                                  '0.0', // Default rating for products
+                                  '0.0',
                                   style: TextStyle(
                                     color: Colors.grey.shade600,
-                                    fontSize: 9,
+                                    fontSize: 8,
                                   ),
                                 ),
                               ],
-                            ],
-                          ),
-                        ),
-                      const SizedBox(height: 4),
-                      // Timespan display
-                      if (product['timespan'] != null &&
-                          product['timespanUnit'] != null)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: Colors.orange.shade200, width: 1),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.timer,
-                                size: 11,
-                                color: Colors.orange.shade700,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                _calculateRemainingTime(product),
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.orange.shade700,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
                             ],
                           ),
                         ),
@@ -880,7 +899,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: (hasStock && !isExpired)
+                          onPressed: (hasStock && !isExpired && !isOwnProduct)
                               ? () {
                                   Navigator.push(
                                     context,
@@ -893,22 +912,35 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                     ),
                                   );
                                 }
-                              : null,
+                              : isOwnProduct
+                                  ? () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('This is your own product'),
+                                          backgroundColor: Colors.orange,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: (hasStock && !isExpired)
-                                ? Colors.green
-                                : Colors.grey,
+                            backgroundColor: isOwnProduct
+                                ? Colors.orange
+                                : (hasStock && !isExpired)
+                                    ? Colors.green
+                                    : Colors.grey,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                             ),
                             elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            minimumSize: const Size(double.infinity, 32),
                           ),
-                          child: const Text(
-                            'View',
-                            style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.bold),
+                          child: Text(
+                            isOwnProduct ? 'Your Product' : 'View',
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),

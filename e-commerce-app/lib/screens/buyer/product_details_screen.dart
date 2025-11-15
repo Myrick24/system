@@ -265,6 +265,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       return;
     }
 
+    // Check if current user is the seller of this product
+    if (_auth.currentUser!.uid == widget.product['sellerId']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You cannot buy your own product'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     try {
       final cartService = Provider.of<CartService>(context, listen: false);
 
@@ -1405,61 +1417,79 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              spreadRadius: 1,
-              blurRadius: 5,
-              offset: const Offset(0, -3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _addToCart,
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('Add to Cart'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.green,
-                  side: const BorderSide(color: Colors.green),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.3),
+                spreadRadius: 1,
+                blurRadius: 5,
+                offset: const Offset(0, -3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: (_auth.currentUser?.uid == widget.product['sellerId']) 
+                      ? null 
+                      : _addToCart,
+                  icon: const Icon(Icons.add_shopping_cart, size: 18),
+                  label: const Text('Add to Cart', style: TextStyle(fontSize: 14)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  if (_auth.currentUser == null) {
-                    _showLoginPrompt();
-                    return;
-                  }
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: (_auth.currentUser?.uid == widget.product['sellerId'])
+                      ? null
+                      : () {
+                          if (_auth.currentUser == null) {
+                            _showLoginPrompt();
+                            return;
+                          }
 
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => BuyNowScreen(
-                        product: widget.product,
-                        productId: widget.productId,
-                      ),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                          // Double check if user is the seller
+                          if (_auth.currentUser!.uid == widget.product['sellerId']) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('You cannot buy your own product'),
+                                backgroundColor: Colors.orange,
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => BuyNowScreen(
+                                product: widget.product,
+                                productId: widget.productId,
+                              ),
+                            ),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: const Text('Buy Now', style: TextStyle(fontSize: 14)),
                 ),
-                child: const Text('Buy Now'),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
