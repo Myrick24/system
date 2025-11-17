@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/admin_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 
 class AdminSettings extends StatefulWidget {
@@ -14,16 +15,16 @@ class _AdminSettingsState extends State<AdminSettings> {
   final AdminService _adminService = AdminService();
   final UserService _userService = UserService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   bool _isLoading = false;
   Map<String, dynamic>? _adminData;
   List<Map<String, dynamic>> _subAdmins = [];
-  
+
   // Controllers for adding new admin
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   @override
   void initState() {
     super.initState();
@@ -43,7 +44,7 @@ class _AdminSettingsState extends State<AdminSettings> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       String? uid = _auth.currentUser?.uid;
       if (uid != null) {
@@ -65,9 +66,11 @@ class _AdminSettingsState extends State<AdminSettings> {
       List<Map<String, dynamic>> admins = await _adminService.getAllAdmins();
       // Filter out current admin
       if (_auth.currentUser != null) {
-        admins = admins.where((admin) => admin['id'] != _auth.currentUser!.uid).toList();
+        admins = admins
+            .where((admin) => admin['id'] != _auth.currentUser!.uid)
+            .toList();
       }
-      
+
       if (mounted) {
         setState(() {
           _subAdmins = admins;
@@ -88,7 +91,7 @@ class _AdminSettingsState extends State<AdminSettings> {
       );
       return;
     }
-    
+
     // Password validation
     if (_passwordController.text.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -96,26 +99,26 @@ class _AdminSettingsState extends State<AdminSettings> {
       );
       return;
     }
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       bool success = await _adminService.addSubAdmin(
         _emailController.text.trim(),
         _passwordController.text,
         _nameController.text.trim(),
       );
-      
+
       if (success) {
         _nameController.clear();
         _emailController.clear();
         _passwordController.clear();
-        
+
         // Refresh sub-admins list
         await _loadSubAdmins();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sub-admin added successfully')),
@@ -149,14 +152,14 @@ class _AdminSettingsState extends State<AdminSettings> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       bool success = await _adminService.removeSubAdmin(userId);
-      
+
       if (success) {
         // Refresh sub-admins list
         await _loadSubAdmins();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sub-admin removed successfully')),
@@ -241,7 +244,7 @@ class _AdminSettingsState extends State<AdminSettings> {
 
   Future<void> _signOut() async {
     try {
-      await _auth.signOut();
+      await AuthService.signOut();
       if (mounted) {
         Navigator.pop(context); // Go back to login screen
       }
@@ -328,7 +331,8 @@ class _AdminSettingsState extends State<AdminSettings> {
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(16),
@@ -393,7 +397,8 @@ class _AdminSettingsState extends State<AdminSettings> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                   onPressed: _showAddAdminDialog,
                 ),
@@ -420,7 +425,8 @@ class _AdminSettingsState extends State<AdminSettings> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.green.shade100,
-                          child: const Icon(Icons.admin_panel_settings, color: Colors.green, size: 20),
+                          child: const Icon(Icons.admin_panel_settings,
+                              color: Colors.green, size: 20),
                         ),
                         title: Text(admin['name'] ?? 'Unknown'),
                         subtitle: Text(admin['email'] ?? 'No email'),

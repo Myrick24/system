@@ -23,6 +23,9 @@ class RealtimeNotificationService {
   // Track shown notifications to prevent duplicates
   static final Set<String> _shownNotificationIds = {};
 
+  // Track shown FCM messages to prevent duplicate local notifications
+  static final Set<String> _shownFCMMessageIds = {};
+
   // Track when the listener was initialized
   static DateTime? _listenerStartTime;
 
@@ -34,6 +37,9 @@ class RealtimeNotificationService {
 
   // Track current user to detect user changes
   static String? _currentUserId;
+
+  // Track if service is initialized to prevent re-initialization
+  static bool _isInitialized = false;
 
   // Stream for listening to new notifications
   static Stream<Map<String, dynamic>> get notificationStream =>
@@ -54,6 +60,12 @@ class RealtimeNotificationService {
 
   /// Initialize the notification service
   static Future<void> initialize() async {
+    // Prevent re-initialization
+    if (_isInitialized) {
+      print('ℹ️  Notification service already initialized, skipping...');
+      return;
+    }
+
     print('🔔 Initializing Real-time Notification Service...');
 
     // Mark the initialization time
@@ -79,6 +91,7 @@ class RealtimeNotificationService {
     _setupFirestoreListener();
     print('✅ Firestore listener active');
 
+    _isInitialized = true;
     print('🎉 Real-time Notification Service ready!');
   }
 
@@ -151,11 +164,17 @@ class RealtimeNotificationService {
     try {
       String? token = await _firebaseMessaging.getToken();
       if (token != null) {
-        await _saveTokenToFirestore(token);
-        print('📱 FCM Token: $token');
+        print('📱 FCM Token obtained: ${token.substring(0, 20)}...');
+        // Only save if user is logged in
+        final user = _auth.currentUser;
+        if (user != null) {
+          await _saveTokenToFirestore(token);
+        } else {
+          print('⚠️ No user logged in, skipping token save');
+        }
       }
 
-      // Listen for token refresh
+      // Listen for token refresh - will check user status before saving
       _firebaseMessaging.onTokenRefresh.listen(_saveTokenToFirestore);
     } catch (e) {
       print('❌ Error setting up FCM token: $e');
@@ -166,13 +185,53 @@ class RealtimeNotificationService {
   static Future<void> _saveTokenToFirestore(String token) async {
     try {
       final user = _auth.currentUser;
-      if (user != null) {
-        await _firestore.collection('users').doc(user.uid).set({
-          'fcmToken': token,
-          'lastTokenUpdate': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        print('💾 FCM token saved to Firestore');
+      if (user == null) {
+        print('⚠️ Cannot save FCM token: No user logged in');
+        return;
       }
+
+      print('💾 Saving FCM token for user: ${user.uid}');
+      print('   Token: ${token.substring(0, 20)}...');
+
+      // CRITICAL: Remove this exact token from ALL other users in Firestore
+      // This prevents old logged-out accounts from receiving notifications
+      try {
+        final usersWithToken = await _firestore
+            .collection('users')
+            .where('fcmToken', isEqualTo: token)
+            .get();
+
+        print('🔍 Found ${usersWithToken.docs.length} users with this token');
+
+        // Use a batch write for atomic operation
+        final batch = _firestore.batch();
+        int removedCount = 0;
+
+        for (final doc in usersWithToken.docs) {
+          if (doc.id != user.uid) {
+            batch.update(doc.reference, {
+              'fcmToken': FieldValue.delete(),
+              'tokenRemovedAt': FieldValue.serverTimestamp(),
+            });
+            removedCount++;
+            print('🗑️ Queued token removal from user: ${doc.id}');
+          }
+        }
+
+        if (removedCount > 0) {
+          await batch.commit();
+          print('✅ Removed token from $removedCount other user(s)');
+        }
+      } catch (queryError) {
+        print('⚠️ Error checking for duplicate tokens: $queryError');
+      }
+
+      // Now save token to current user
+      await _firestore.collection('users').doc(user.uid).set({
+        'fcmToken': token,
+        'lastTokenUpdate': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      print('✅ FCM token saved to Firestore for user: ${user.uid}');
     } catch (e) {
       print('❌ Error saving FCM token: $e');
     }
@@ -183,8 +242,8 @@ class RealtimeNotificationService {
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // Handle background messages
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    // Note: Background message handler is configured in main.dart as a top-level function
+    // This is required by Firebase Cloud Messaging
 
     // Handle notification opened when app was terminated
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpened);
@@ -199,10 +258,29 @@ class RealtimeNotificationService {
     print('   Title: ${message.notification?.title}');
     print('   Body: ${message.notification?.body}');
 
-    // Show local notification
-    await _showLocalNotification(message);
+    // Check if we already showed this message to prevent duplicates
+    final messageId =
+        message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    if (_shownFCMMessageIds.contains(messageId)) {
+      print('⏩ Message already shown, skipping duplicate');
+      return;
+    }
 
-    // Broadcast to stream
+    // Mark as shown
+    _shownFCMMessageIds.add(messageId);
+
+    // Clean up old message IDs (keep last 100)
+    if (_shownFCMMessageIds.length > 100) {
+      final toRemove = _shownFCMMessageIds.length - 100;
+      _shownFCMMessageIds.removeAll(_shownFCMMessageIds.take(toRemove));
+    }
+
+    // Always show notification when app is open (foreground)
+    // This ensures users see notifications whether app is open or closed
+    await _showLocalNotification(message);
+    print('✅ Foreground notification displayed');
+
+    // Broadcast to stream for UI updates
     _notificationStreamController.add({
       'messageId': message.messageId,
       'title': message.notification?.title,
@@ -211,16 +289,7 @@ class RealtimeNotificationService {
       'timestamp': DateTime.now().toIso8601String(),
     });
 
-    // Save to Firestore if not already saved
-    await _saveNotificationToFirestore(message);
-  }
-
-  /// Handle background messages (app is in background)
-  @pragma('vm:entry-point')
-  static Future<void> _firebaseMessagingBackgroundHandler(
-      RemoteMessage message) async {
-    print('📨 Background message received: ${message.messageId}');
-    await _saveNotificationToFirestore(message);
+    // Note: No need to save to Firestore here - Cloud Functions already do this
   }
 
   /// Handle notification opened
@@ -276,11 +345,8 @@ class RealtimeNotificationService {
     if (notification == null) return;
 
     final data = message.data;
-    final type = data['type'] ?? 'general';
 
     // Determine notification icon and color based on type
-    final notificationDetails = _getNotificationDetails(type);
-
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
       'harvest_notifications',
@@ -312,41 +378,18 @@ class RealtimeNotificationService {
       iOS: iosDetails,
     );
 
+    // Use timestamp-based unique ID to avoid collisions
+    final notificationId = DateTime.now().millisecondsSinceEpoch % 2147483647;
+
     await _localNotifications.show(
-      message.hashCode,
+      notificationId,
       notification.title,
       notification.body,
       details,
       payload: _createPayload(data),
     );
 
-    print('🔔 Local notification shown');
-  }
-
-  /// Get notification details based on type
-  static Map<String, dynamic> _getNotificationDetails(String type) {
-    switch (type) {
-      case 'product_approved':
-      case 'product_approval':
-        return {'icon': '✅', 'color': Colors.green};
-      case 'product_rejected':
-      case 'product_rejection':
-        return {'icon': '❌', 'color': Colors.red};
-      case 'checkout_seller':
-      case 'checkout_buyer':
-        return {'icon': '🛒', 'color': Colors.blue};
-      case 'order_status':
-      case 'order_update':
-        return {'icon': '📦', 'color': Colors.orange};
-      case 'seller_approved':
-        return {'icon': '🎉', 'color': Colors.green};
-      case 'seller_rejected':
-        return {'icon': '⚠️', 'color': Colors.red};
-      case 'low_stock':
-        return {'icon': '⚠️', 'color': Colors.orange};
-      default:
-        return {'icon': '🔔', 'color': Colors.blue};
-    }
+    print('🔔 Local notification shown (ID: $notificationId)');
   }
 
   /// Create payload for notification
@@ -368,48 +411,6 @@ class RealtimeNotificationService {
     print('📍 Navigation requested for type: $type');
     // Example: Navigate to specific screen based on type
     // Navigator.pushNamed(context, '/route', arguments: data);
-  }
-
-  /// Save notification to Firestore
-  static Future<void> _saveNotificationToFirestore(
-      RemoteMessage message) async {
-    try {
-      final data = message.data;
-      final userId = data['userId'];
-
-      if (userId == null) {
-        print('⚠️  No userId in notification data, skipping Firestore save');
-        return;
-      }
-
-      final notificationData = {
-        'userId': userId,
-        'title': message.notification?.title ?? 'Notification',
-        'message': message.notification?.body ?? '',
-        'type': data['type'] ?? 'general',
-        'read': false,
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'messageId': message.messageId,
-        'data': data,
-      };
-
-      // Check if notification already exists
-      final existing = await _firestore
-          .collection('notifications')
-          .where('messageId', isEqualTo: message.messageId)
-          .limit(1)
-          .get();
-
-      if (existing.docs.isEmpty) {
-        await _firestore.collection('notifications').add(notificationData);
-        print('💾 Notification saved to Firestore');
-      } else {
-        print('ℹ️  Notification already exists in Firestore');
-      }
-    } catch (e) {
-      print('❌ Error saving notification to Firestore: $e');
-    }
   }
 
   /// Setup Firestore listener for real-time notification updates
@@ -473,14 +474,18 @@ class RealtimeNotificationService {
                       print(
                           '   Added to shown list. Total shown: ${_shownNotificationIds.length}');
 
+                      // Clean up old notification IDs periodically
+                      _cleanupShownNotifications();
+
                       // Skip showing floating notifications on first load
                       // Only show for new notifications that arrive after initial load
+                      // NOTE: We DON'T show local notifications here because FCM already handles it
+                      // This prevents duplicate notifications
                       if (!isFirstLoad) {
-                        print('✅✅✅ SHOWING FLOATING NOTIFICATION: $title');
-                        _showFirestoreNotification(data);
-                      } else {
                         print(
-                            '⏭️  Skipping floating notification (first load): $title');
+                            '📨 New notification detected: $title (FCM will handle display)');
+                      } else {
+                        print('⏭️  Skipping notification (first load): $title');
                       }
 
                       // Always broadcast to stream for UI updates
@@ -520,53 +525,6 @@ class RealtimeNotificationService {
         _shownNotificationIds.clear();
       }
     });
-  }
-
-  /// Show notification from Firestore data
-  static Future<void> _showFirestoreNotification(
-      Map<String, dynamic> data) async {
-    final title = data['title'] ?? 'Notification';
-    // Support both 'message' and 'body' fields
-    final message = data['body'] ?? data['message'] ?? '';
-    final type = data['type'] ?? 'general';
-
-    print('📱 Showing phone notification: $title - $message');
-
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-      'harvest_notifications',
-      'Harvest App Notifications',
-      channelDescription: 'Real-time notifications',
-      importance: Importance.high,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      enableLights: true,
-      ledColor: Color.fromARGB(255, 76, 175, 80),
-      ledOnMs: 1000,
-      ledOffMs: 500,
-      icon: '@mipmap/ic_launcher',
-      styleInformation: BigTextStyleInformation(''),
-    );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000,
-      title,
-      message,
-      details,
-      payload: _createPayload(data),
-    );
   }
 
   /// Send notification to a specific user
@@ -782,5 +740,92 @@ class RealtimeNotificationService {
   /// Dispose resources
   static Future<void> dispose() async {
     await _notificationStreamController.close();
+    await _notificationSubscription?.cancel();
+    _isInitialized = false;
+  }
+
+  /// Clear FCM token when user logs out
+  static Future<void> clearFCMToken() async {
+    try {
+      final currentToken = await _firebaseMessaging.getToken();
+      if (currentToken != null) {
+        print(
+            '🗑️ Deleting FCM token from device: ${currentToken.substring(0, 20)}...');
+        // Delete the FCM token from the device
+        await _firebaseMessaging.deleteToken();
+        print('✅ FCM token deleted from device successfully');
+      } else {
+        print('ℹ️ No FCM token found on device to delete');
+      }
+
+      // Reset initialization flag so service can be re-initialized on next login
+      _isInitialized = false;
+      _currentUserId = null;
+
+      // Cancel existing listeners
+      await _notificationSubscription?.cancel();
+      _notificationSubscription = null;
+
+      print('✅ Notification service reset for logout');
+    } catch (e) {
+      print('⚠️ Error clearing FCM token: $e');
+    }
+  }
+
+  /// Refresh FCM token after login - call this after user signs in
+  static Future<void> refreshTokenAfterLogin() async {
+    try {
+      print('🔄 Refreshing FCM token after login...');
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('⚠️ No user logged in, cannot refresh token');
+        return;
+      }
+
+      print('👤 Current user: ${user.uid}');
+
+      // Delete old token from device to force a new one
+      await _firebaseMessaging.deleteToken();
+      print('🗑️ Old token deleted from device');
+
+      // Wait a bit for the deletion to propagate
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Get new token
+      String? newToken = await _firebaseMessaging.getToken();
+
+      if (newToken != null) {
+        print('📱 New FCM token obtained: ${newToken.substring(0, 20)}...');
+        await _saveTokenToFirestore(newToken);
+
+        // Reinitialize Firestore listener for new user
+        await _notificationSubscription?.cancel();
+        _setupFirestoreListener();
+        print('✅ Token refresh complete for user: ${user.uid}');
+      } else {
+        print('⚠️ Failed to obtain new FCM token');
+      }
+    } catch (e) {
+      print('❌ Error refreshing FCM token: $e');
+    }
+  }
+
+  /// Clean up old shown notification IDs to prevent memory leak
+  /// Keeps only the last 100 notification IDs in memory
+  static void _cleanupShownNotifications() {
+    if (_shownNotificationIds.length > 100) {
+      final idsToRemove = _shownNotificationIds.length - 100;
+      final iterator = _shownNotificationIds.iterator;
+      for (var i = 0; i < idsToRemove && iterator.moveNext(); i++) {
+        // Remove the oldest IDs
+      }
+      // Keep only the last 100
+      final lastHundred = _shownNotificationIds
+          .skip(_shownNotificationIds.length - 100)
+          .toSet();
+      _shownNotificationIds.clear();
+      _shownNotificationIds.addAll(lastHundred);
+      print('🧹 Cleaned up old notification IDs, keeping last 100');
+    }
   }
 }

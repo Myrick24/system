@@ -10,7 +10,7 @@ import 'buy_now_screen.dart';
 import 'reserve_screen.dart';
 import 'cart_screen.dart';
 import 'notification_screen.dart';
-import 'messages_screen.dart'; // Keep import for messages screen
+import 'unified_messages_screen.dart';
 import 'buyer/buyer_product_browse.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart'; // Fixed import path
@@ -50,22 +50,24 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currentUser != null) {
       try {
         // First check if user is registered as seller from users collection
-        final userDoc = await _firestore.collection('users').doc(_currentUser!.uid).get();
+        final userDoc =
+            await _firestore.collection('users').doc(_currentUser!.uid).get();
         if (userDoc.exists) {
           final userData = userDoc.data();
           if (userData != null && userData['role'] == 'seller') {
             setState(() {
               _isRegisteredSeller = true;
-              _sellerId = _currentUser!.uid; // Use the user ID as seller ID for now
+              _sellerId =
+                  _currentUser!.uid; // Use the user ID as seller ID for now
             });
-            
+
             // If user is a seller, check for unread notifications
             _checkForUnreadNotifications(_sellerId!);
             _checkForUnreadMessages(_sellerId!);
             return; // Exit early if found in users collection
           }
         }
-        
+
         // Fallback: Check if user is already registered as a seller in sellers collection
         final sellerQuery = await _firestore
             .collection('sellers')
@@ -198,10 +200,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     } else if (index == 1) {
-      // Messages tab - navigate to MessagesScreen
+      // Messages tab - navigate to UnifiedMessagesScreen
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const MessagesScreen()),
+        MaterialPageRoute(builder: (context) => const UnifiedMessagesScreen()),
       );
       return;
     }
@@ -233,7 +235,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const MessagesScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const UnifiedMessagesScreen()),
                   );
                 },
                 tooltip: 'Messages',
@@ -437,7 +440,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 12.0),
                     decoration: BoxDecoration(
                       color: Colors.grey[200],
                       borderRadius: BorderRadius.circular(25),

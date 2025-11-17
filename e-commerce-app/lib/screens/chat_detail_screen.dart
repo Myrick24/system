@@ -39,20 +39,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     super.initState();
     // Mark messages as read when opening the chat
     _markMessagesAsRead();
-    
+
     // Add listener to scroll to bottom when keyboard appears
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
     });
   }
-  
+
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -62,27 +62,30 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       );
     }
   }
-  
+
   Future<void> _markMessagesAsRead() async {
     try {
       // Get the chat document
-      final chatDoc = await _firestore.collection('chats').doc(widget.chatId).get();
-      
+      final chatDoc =
+          await _firestore.collection('chats').doc(widget.chatId).get();
+
       if (!chatDoc.exists) {
         return;
       }
-      
+
       // Update unread count based on user type
       if (widget.isSeller) {
-        await _firestore.collection('chats').doc(widget.chatId).update({
-          'unreadSellerCount': 0
-        });
+        await _firestore
+            .collection('chats')
+            .doc(widget.chatId)
+            .update({'unreadSellerCount': 0});
       } else {
-        await _firestore.collection('chats').doc(widget.chatId).update({
-          'unreadCustomerCount': 0
-        });
+        await _firestore
+            .collection('chats')
+            .doc(widget.chatId)
+            .update({'unreadCustomerCount': 0});
       }
-      
+
       // Mark all messages as read
       final batch = _firestore.batch();
       final messagesQuery = await _firestore
@@ -92,11 +95,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           .where('isRead', isEqualTo: false)
           .where('senderId', isNotEqualTo: _auth.currentUser!.uid)
           .get();
-          
+
       for (final doc in messagesQuery.docs) {
         batch.update(doc.reference, {'isRead': true});
       }
-      
+
       await batch.commit();
     } catch (e) {
       print('Error marking messages as read: $e');
@@ -106,18 +109,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
     if (messageText.isEmpty) return;
-    
+
     setState(() {
       _isSending = true;
     });
-    
+
     try {
       final currentUserId = _auth.currentUser!.uid;
       final timestamp = FieldValue.serverTimestamp();
-      
+
       // Check if chat document exists
-      final chatDoc = await _firestore.collection('chats').doc(widget.chatId).get();
-      
+      final chatDoc =
+          await _firestore.collection('chats').doc(widget.chatId).get();
+
       if (!chatDoc.exists) {
         // Create new chat document if it doesn't exist
         await _firestore.collection('chats').doc(widget.chatId).set({
@@ -137,25 +141,62 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           'lastMessageTimestamp': timestamp,
           'lastSenderId': currentUserId,
           // Increment unread count for recipient
-          widget.isSeller ? 'unreadCustomerCount' : 'unreadSellerCount': FieldValue.increment(1),
+          widget.isSeller ? 'unreadCustomerCount' : 'unreadSellerCount':
+              FieldValue.increment(1),
         });
       }
-      
+
       // Add message to subcollection
       await _firestore
           .collection('chats')
           .doc(widget.chatId)
           .collection('messages')
           .add({
-            'text': messageText,
-            'senderId': currentUserId,
-            'timestamp': timestamp,
-            'isRead': false,
-          });
-          
+        'text': messageText,
+        'senderId': currentUserId,
+        'timestamp': timestamp,
+        'isRead': false,
+      });
+
+      // Send push notification to recipient
+      final recipientId = widget.isSeller ? widget.customerId : widget.sellerId;
+      try {
+        // Get sender name
+        String senderName = 'Someone';
+        final senderDoc =
+            await _firestore.collection('users').doc(currentUserId).get();
+        if (senderDoc.exists) {
+          final senderData = senderDoc.data() as Map<String, dynamic>;
+          senderName =
+              senderData['name'] ?? senderData['fullName'] ?? 'Someone';
+        }
+
+        // Create notification in Firestore (Cloud Function will send FCM)
+        await _firestore.collection('notifications').add({
+          'userId': recipientId,
+          'title': '💬 New Message from $senderName',
+          'body': messageText.length > 100
+              ? '${messageText.substring(0, 100)}...'
+              : messageText,
+          'message': messageText.length > 100
+              ? '${messageText.substring(0, 100)}...'
+              : messageText,
+          'type': 'new_message',
+          'chatId': widget.chatId,
+          'senderId': currentUserId,
+          'senderName': senderName,
+          'read': false,
+          'createdAt': timestamp,
+          'timestamp': timestamp,
+        });
+      } catch (e) {
+        print('Error creating message notification: $e');
+        // Don't fail the message send if notification fails
+      }
+
       // Clear input field
       _messageController.clear();
-      
+
       // Scroll to the bottom to show new message
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
@@ -176,12 +217,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Widget _buildProductBanner() {
     if (widget.product == null) return const SizedBox();
-    
+
     final product = widget.product!;
     final productName = product['name'] ?? product['title'] ?? 'Product';
     final productPrice = product['price']?.toString() ?? 'Price not available';
     final productImage = product['imageUrl'] ?? product['image'];
-    
+
     return Container(
       margin: const EdgeInsets.all(8.0),
       padding: const EdgeInsets.all(12.0),
@@ -222,7 +263,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   ),
           ),
           const SizedBox(width: 12),
-          
+
           // Product Details
           Expanded(
             child: Column(
@@ -259,7 +300,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ],
             ),
           ),
-          
+
           // Action Button
           Icon(
             Icons.chat_bubble,
@@ -312,7 +353,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         children: [
           // Product Banner (if product is provided)
           if (widget.product != null) _buildProductBanner(),
-          
+
           // Messages list
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -326,13 +367,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                
+
                 if (snapshot.hasError) {
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
-                
+
                 final messages = snapshot.data?.docs ?? [];
-                
+
                 if (messages.isEmpty) {
                   return Center(
                     child: Column(
@@ -363,30 +404,30 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     ),
                   );
                 }
-                
+
                 // After loading messages, mark them as read and scroll to bottom
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _markMessagesAsRead();
                   _scrollToBottom();
                 });
-                
+
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final messageData = messages[index].data() as Map<String, dynamic>;
+                    final messageData =
+                        messages[index].data() as Map<String, dynamic>;
                     final messageText = messageData['text'] as String? ?? '';
                     final senderId = messageData['senderId'] as String? ?? '';
                     final timestamp = messageData['timestamp'] as Timestamp?;
                     final isRead = messageData['isRead'] as bool? ?? false;
-                    
+
                     final isMe = senderId == _auth.currentUser!.uid;
                     final time = timestamp?.toDate();
-                    final timeString = time != null 
-                        ? DateFormat('h:mm a').format(time)
-                        : '';
-                    
+                    final timeString =
+                        time != null ? DateFormat('h:mm a').format(time) : '';
+
                     return MessageBubble(
                       message: messageText,
                       isMe: isMe,
@@ -398,7 +439,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               },
             ),
           ),
-          
+
           // Input area
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -439,7 +480,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                
+
                 // Send button
                 Container(
                   height: 45,
@@ -449,7 +490,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
-                    icon: _isSending 
+                    icon: _isSending
                         ? const SizedBox(
                             height: 20,
                             width: 20,
@@ -490,10 +531,11 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (isMe) 
+          if (isMe)
             Padding(
               padding: const EdgeInsets.only(right: 4.0),
               child: Text(
@@ -504,7 +546,6 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-            
           ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -537,7 +578,9 @@ class MessageBubble extends StatelessWidget {
                         Icon(
                           isRead ? Icons.done_all : Icons.done,
                           size: 14,
-                          color: isMe ? (isRead ? Colors.white : Colors.white70) : Colors.grey,
+                          color: isMe
+                              ? (isRead ? Colors.white : Colors.white70)
+                              : Colors.grey,
                         ),
                       ],
                     ),
@@ -545,7 +588,6 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
           ),
-          
           if (!isMe)
             Padding(
               padding: const EdgeInsets.only(left: 4.0),

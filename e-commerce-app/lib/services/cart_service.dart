@@ -391,14 +391,13 @@ class CartService extends ChangeNotifier {
 
                 if (sellerId != null) {
                   // Get the seller document to find their cooperative ID
-                  final sellerDoc = await _firestore
-                      .collection('users')
-                      .doc(sellerId)
-                      .get();
+                  final sellerDoc =
+                      await _firestore.collection('users').doc(sellerId).get();
 
                   if (sellerDoc.exists) {
                     final sellerData = sellerDoc.data() as Map<String, dynamic>;
-                    final cooperativeId = sellerData['cooperativeId'] as String?;
+                    final cooperativeId =
+                        sellerData['cooperativeId'] as String?;
 
                     if (cooperativeId != null) {
                       // Get the cooperative's location
@@ -438,6 +437,15 @@ class CartService extends ChangeNotifier {
 
       // Process regular purchases
       if (purchaseItems.isNotEmpty) {
+        // Group items by seller to send one notification per seller
+        Map<String, List<CartItem>> itemsBySeller = {};
+        for (final item in purchaseItems) {
+          if (!itemsBySeller.containsKey(item.sellerId)) {
+            itemsBySeller[item.sellerId] = [];
+          }
+          itemsBySeller[item.sellerId]!.add(item);
+        }
+
         // For each item, create an individual order for better tracking
         for (final item in purchaseItems) {
           final orderId =
@@ -512,42 +520,6 @@ class CartService extends ChangeNotifier {
           final orderItemRef = orderRef.collection('items').doc(item.id);
           batch.set(orderItemRef, item.toMap());
 
-          // Create notification for the seller (in main notifications collection)
-          final sellerNotificationRef =
-              _firestore.collection('notifications').doc();
-          batch.set(sellerNotificationRef, {
-            'userId': item.sellerId,
-            'title': '🛒 New Order Received',
-            'body':
-                '${orderData['customerName'] ?? 'Customer'} ordered ${item.quantity} ${item.unit} of ${item.productName}',
-            'message':
-                '${orderData['customerName'] ?? 'Customer'} ordered ${item.quantity} ${item.unit} of ${item.productName}',
-            'type': 'new_order',
-            'orderId': orderId,
-            'productId': item.productId,
-            'productName': item.productName,
-            'productImage': item.imageUrl ?? '',
-            'quantity': item.quantity,
-            'unit': item.unit,
-            'totalAmount': item.price * item.quantity,
-            'customerName': orderData['customerName'] ?? 'Customer',
-            'customerContact': orderData['customerContact'],
-            'customerEmail': orderData['userEmail'],
-            'userEmail': orderData['userEmail'],
-            'paymentMethod': paymentMethod,
-            'deliveryMethod': deliveryMethod,
-            // Add location-specific fields
-            if (orderData.containsKey('meetupLocation'))
-              'meetupLocation': orderData['meetupLocation'],
-            if (orderData.containsKey('deliveryAddress'))
-              'deliveryAddress': orderData['deliveryAddress'],
-            if (orderData.containsKey('pickupLocation'))
-              'pickupLocation': orderData['pickupLocation'],
-            'read': false,
-            'createdAt': FieldValue.serverTimestamp(),
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-
           // Add reference to the order document
           final productOrderRef = _firestore
               .collection('product_orders')
@@ -572,6 +544,130 @@ class CartService extends ChangeNotifier {
             // Ensure currentStock matches the new quantity
             'currentStock': FieldValue.increment(-item.quantity),
           });
+        }
+
+        // Create ONE notification per seller (grouped)
+        for (final sellerId in itemsBySeller.keys) {
+          final sellerItems = itemsBySeller[sellerId]!;
+          final firstItem = sellerItems.first;
+
+          // Get user info for the notification
+          User? currentUser = FirebaseAuth.instance.currentUser;
+          String customerName = 'Customer';
+
+          if (currentUser != null) {
+            try {
+              DocumentSnapshot userDoc = await _firestore
+                  .collection('users')
+                  .doc(currentUser.uid)
+                  .get();
+              if (userDoc.exists) {
+                final userData = userDoc.data() as Map<String, dynamic>;
+                customerName =
+                    userData['name'] ?? userData['fullName'] ?? 'Customer';
+              }
+            } catch (e) {
+              print('Error loading user data for notification: $e');
+            }
+          }
+
+          // Build notification message
+          String notificationBody;
+          if (sellerItems.length == 1) {
+            final item = sellerItems.first;
+            notificationBody =
+                '$customerName ordered ${item.quantity} ${item.unit} of ${item.productName}';
+          } else {
+            notificationBody =
+                '$customerName ordered ${sellerItems.length} items from you';
+          }
+
+          // Create notification for the seller (ONE per seller)
+          final sellerNotificationRef =
+              _firestore.collection('notifications').doc();
+          batch.set(sellerNotificationRef, {
+            'userId': sellerId,
+            'title': '🛒 New Order Received',
+            'body': notificationBody,
+            'message': notificationBody,
+            'type': 'new_order',
+            'orderId':
+                'order_${orderTime.millisecondsSinceEpoch}_${firstItem.productId}', // Reference first order
+            'productId': firstItem.productId,
+            'productName': sellerItems.length == 1
+                ? firstItem.productName
+                : '${sellerItems.length} products',
+            'productImage': firstItem.imageUrl ?? '',
+            'quantity': sellerItems.fold<double>(
+                0, (total, item) => total + item.quantity),
+            'itemCount': sellerItems.length,
+            'totalAmount': sellerItems.fold<double>(
+                0, (total, item) => total + (item.price * item.quantity)),
+            'customerName': customerName,
+            'paymentMethod': paymentMethod,
+            'deliveryMethod': deliveryMethod,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+
+          // Notify the cooperative where the seller is registered
+          try {
+            final sellerDoc =
+                await _firestore.collection('users').doc(sellerId).get();
+            if (sellerDoc.exists) {
+              final sellerData = sellerDoc.data() as Map<String, dynamic>;
+              final cooperativeId = sellerData['cooperativeId'] as String?;
+              final sellerName =
+                  sellerData['name'] ?? sellerData['fullName'] ?? 'Seller';
+
+              if (cooperativeId != null && cooperativeId.isNotEmpty) {
+                String coopNotificationBody;
+                if (sellerItems.length == 1) {
+                  coopNotificationBody =
+                      '$customerName ordered ${sellerItems[0].quantity} ${sellerItems[0].unit} of ${sellerItems[0].productName} from $sellerName';
+                } else {
+                  coopNotificationBody =
+                      '$customerName ordered ${sellerItems.length} items from $sellerName';
+                }
+
+                final coopNotificationRef =
+                    _firestore.collection('cooperative_notifications').doc();
+                batch.set(coopNotificationRef, {
+                  'userId': cooperativeId,
+                  'cooperativeId': cooperativeId,
+                  'title': '📦 New Transaction Alert',
+                  'body': coopNotificationBody,
+                  'message': coopNotificationBody,
+                  'type': 'cooperative_order',
+                  'orderId':
+                      'order_${orderTime.millisecondsSinceEpoch}_${firstItem.productId}',
+                  'sellerId': sellerId,
+                  'sellerName': sellerName,
+                  'productId': firstItem.productId,
+                  'productName': sellerItems.length == 1
+                      ? firstItem.productName
+                      : '${sellerItems.length} products',
+                  'productImage': firstItem.imageUrl ?? '',
+                  'quantity': sellerItems.fold<double>(
+                      0, (total, item) => total + item.quantity),
+                  'itemCount': sellerItems.length,
+                  'totalAmount': sellerItems.fold<double>(
+                      0, (total, item) => total + (item.price * item.quantity)),
+                  'customerName': customerName,
+                  'paymentMethod': paymentMethod,
+                  'deliveryMethod': deliveryMethod,
+                  'read': false,
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'timestamp': FieldValue.serverTimestamp(),
+                });
+                print('✅ Cooperative notification created for: $cooperativeId');
+              }
+            }
+          } catch (e) {
+            print('⚠️ Error creating cooperative notification: $e');
+            // Continue with order processing even if cooperative notification fails
+          }
         }
       }
 

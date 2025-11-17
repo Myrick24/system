@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'coop_payment_management.dart';
 import 'seller_review_screen.dart';
+import 'cooperative_notification_screen.dart';
 import '../notification_detail_screen.dart';
 import '../../services/realtime_notification_service.dart';
 import '../cooperative_messages_screen.dart';
@@ -61,7 +62,7 @@ class _CoopDashboardState extends State<CoopDashboard>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _checkAccess();
     _setupNotificationListener();
     _setupCooperativeNotificationListener();
@@ -294,7 +295,7 @@ class _CoopDashboardState extends State<CoopDashboard>
 
     _cooperativeNotificationSubscription = _firestore
         .collection('cooperative_notifications')
-        .where('cooperativeId', isEqualTo: user.uid)
+        .where('userId', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
         .limit(20)
         .snapshots()
@@ -1303,18 +1304,50 @@ class _CoopDashboardState extends State<CoopDashboard>
         backgroundColor: Colors.green,
         elevation: 0,
         actions: [
-          // Messages Icon Button
-          IconButton(
-            icon: const Icon(Icons.chat),
-            tooltip: 'Messages',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CooperativeMessagesScreen(),
+          // Notification Bell Icon with Badge
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const CooperativeNotificationScreen(),
+                    ),
+                  );
+                },
+              ),
+              if (_unreadNotificationCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      _unreadNotificationCount > 99
+                          ? '99+'
+                          : '$_unreadNotificationCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              );
-            },
+            ],
           ),
         ],
         bottom: TabBar(
@@ -1341,6 +1374,7 @@ class _CoopDashboardState extends State<CoopDashboard>
             Tab(icon: Icon(Icons.shopping_cart), text: 'Orders'),
             Tab(icon: Icon(Icons.local_shipping), text: 'Delivery'),
             Tab(icon: Icon(Icons.payments), text: 'Payments'),
+            Tab(icon: Icon(Icons.chat), text: 'Messages'),
           ],
         ),
       ),
@@ -1352,6 +1386,7 @@ class _CoopDashboardState extends State<CoopDashboard>
           _buildOrdersTab(),
           _buildDeliveryTab(),
           _buildPaymentsTab(),
+          const CooperativeMessagesScreen(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

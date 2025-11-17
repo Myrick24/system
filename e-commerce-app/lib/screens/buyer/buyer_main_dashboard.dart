@@ -6,7 +6,7 @@ import '../../services/cart_service.dart';
 import 'buyer_home_content.dart';
 import '../account_screen.dart';
 import '../cart_screen.dart';
-import '../messages_screen.dart';
+import '../unified_messages_screen.dart';
 import '../notification_screen.dart';
 
 class BuyerMainDashboard extends StatefulWidget {
@@ -37,7 +37,7 @@ class _BuyerMainDashboardState extends State<BuyerMainDashboard>
       const BuyerHomeContent(), // Home products
       BuyerOrdersScreen(key: _ordersKey), // Order history
       const CartScreen(), // Shopping cart
-      const MessagesScreen(), // Chat with sellers
+      const UnifiedMessagesScreen(), // Chat with sellers and cooperative
       const AccountScreen(
           key: PageStorageKey(
               'AccountScreen')), // Account and seller registration

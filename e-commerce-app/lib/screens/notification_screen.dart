@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'checkout_screen.dart';
 import 'approval_screen.dart';
-import 'order_status_screen.dart';  // Added import for OrderStatusScreen
+import 'order_status_screen.dart'; // Added import for OrderStatusScreen
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -19,9 +19,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _notifications = [];
   bool _isSeller = false;
+  bool _isCooperative = false;
   String? _sellerId;
   String _errorMessage = '';
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  StreamSubscription<QuerySnapshot>? _cooperativeNotificationSubscription;
 
   @override
   void initState() {
@@ -32,6 +34,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   @override
   void dispose() {
     _notificationSubscription?.cancel();
+    _cooperativeNotificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -44,6 +47,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     try {
       User? currentUser = _auth.currentUser;
       if (currentUser != null) {
+        // Check if user is a seller
         final sellerQuery = await _firestore
             .collection('sellers')
             .where('email', isEqualTo: currentUser.email)
@@ -58,10 +62,28 @@ class _NotificationScreenState extends State<NotificationScreen> {
           });
         }
 
+        // Check if user is a cooperative
+        final userDoc =
+            await _firestore.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          final userRole = userData['role'] ?? '';
+          if (userRole == 'cooperative') {
+            setState(() {
+              _isCooperative = true;
+            });
+          }
+        }
+
         if (_isSeller) {
           await _setupSellerNotificationsListener(_sellerId!);
         } else {
           await _setupBuyerNotificationsListener(currentUser.uid);
+        }
+
+        // If cooperative, also setup cooperative notifications listener
+        if (_isCooperative) {
+          await _setupCooperativeNotificationsListener(currentUser.uid);
         }
       } else {
         setState(() {
@@ -199,6 +221,82 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
     }
   }
+
+  Future<void> _setupCooperativeNotificationsListener(String userId) async {
+    try {
+      _cooperativeNotificationSubscription?.cancel();
+
+      // Listen to the cooperative_notifications collection
+      final cooperativeNotificationsQuery = _firestore
+          .collection('cooperative_notifications')
+          .where('userId', isEqualTo: userId)
+          .limit(50);
+
+      _cooperativeNotificationSubscription =
+          cooperativeNotificationsQuery.snapshots().listen(
+        (snapshot) {
+          List<Map<String, dynamic>> cooperativeNotifications = [];
+
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            data['isCooperativeNotification'] =
+                true; // Flag to distinguish notification type
+            cooperativeNotifications.add(data);
+          }
+
+          // Merge with existing notifications (if any)
+          List<Map<String, dynamic>> allNotifications = [
+            ...cooperativeNotifications
+          ];
+
+          // Sort notifications by timestamp (newest first)
+          allNotifications.sort((a, b) {
+            var aTime = a['timestamp'] as Timestamp?;
+            var bTime = b['timestamp'] as Timestamp?;
+            if (aTime == null || bTime == null) return 0;
+            return bTime.compareTo(aTime);
+          });
+
+          if (mounted) {
+            setState(() {
+              _notifications = allNotifications;
+              _isLoading = false;
+              _errorMessage = '';
+            });
+          }
+
+          // Mark unread notifications as read after viewing
+          List<String> unreadNotificationIds = cooperativeNotifications
+              .where((notification) => notification['status'] == 'unread')
+              .map((notification) => notification['id'] as String)
+              .toList();
+
+          if (unreadNotificationIds.isNotEmpty) {
+            _markCooperativeNotificationsAsRead(unreadNotificationIds);
+          }
+        },
+        onError: (error) {
+          print('Error in cooperative notifications listener: $error');
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Failed to load notifications: $error';
+              _isLoading = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      print('Exception in _setupCooperativeNotificationsListener: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load notifications: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> _markNotificationsAsRead(List<String> notificationIds) async {
     try {
       if (notificationIds.isEmpty) return;
@@ -208,15 +306,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
       for (String notificationId in notificationIds) {
         // For sellers, use seller_notifications collection
         if (_isSeller) {
-          final notificationRef = _firestore
-              .collection('seller_notifications')
-              .doc(notificationId);
+          final notificationRef =
+              _firestore.collection('seller_notifications').doc(notificationId);
           batch.update(notificationRef, {'status': 'read'});
         } else {
           // For buyers, use notifications collection
-          final notificationRef = _firestore
-              .collection('notifications')
-              .doc(notificationId);
+          final notificationRef =
+              _firestore.collection('notifications').doc(notificationId);
           batch.update(notificationRef, {'read': true});
         }
       }
@@ -224,6 +320,26 @@ class _NotificationScreenState extends State<NotificationScreen> {
       await batch.commit();
     } catch (e) {
       print('Error marking notifications as read: $e');
+    }
+  }
+
+  Future<void> _markCooperativeNotificationsAsRead(
+      List<String> notificationIds) async {
+    try {
+      if (notificationIds.isEmpty) return;
+
+      final batch = _firestore.batch();
+
+      for (String notificationId in notificationIds) {
+        final notificationRef = _firestore
+            .collection('cooperative_notifications')
+            .doc(notificationId);
+        batch.update(notificationRef, {'status': 'read'});
+      }
+
+      await batch.commit();
+    } catch (e) {
+      print('Error marking cooperative notifications as read: $e');
     }
   }
 
@@ -263,9 +379,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
     if (type == 'new_order') {
       iconData = Icons.shopping_bag;
       iconColor = Colors.green;
+    } else if (type == 'cooperative_order') {
+      iconData = Icons.shopping_cart;
+      iconColor = Colors.blue;
+    } else if (type == 'new_message') {
+      iconData = Icons.message;
+      iconColor = Colors.purple;
     } else if (type == 'new_reservation') {
       iconData = Icons.event;
       iconColor = Colors.blue;
+    } else if (type == 'seller_application') {
+      iconData = Icons.person_add;
+      iconColor = Colors.orange;
     } else {
       switch (status.toLowerCase()) {
         case 'pending':
@@ -298,6 +423,82 @@ class _NotificationScreenState extends State<NotificationScreen> {
       backgroundColor: iconColor.withOpacity(0.1),
       radius: 24,
       child: Icon(iconData, color: iconColor),
+    );
+  }
+
+  void _showNotificationDetails(Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(data['title'] ?? 'Notification'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(data['body'] ?? data['message'] ?? ''),
+                const SizedBox(height: 16),
+                if (data['sellerName'] != null) ...[
+                  _buildDetailRow('Seller', data['sellerName']),
+                ],
+                if (data['customerName'] != null) ...[
+                  _buildDetailRow('Customer', data['customerName']),
+                ],
+                if (data['productName'] != null) ...[
+                  _buildDetailRow('Product', data['productName']),
+                ],
+                if (data['quantity'] != null) ...[
+                  _buildDetailRow('Quantity', '${data['quantity']}'),
+                ],
+                if (data['totalAmount'] != null) ...[
+                  _buildDetailRow(
+                      'Amount', '₱${data['totalAmount'].toStringAsFixed(2)}'),
+                ],
+                if (data['paymentMethod'] != null) ...[
+                  _buildDetailRow('Payment', data['paymentMethod']),
+                ],
+                if (data['deliveryMethod'] != null) ...[
+                  _buildDetailRow('Delivery', data['deliveryMethod']),
+                ],
+                if (data['timestamp'] != null) ...[
+                  _buildDetailRow('Time', _formatTimestamp(data['timestamp'])),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
     );
   }
 
@@ -406,7 +607,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isSeller ? 'Seller Notifications' : 'Notifications'),
+        title: Text(_isCooperative
+            ? 'Cooperative Notifications'
+            : _isSeller
+                ? 'Seller Notifications'
+                : 'Notifications'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
@@ -449,286 +654,342 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 itemCount: _notifications.length,
                 itemBuilder: (context, index) {
                   final notification = _notifications[index];
-                  final isUnread = _isSeller && notification['status'] == 'unread';
-                  final isNewOrder = _isSeller && notification['type'] == 'new_order';
-                  final needsApproval = _isSeller && notification['needsApproval'] == true;
-                  final isApproved = !_isSeller && notification['status'] == 'approved';
-                  final isSellerApproved = _isSeller && notification['type'] == 'order_approved';
-                  final isSellerDeclined = _isSeller && notification['type'] == 'order_declined';
+                  final isUnread =
+                      _isSeller && notification['status'] == 'unread';
+                  final isNewOrder =
+                      _isSeller && notification['type'] == 'new_order';
+                  final needsApproval =
+                      _isSeller && notification['needsApproval'] == true;
+                  final isApproved =
+                      !_isSeller && notification['status'] == 'approved';
+                  final isSellerApproved =
+                      _isSeller && notification['type'] == 'order_approved';
+                  final isSellerDeclined =
+                      _isSeller && notification['type'] == 'order_declined';
 
                   return Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    elevation: isUnread || isNewOrder || needsApproval || isApproved || isSellerApproved || isSellerDeclined ? 3 : 1,
-                    color: needsApproval 
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      elevation: isUnread ||
+                              isNewOrder ||
+                              needsApproval ||
+                              isApproved ||
+                              isSellerApproved ||
+                              isSellerDeclined
+                          ? 3
+                          : 1,
+                      color: needsApproval
                           ? Colors.amber.shade50
-                          : isApproved || isSellerApproved 
-                              ? Colors.green.shade50 
-                              : isSellerDeclined 
+                          : isApproved || isSellerApproved
+                              ? Colors.green.shade50
+                              : isSellerDeclined
                                   ? Colors.red.shade50
                                   : isNewOrder
                                       ? Colors.orange.shade50
                                       : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: isUnread || isNewOrder || needsApproval
-                          ? BorderSide(color: needsApproval ? Colors.amber : isNewOrder ? Colors.orange : Colors.green, width: 1)
-                          : isApproved || isSellerApproved
-                              ? BorderSide(color: Colors.green.shade300, width: 1)
-                              : isSellerDeclined
-                                  ? BorderSide(color: Colors.red.shade300, width: 1)
-                                  : BorderSide.none,
-                    ),
-                    child: InkWell(
-                      onTap: () {
-                        if (notification.containsKey('orderId')) {
-                          print('Notification tapped: ${notification['type']} - ${notification['status']}');
-                          try {
-                            if (_isSeller && (notification['type'] == 'new_order' || notification['status'] == 'unread' || notification['status'] == 'pending')) {
-                              // For sellers, navigate to the approval screen for new orders
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ApprovalScreen(
-                                    orderId: notification['orderId'],
-                                    notificationData: notification,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: isUnread || isNewOrder || needsApproval
+                            ? BorderSide(
+                                color: needsApproval
+                                    ? Colors.amber
+                                    : isNewOrder
+                                        ? Colors.orange
+                                        : Colors.green,
+                                width: 1)
+                            : isApproved || isSellerApproved
+                                ? BorderSide(
+                                    color: Colors.green.shade300, width: 1)
+                                : isSellerDeclined
+                                    ? BorderSide(
+                                        color: Colors.red.shade300, width: 1)
+                                    : BorderSide.none,
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          // Handle cooperative notifications differently
+                          if (_isCooperative ||
+                              notification['isCooperativeNotification'] ==
+                                  true) {
+                            _showNotificationDetails(notification);
+                          } else if (notification.containsKey('orderId')) {
+                            print(
+                                'Notification tapped: ${notification['type']} - ${notification['status']}');
+                            try {
+                              if (_isSeller &&
+                                  (notification['type'] == 'new_order' ||
+                                      notification['status'] == 'unread' ||
+                                      notification['status'] == 'pending')) {
+                                // For sellers, navigate to the approval screen for new orders
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ApprovalScreen(
+                                      orderId: notification['orderId'],
+                                      notificationData: notification,
+                                    ),
                                   ),
-                                ),
-                              ).then((result) {
-                                // If order was approved or declined, refresh the notifications
-                                if (result == 'approved' || result == 'declined') {
-                                  _loadUserInfo();
-                                }
-                              });
-                            } else if (_isSeller && (notification['type'] == 'order_approved' || notification['type'] == 'order_declined')) {
-                              // For approved/declined orders, navigate to order status screen
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => OrderStatusScreen(
-                                    orderId: notification['orderId'],
+                                ).then((result) {
+                                  // If order was approved or declined, refresh the notifications
+                                  if (result == 'approved' ||
+                                      result == 'declined') {
+                                    _loadUserInfo();
+                                  }
+                                });
+                              } else if (_isSeller &&
+                                  (notification['type'] == 'order_approved' ||
+                                      notification['type'] ==
+                                          'order_declined')) {
+                                // For approved/declined orders, navigate to order status screen
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => OrderStatusScreen(
+                                      orderId: notification['orderId'],
+                                    ),
                                   ),
-                                ),
-                              );
-                            } else {
-                              // For buyers, navigate to the checkout/order details screen
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => CheckoutScreen(
-                                    orderId: notification['orderId'],
+                                );
+                              } else {
+                                // For buyers, navigate to the checkout/order details screen
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => CheckoutScreen(
+                                      orderId: notification['orderId'],
+                                    ),
                                   ),
+                                );
+                              }
+                            } catch (e) {
+                              print(
+                                  'Error navigating to order details screen: $e');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('Error viewing order details: $e'),
+                                  duration: const Duration(seconds: 5),
                                 ),
                               );
                             }
-                          } catch (e) {
-                            print('Error navigating to order details screen: $e');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error viewing order details: $e'),
-                                duration: const Duration(seconds: 5),
-                              ),
-                            );
+                          } else {
+                            print(
+                                'No orderId found in notification: $notification');
                           }
-                        } else {
-                          print('No orderId found in notification: $notification');
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _getNotificationIcon(
-                              notification['type'] ?? 'order_status',
-                              notification['status'] ?? 'pending',
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (isUnread)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'NEW',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _getNotificationIcon(
+                                notification['type'] ?? 'order_status',
+                                notification['status'] ?? 'pending',
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (isUnread)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'NEW',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (isApproved)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'APPROVED',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    if (isApproved)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'APPROVED',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (isSellerApproved)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'YOU APPROVED',
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    if (isSellerApproved)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'YOU APPROVED',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (isSellerDeclined)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'YOU DECLINED',
-                                        style: TextStyle(
-                                          color: Colors.red,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    if (isSellerDeclined)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'YOU DECLINED',
+                                          style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (isNewOrder)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.orange.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'NEW ORDER',
-                                        style: TextStyle(
-                                          color: Colors.orange,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    if (isNewOrder)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'NEW ORDER',
+                                          style: TextStyle(
+                                            color: Colors.orange,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (needsApproval)
-                                    Container(
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.amber.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'NEEDS APPROVAL',
-                                        style: TextStyle(
-                                          color: Colors.amber,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10,
+                                    if (needsApproval)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withOpacity(0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'NEEDS APPROVAL',
+                                          style: TextStyle(
+                                            color: Colors.amber,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  Text(
-                                    notification['title'] ?? notification['message'] ?? notification['body'] ?? 'Notification',
-                                    style: TextStyle(
-                                      fontWeight: isUnread
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (notification.containsKey('body') && notification['title'] != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        notification['body'],
-                                        style: const TextStyle(
-                                          color: Colors.grey,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  if (notification.containsKey('productName'))
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        'Product: ${notification['productName']}',
-                                        style: const TextStyle(
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                                  if (notification.containsKey('quantity') &&
-                                      notification.containsKey('totalAmount'))
                                     Text(
-                                      'Quantity: ${notification['quantity']} — ₱${notification['totalAmount'].toStringAsFixed(2)}',
+                                      notification['title'] ??
+                                          notification['message'] ??
+                                          notification['body'] ??
+                                          'Notification',
+                                      style: TextStyle(
+                                        fontWeight: isUnread
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    if (notification.containsKey('body') &&
+                                        notification['title'] != null)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 4),
+                                        child: Text(
+                                          notification['body'],
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    if (notification.containsKey('productName'))
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 4),
+                                        child: Text(
+                                          'Product: ${notification['productName']}',
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    if (notification.containsKey('quantity') &&
+                                        notification.containsKey('totalAmount'))
+                                      Text(
+                                        'Quantity: ${notification['quantity']} — ₱${notification['totalAmount'].toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _formatTimestamp(
+                                          notification['timestamp']),
                                       style: const TextStyle(
                                         color: Colors.grey,
+                                        fontSize: 12,
                                       ),
                                     ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _formatTimestamp(notification['timestamp']),
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                            if (notification.containsKey('orderId'))
-                              const Icon(
-                                Icons.arrow_forward_ios,
-                                color: Colors.grey,
-                                size: 16,
-                              ),
-                          ],
+                              if (notification.containsKey('orderId'))
+                                const Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Colors.grey,
+                                  size: 16,
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    )
-                  );
+                      ));
                 },
               ),
             ),

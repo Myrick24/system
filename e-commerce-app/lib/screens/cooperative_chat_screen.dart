@@ -10,7 +10,8 @@ class CooperativeChatScreen extends StatefulWidget {
   final String otherPartyName; // Cooperative name or user name
   final String cooperativeId;
   final String userId; // Current user (seller or buyer)
-  final bool isCooperative; // true if current user is cooperative, false if seller/buyer
+  final bool
+      isCooperative; // true if current user is cooperative, false if seller/buyer
   final String chatType; // 'seller-cooperative' or 'buyer-cooperative'
 
   const CooperativeChatScreen({
@@ -38,19 +39,19 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
   void initState() {
     super.initState();
     _markMessagesAsRead();
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
     });
   }
-  
+
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -60,16 +61,16 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
       );
     }
   }
-  
+
   Future<void> _markMessagesAsRead() async {
     try {
       final chatDoc = await _firestore
           .collection('cooperative_chats')
           .doc(widget.chatId)
           .get();
-      
+
       if (!chatDoc.exists) return;
-      
+
       // Update unread count based on user type
       if (widget.isCooperative) {
         await _firestore
@@ -82,7 +83,7 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
             .doc(widget.chatId)
             .update({'unreadUserCount': 0});
       }
-      
+
       // Mark all messages as read
       final batch = _firestore.batch();
       final messagesQuery = await _firestore
@@ -92,11 +93,11 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
           .where('isRead', isEqualTo: false)
           .where('senderId', isNotEqualTo: _auth.currentUser!.uid)
           .get();
-          
+
       for (final doc in messagesQuery.docs) {
         batch.update(doc.reference, {'isRead': true});
       }
-      
+
       await batch.commit();
     } catch (e) {
       print('Error marking messages as read: $e');
@@ -106,24 +107,40 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
   Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
     if (messageText.isEmpty) return;
-    
+
     setState(() {
       _isSending = true;
     });
-    
+
     try {
       final currentUserId = _auth.currentUser!.uid;
       final timestamp = FieldValue.serverTimestamp();
-      
+
+      // Get sender's name from users collection
+      String senderName = 'User';
+      try {
+        final userDoc =
+            await _firestore.collection('users').doc(currentUserId).get();
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          senderName = userData['name'] ?? userData['fullName'] ?? 'User';
+        }
+      } catch (e) {
+        print('Error fetching user name: $e');
+      }
+
       // Check if chat document exists
       final chatDoc = await _firestore
           .collection('cooperative_chats')
           .doc(widget.chatId)
           .get();
-      
+
       if (!chatDoc.exists) {
         // Create new chat document
-        await _firestore.collection('cooperative_chats').doc(widget.chatId).set({
+        await _firestore
+            .collection('cooperative_chats')
+            .doc(widget.chatId)
+            .set({
           'cooperativeId': widget.cooperativeId,
           'userId': widget.userId,
           'chatType': widget.chatType,
@@ -131,21 +148,25 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
           'lastMessage': messageText,
           'lastMessageTimestamp': timestamp,
           'lastSenderId': currentUserId,
+          'userName': senderName,
           'unreadUserCount': widget.isCooperative ? 1 : 0,
           'unreadCooperativeCount': widget.isCooperative ? 0 : 1,
         });
       } else {
         // Update existing chat document
-        await _firestore.collection('cooperative_chats').doc(widget.chatId).update({
+        await _firestore
+            .collection('cooperative_chats')
+            .doc(widget.chatId)
+            .update({
           'lastMessage': messageText,
           'lastMessageTimestamp': timestamp,
           'lastSenderId': currentUserId,
-          widget.isCooperative
-              ? 'unreadUserCount'
-              : 'unreadCooperativeCount': FieldValue.increment(1),
+          'userName': senderName,
+          widget.isCooperative ? 'unreadUserCount' : 'unreadCooperativeCount':
+              FieldValue.increment(1),
         });
       }
-      
+
       // Add message to subcollection
       await _firestore
           .collection('cooperative_chats')
@@ -157,9 +178,27 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
         'timestamp': timestamp,
         'isRead': false,
       });
-          
+
+      // Create push notification for the recipient
+      final recipientId =
+          widget.isCooperative ? widget.userId : widget.cooperativeId;
+      final truncatedMessage = messageText.length > 100
+          ? '${messageText.substring(0, 100)}...'
+          : messageText;
+
+      await _firestore.collection('cooperative_notifications').add({
+        'userId': recipientId,
+        'type': 'new_message',
+        'title': '💬 New Message from $senderName',
+        'body': truncatedMessage,
+        'timestamp': timestamp,
+        'isRead': false,
+        'chatId': widget.chatId,
+        'chatType': widget.chatType,
+      });
+
       _messageController.clear();
-      
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom();
       });
@@ -233,7 +272,7 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
               ],
             ),
           ),
-          
+
           // Messages list
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -249,15 +288,15 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
                     child: Text('Error loading messages: ${snapshot.error}'),
                   );
                 }
-                
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: CircularProgressIndicator(color: Colors.green),
                   );
                 }
-                
+
                 final messages = snapshot.data?.docs ?? [];
-                
+
                 if (messages.isEmpty) {
                   return Center(
                     child: Column(
@@ -285,24 +324,25 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
                     ),
                   );
                 }
-                
+
                 // Scroll to bottom when messages update
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _scrollToBottom();
                 });
-                
+
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final messageDoc = messages[index];
-                    final messageData = messageDoc.data() as Map<String, dynamic>;
+                    final messageData =
+                        messageDoc.data() as Map<String, dynamic>;
                     final senderId = messageData['senderId'] as String;
                     final text = messageData['text'] as String;
                     final timestamp = messageData['timestamp'] as Timestamp?;
                     final isMe = senderId == _auth.currentUser!.uid;
-                    
+
                     return _buildMessageBubble(
                       text: text,
                       isMe: isMe,
@@ -313,7 +353,7 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
               },
             ),
           ),
-          
+
           // Message input area
           Container(
             padding: const EdgeInsets.all(12),
@@ -389,7 +429,7 @@ class _CooperativeChatScreenState extends State<CooperativeChatScreen> {
     final timeString = timestamp != null
         ? DateFormat('h:mm a').format(timestamp.toDate())
         : '';
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(

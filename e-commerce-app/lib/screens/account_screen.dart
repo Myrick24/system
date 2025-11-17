@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'registration_screen.dart';
 import 'notifications/account_notifications.dart';
+import '../services/auth_service.dart';
 import '../services/notification_service.dart'; // Import our notification service
 import '../theme/app_theme.dart'; // Import the app theme
 import 'cooperative/coop_dashboard.dart'; // Import Coop Dashboard
@@ -300,7 +301,7 @@ class _AccountScreenState extends State<AccountScreen>
   Future<void> _logout() async {
     try {
       await NotificationService.resetNotificationState();
-      await _auth.signOut();
+      await AuthService.signOut();
 
       if (mounted) {
         Navigator.pushAndRemoveUntil(

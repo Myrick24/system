@@ -1,9 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'realtime_notification_service.dart';
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Cache for home route to avoid repeated queries
+  static String? _cachedHomeRoute;
+  static String? _cachedUserId;
 
   /// Get current user
   static User? get currentUser => _auth.currentUser;
@@ -65,26 +70,41 @@ class AuthService {
   /// Get the appropriate home screen based on user role
   static Future<String> getHomeRoute() async {
     if (!isLoggedIn) {
+      _cachedHomeRoute = null;
+      _cachedUserId = null;
       return '/guest'; // Guest screen
     }
 
+    final currentUserId = currentUser?.uid;
+
+    // Return cached route if user hasn't changed
+    if (_cachedHomeRoute != null && _cachedUserId == currentUserId) {
+      return _cachedHomeRoute!;
+    }
+
+    // User changed or no cache, fetch fresh data
     final userRole = await getCurrentUserRole();
 
+    String route;
     switch (userRole) {
       case 'admin':
-        return '/admin';
+        route = '/admin';
+        break;
       case 'seller':
-        // Check seller approval status
-        final sellerStatus = await getSellerStatus();
-        if (sellerStatus['isSeller'] == true) {
-          return '/unified'; // Unified dashboard for sellers
-        }
-        return '/unified'; // Default to unified dashboard
+        route = '/unified';
+        break;
       case 'buyer':
       case 'cooperative':
       default:
-        return '/unified'; // Unified dashboard for buyers, cooperatives, and default
+        route =
+            '/unified'; // Unified dashboard for buyers, cooperatives, and default
     }
+
+    // Cache the route
+    _cachedHomeRoute = route;
+    _cachedUserId = currentUserId;
+
+    return route;
   }
 
   /// Check if user should be redirected based on authentication status
@@ -119,7 +139,30 @@ class AuthService {
   /// Sign out current user
   static Future<void> signOut() async {
     try {
+      // Clear FCM token from Firestore before signing out
+      final user = _auth.currentUser;
+      if (user != null) {
+        try {
+          // Delete FCM token from device
+          await RealtimeNotificationService.clearFCMToken();
+
+          // Remove FCM token from Firestore
+          await _firestore.collection('users').doc(user.uid).set({
+            'fcmToken': FieldValue.delete(),
+          }, SetOptions(merge: true));
+          print('🗑️ FCM token removed from Firestore for user: ${user.uid}');
+        } catch (tokenError) {
+          print(
+              '⚠️ Error removing FCM token (continuing with logout): $tokenError');
+          // Continue with logout even if token removal fails
+        }
+      }
+
+      // Clear cached route
+      _cachedHomeRoute = null;
+      _cachedUserId = null;
       await _auth.signOut();
+      print('✅ User signed out successfully');
     } catch (e) {
       print('Error signing out: $e');
       throw e;

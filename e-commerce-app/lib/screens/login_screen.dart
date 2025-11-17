@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/notification_manager.dart';
+import '../services/realtime_notification_service.dart';
 import 'signup_screen.dart';
 import 'registration_screen.dart';
 import 'admin/admin_dashboard.dart';
@@ -74,6 +75,9 @@ class _LoginScreenState extends State<LoginScreen> {
         email: email,
         password: password,
       );
+
+      // Refresh FCM token for the newly logged in user
+      await RealtimeNotificationService.refreshTokenAfterLogin();
 
       // Check if user is admin
       DocumentSnapshot userDoc = await FirebaseFirestore.instance

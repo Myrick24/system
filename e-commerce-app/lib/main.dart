@@ -20,8 +20,7 @@ import 'screens/admin/admin_dashboard.dart';
 import 'screens/unified_main_dashboard.dart';
 import 'screens/cooperative/coop_dashboard.dart';
 import 'theme/app_theme.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:async';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // Create a global singleton instance of CartService that can be accessed from anywhere
 final cartService = CartService();
@@ -29,11 +28,40 @@ final cartService = CartService();
 // Create a global navigatorKey for handling deep links
 final navigatorKey = GlobalKey<NavigatorState>();
 
+/// Top-level function to handle background messages
+/// This MUST be a top-level function (not a class method) for FCM to work
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Initialize Firebase if not already initialized
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  print('🔔 Background message received!');
+  print('   Message ID: ${message.messageId}');
+  print('   Title: ${message.notification?.title}');
+  print('   Body: ${message.notification?.body}');
+  print('   Data: ${message.data}');
+
+  // Note: We don't manually show notifications here because:
+  // - Android/iOS automatically displays FCM notifications when app is in background/terminated
+  // - The Cloud Function already includes notification payload in the FCM message
+  // - Showing local notification here would create duplicates
+
+  // The background handler is still needed for:
+  // - Processing data-only messages
+  // - Updating local database
+  // - Logging/analytics
+
+  print('✅ Background message processed (notification displayed by system)');
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Set up background message handler BEFORE initializing notification service
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Initialize real-time push notifications
   await RealtimeNotificationService.initialize();
@@ -90,75 +118,24 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  Timer? _verificationCheckTimer;
-
   @override
   void initState() {
     super.initState();
     _initializeApp();
-    // Periodically check for email verification status in case verification happens externally
-    _startVerificationCheckTimer();
-  }
-
-  void _startVerificationCheckTimer() {
-    // Check every 2 seconds if email got verified (helpful when link is clicked in browser)
-    _verificationCheckTimer =
-        Timer.periodic(const Duration(seconds: 2), (_) async {
-      try {
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null) {
-          await currentUser.reload();
-
-          // If email becomes verified, navigate to home
-          if (FirebaseAuth.instance.currentUser?.emailVerified ?? false) {
-            print('✅ Email verification detected! Navigating to home...');
-            if (mounted) {
-              _verificationCheckTimer?.cancel();
-              navigatorKey.currentState?.pushReplacementNamed('/home');
-            }
-            return;
-          }
-        }
-      } catch (e) {
-        print('Error checking verification status: $e');
-      }
-    });
   }
 
   @override
   void dispose() {
-    _verificationCheckTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _initializeApp() async {
     // Wait for a minimum splash duration
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
     try {
-      // Check if there's a current user and if they just verified their email
-      final currentUser = FirebaseAuth.instance.currentUser;
-
-      // Refresh user to get the latest verification status
-      if (currentUser != null) {
-        await currentUser.reload();
-        final refreshedUser = FirebaseAuth.instance.currentUser;
-
-        // If user is logged in and their email is verified, they likely clicked the verification link
-        if (refreshedUser?.emailVerified ?? false) {
-          print('📧 Email verified! Showing verification pending screen...');
-          if (mounted) {
-            Navigator.pushReplacementNamed(
-              context,
-              '/home',
-            );
-          }
-          return;
-        }
-      }
-
       // Check if user is logged in and get appropriate route
       if (AuthService.isLoggedIn) {
         final homeRoute = await AuthService.getHomeRoute();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/admin_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import 'dashboard_home.dart';
 import 'cooperative_management.dart';
@@ -209,7 +210,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 );
                 // Sign out from Firebase Auth
                 try {
-                  await FirebaseAuth.instance.signOut();
+                  await AuthService.signOut();
                   // Dismiss the loading dialog if still mounted
                   if (mounted) Navigator.pop(context);
                   // Navigate to login screen, removing all previous routes
