@@ -893,29 +893,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       // Use the same pattern as seller_order_management
       final now = DateTime.now();
 
-      print('=== DECLINING ORDER ===');
-      print('Order ID: $orderId');
-      print('Reason: $reason');
-      print('Setting status to: cancelled');
-      print('Order buyerId: ${widget.order['buyerId']}');
-      print('Order userId: ${widget.order['userId']}');
-
       await _firestore.collection('orders').doc(orderId).update({
-        'status': 'cancelled',
+        'status': 'declined',
         'notes': 'Declined: $reason',
-        'declineReason': reason,
-        'declinedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'statusUpdates': FieldValue.arrayUnion([
           {
-            'status': 'cancelled',
+            'status': 'declined',
             'reason': reason,
             'timestamp': Timestamp.fromDate(now),
           }
         ]),
       });
-
-      print('✅ Order status updated to cancelled');
 
       // Return stock to product inventory
       final productId = widget.order['productId'];
@@ -933,49 +922,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         }
       }
 
-      // Verify the order was updated
-      final updatedOrderDoc = await _firestore.collection('orders').doc(orderId).get();
-      if (updatedOrderDoc.exists) {
-        final updatedData = updatedOrderDoc.data();
-        print('📋 Updated order data:');
-        print('  status: ${updatedData?['status']}');
-        print('  buyerId: ${updatedData?['buyerId']}');
-        print('  userId: ${updatedData?['userId']}');
-        print('  productName: ${updatedData?['productName']}');
-        print('  declineReason: ${updatedData?['declineReason']}');
-        
-        // Ensure the order has buyerId field (critical for buyer to see it)
-        if (updatedData?['buyerId'] == null && updatedData?['userId'] != null) {
-          print('⚠️ WARNING: Order has userId but no buyerId. Adding buyerId field...');
-          await _firestore.collection('orders').doc(orderId).update({
-            'buyerId': updatedData?['userId'],
-          });
-          print('✅ Added buyerId field to order');
-        }
-      }
-
       // Send notification to buyer
       final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
-      print('📧 Sending notification to buyerId: $buyerId');
-      
       if (buyerId != null) {
         await _firestore.collection('notifications').add({
           'userId': buyerId,
           'orderId': orderId,
           'type': 'order_status',
-          'status': 'cancelled',
+          'status': 'declined',
           'message':
               'Your order for ${widget.order['productName']} was declined: $reason',
           'productName': widget.order['productName'],
           'timestamp': FieldValue.serverTimestamp(),
           'isRead': false,
         });
-        print('✅ Notification sent');
-      } else {
-        print('⚠️ Warning: No buyerId found, notification not sent');
       }
-
-      print('=== ORDER DECLINE COMPLETE ===');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
