@@ -110,7 +110,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         final status = data['status'] as String?;
         final name = data['name'] ?? 'Unknown';
         print('   • Cooperative: $name | Status: "$status" | ID: ${doc.id}');
-        return status == 'active' || status == null || status.isEmpty;
+        return status == 'active' ||
+            status == 'approved' ||
+            status == null ||
+            status.isEmpty;
       }).toList();
 
       print('✅ ${activeCoops.length} active cooperatives ready to use');

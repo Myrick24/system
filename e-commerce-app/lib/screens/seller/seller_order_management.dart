@@ -87,35 +87,35 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
           final customerId = orderData['buyerId'] ?? orderData['userId'];
           if (customerId != null) {
             try {
-              final userDoc = await _firestore
-                  .collection('users')
-                  .doc(customerId)
-                  .get();
+              final userDoc =
+                  await _firestore.collection('users').doc(customerId).get();
               if (userDoc.exists) {
                 final userData = userDoc.data() as Map<String, dynamic>;
                 orderData['customerName'] = userData['name'] ??
                     userData['fullName'] ??
                     'Unknown Customer';
-                
+
                 // Safely get phone number - handle different field types and names
                 String phoneNumber = 'No contact information';
-                
+
                 // Check all possible phone field names
                 final possiblePhoneFields = [
-                  'mobile',        // Most common from signup
+                  'mobile', // Most common from signup
                   'phone',
                   'phoneNumber',
                   'contactNumber',
                   'mobileNumber',
                 ];
-                
+
                 for (final field in possiblePhoneFields) {
-                  if (userData[field] != null && userData[field] is String && userData[field].toString().trim().isNotEmpty) {
+                  if (userData[field] != null &&
+                      userData[field] is String &&
+                      userData[field].toString().trim().isNotEmpty) {
                     phoneNumber = userData[field].toString().trim();
                     break;
                   }
                 }
-                
+
                 orderData['customerContact'] = phoneNumber;
                 orderData['customerEmail'] = userData['email'] ?? 'No email';
 
@@ -125,18 +125,24 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                 print('All user fields: ${userData.keys.toList()}');
                 print('name: ${userData['name']}');
                 print('fullName: ${userData['fullName']}');
-                print('mobile: ${userData['mobile']} (type: ${userData['mobile']?.runtimeType})');
-                print('phone: ${userData['phone']} (type: ${userData['phone']?.runtimeType})');
-                print('phoneNumber: ${userData['phoneNumber']} (type: ${userData['phoneNumber']?.runtimeType})');
-                print('contactNumber: ${userData['contactNumber']} (type: ${userData['contactNumber']?.runtimeType})');
-                print('mobileNumber: ${userData['mobileNumber']} (type: ${userData['mobileNumber']?.runtimeType})');
+                print(
+                    'mobile: ${userData['mobile']} (type: ${userData['mobile']?.runtimeType})');
+                print(
+                    'phone: ${userData['phone']} (type: ${userData['phone']?.runtimeType})');
+                print(
+                    'phoneNumber: ${userData['phoneNumber']} (type: ${userData['phoneNumber']?.runtimeType})');
+                print(
+                    'contactNumber: ${userData['contactNumber']} (type: ${userData['contactNumber']?.runtimeType})');
+                print(
+                    'mobileNumber: ${userData['mobileNumber']} (type: ${userData['mobileNumber']?.runtimeType})');
                 print('Selected phone number: $phoneNumber');
 
                 // Get BUYER'S address from user profile (their signup address)
                 // Safely handle address fields that might be Maps or Strings
                 String buyerAddr = 'No address';
-                
-                if (userData['fullAddress'] != null && userData['fullAddress'] is String) {
+
+                if (userData['fullAddress'] != null &&
+                    userData['fullAddress'] is String) {
                   buyerAddr = userData['fullAddress'];
                 } else if (userData['address'] != null) {
                   if (userData['address'] is String) {
@@ -144,14 +150,17 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                   } else if (userData['address'] is Map) {
                     // Handle address as Map (e.g., {street, city, state})
                     final addrMap = userData['address'] as Map;
-                    buyerAddr = addrMap['fullAddress'] ?? addrMap.values.where((v) => v != null).join(', ');
+                    buyerAddr = addrMap['fullAddress'] ??
+                        addrMap.values.where((v) => v != null).join(', ');
                   }
-                } else if (userData['location'] != null && userData['location'] is String) {
+                } else if (userData['location'] != null &&
+                    userData['location'] is String) {
                   buyerAddr = userData['location'];
-                } else if (userData['deliveryAddress'] != null && userData['deliveryAddress'] is String) {
+                } else if (userData['deliveryAddress'] != null &&
+                    userData['deliveryAddress'] is String) {
                   buyerAddr = userData['deliveryAddress'];
                 }
-                
+
                 orderData['buyerAddress'] = buyerAddr;
                 orderData['customerAddress'] = buyerAddr;
 
@@ -257,11 +266,28 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
   }
 
   String _getOrderNumber(String orderId) {
-    // Extract a clean order number from the Firebase document ID
-    // Take the last 6 characters and convert to uppercase for readability
-    if (orderId.length > 6) {
-      return orderId.substring(orderId.length - 6).toUpperCase();
+    // Handle timestamp-based order IDs: order_1234567890123_productId
+    if (orderId.startsWith('order_') && orderId.contains('_')) {
+      final parts = orderId.split('_');
+      if (parts.length >= 3) {
+        // Extract timestamp
+        final timestamp = int.tryParse(parts[1]);
+        if (timestamp != null) {
+          final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+          final dateStr =
+              '${date.day.toString().padLeft(2, '0')}${date.month.toString().padLeft(2, '0')}${date.year.toString().substring(2)}';
+          // Format: DDMMYY-XXXX (last 4 of timestamp)
+          return '$dateStr-${parts[1].substring(parts[1].length - 4)}';
+        }
+      }
     }
+
+    // For Firebase auto-generated IDs, use first 4 + last 4
+    if (orderId.length > 12) {
+      return '${orderId.substring(0, 4)}-${orderId.substring(orderId.length - 4)}'
+          .toUpperCase();
+    }
+
     return orderId.toUpperCase();
   }
 

@@ -306,6 +306,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
     });
 
     try {
+      print('=== DECLINING ORDER (Approval Screen) ===');
+      print('Order ID: ${widget.orderId}');
+      print('Product: ${_orderData!['productName']}');
+      
       // Start a batch write to ensure all operations complete together
       final batch = _firestore.batch();
       
@@ -313,8 +317,12 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       final orderRef = _firestore.collection('orders').doc(widget.orderId);
       batch.update(orderRef, {
         'status': 'cancelled',
+        'declinedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        'notes': 'Declined by seller',
       });
+
+      print('✅ Order status will be updated to cancelled');
 
       // 2. Return quantity to inventory
       if (_orderData!.containsKey('productId') && _orderData!.containsKey('quantity')) {

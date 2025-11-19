@@ -234,19 +234,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   // Generate a clean order number from the order ID
   String _getOrderNumber(String orderId) {
-    // If the ID is already in a nice format (like "order_17"), extract the number
-    if (orderId.startsWith('order_')) {
-      return orderId.replaceFirst('order_', '').toUpperCase();
+    // Handle timestamp-based order IDs: order_1234567890123_productId
+    if (orderId.startsWith('order_') && orderId.contains('_')) {
+      final parts = orderId.split('_');
+      if (parts.length >= 3) {
+        // Extract timestamp
+        final timestamp = int.tryParse(parts[1]);
+        if (timestamp != null) {
+          final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+          final dateStr =
+              '${date.day.toString().padLeft(2, '0')}${date.month.toString().padLeft(2, '0')}${date.year.toString().substring(2)}';
+          // Format: DDMMYY-XXXX (last 4 of timestamp)
+          return '$dateStr-${parts[1].substring(parts[1].length - 4)}';
+        }
+      }
     }
 
-    // For long Firebase IDs, take first 6 characters for readability
+    // For Firebase auto-generated IDs, use first 4 + last 4
     if (orderId.length > 12) {
-      return orderId.substring(0, 12).toUpperCase();
-    }
-
-    // Otherwise use first 8 characters
-    if (orderId.length > 8) {
-      return orderId.substring(0, 8).toUpperCase();
+      return '${orderId.substring(0, 4)}-${orderId.substring(orderId.length - 4)}'
+          .toUpperCase();
     }
 
     return orderId.toUpperCase();

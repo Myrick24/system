@@ -123,6 +123,16 @@ class _CooperativeManagementState extends State<CooperativeManagement> {
             label: const Text('New Cooperative'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: _normalizeCooperativeStatuses,
+            icon: const Icon(Icons.sync, size: 18),
+            label: const Text('Sync Statuses'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
             ),
           ),
@@ -550,6 +560,7 @@ class _CooperativeManagementState extends State<CooperativeManagement> {
         'name': name,
         'phone': phone,
         'location': location,
+        'status': 'active', // Ensure all cooperatives have consistent status
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -577,6 +588,7 @@ class _CooperativeManagementState extends State<CooperativeManagement> {
     try {
       await _firestore.collection('users').doc(userId).update({
         'isActive': isActive,
+        'status': isActive ? 'active' : 'inactive', // Sync status field
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -594,6 +606,51 @@ class _CooperativeManagementState extends State<CooperativeManagement> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error updating status: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _normalizeCooperativeStatuses() async {
+    try {
+      // Get all cooperatives
+      final coopsSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'cooperative')
+          .get();
+
+      int updated = 0;
+      for (var doc in coopsSnapshot.docs) {
+        final data = doc.data();
+        final currentStatus = data['status'];
+
+        // Update to 'active' if status is 'approved' or missing
+        if (currentStatus != 'active') {
+          await _firestore.collection('users').doc(doc.id).update({
+            'status': 'active',
+            'isActive': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          updated++;
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Normalized $updated cooperative status(es) to "active"'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error normalizing statuses: $e'),
             backgroundColor: Colors.red,
           ),
         );

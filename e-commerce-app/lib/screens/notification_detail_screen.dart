@@ -2377,11 +2377,20 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     setState(() => _isProcessing = true);
 
     try {
+      print('=== DECLINING ORDER (Notification Screen) ===');
+      print('Order ID: $orderId');
+      print('Reason: $selectedReason');
+      
       await _firestore.collection('orders').doc(orderId).update({
-        'status': 'declined',
+        'status': 'cancelled',
         'declinedAt': FieldValue.serverTimestamp(),
         'declineReason': selectedReason,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'notes': 'Declined: $selectedReason',
       });
+
+      print('✅ Order status updated to cancelled');
+      print('=== DECLINE COMPLETE ===');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

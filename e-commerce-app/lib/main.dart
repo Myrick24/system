@@ -30,6 +30,15 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 /// Top-level function to handle background messages
 /// This MUST be a top-level function (not a class method) for FCM to work
+///
+/// PERFORMANCE OPTIMIZATIONS:
+/// - Splash screen with adaptive timing (faster on reopening)
+/// - Seller status caching (5-minute validity)
+/// - Order loading debouncing (2-second threshold)
+/// - Lazy data loading with Future.microtask()
+/// - AutomaticKeepAliveClientMixin for state preservation
+/// - CustomScrollView cacheExtent for smoother scrolling
+/// - Reduced unnecessary rebuilds and queries
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Initialize Firebase if not already initialized
@@ -118,6 +127,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  static bool _hasInitialized = false;
+
   @override
   void initState() {
     super.initState();
@@ -130,8 +141,10 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initializeApp() async {
-    // Wait for a minimum splash duration
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Reduced splash time for faster reopening
+    final splashDuration = _hasInitialized ? 200 : 500;
+    await Future.delayed(Duration(milliseconds: splashDuration));
+    _hasInitialized = true;
 
     if (!mounted) return;
 

@@ -41,8 +41,11 @@ class _AccountScreenState extends State<AccountScreen>
   @override
   void initState() {
     super.initState();
-    _loadNotificationState();
-    _getCurrentUser();
+    // Defer heavy operations to prevent blocking UI
+    Future.microtask(() {
+      _loadNotificationState();
+      _getCurrentUser();
+    });
   }
 
   // Load notification state using NotificationService

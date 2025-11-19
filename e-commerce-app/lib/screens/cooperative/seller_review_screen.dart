@@ -60,7 +60,8 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
           final sellerDocFromQuery = fallbackQuery.docs.first;
           setState(() {
             _sellerData = sellerDocFromQuery.data();
-            _actualSellerId = sellerDocFromQuery.id; // Store the actual document ID
+            _actualSellerId =
+                sellerDocFromQuery.id; // Store the actual document ID
             _currentStatus = _sellerData?['status'] ?? 'pending';
             _isLoading = false;
           });
@@ -92,10 +93,10 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
     try {
       // Use the actual seller document ID (from fallback query if needed)
       final sellerDocId = _actualSellerId ?? widget.sellerId;
-      
+
       print('🔄 Updating seller status to: $newStatus');
       print('   Using seller document ID: $sellerDocId');
-      
+
       // Update sellers collection
       await _firestore.collection('sellers').doc(sellerDocId).update({
         'status': newStatus,
@@ -113,6 +114,9 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
       });
 
       print('   ✅ User document updated successfully');
+
+      // Send notification to the seller
+      await _sendSellerNotification(newStatus);
 
       setState(() {
         _currentStatus = newStatus;
@@ -143,6 +147,50 @@ class _SellerReviewScreenState extends State<SellerReviewScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _sendSellerNotification(String status) async {
+    try {
+      // Get cooperative name
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return;
+
+      final coopDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
+      final coopData = coopDoc.data();
+      final coopName = coopData?['name'] ?? 'Cooperative';
+
+      // Get seller name
+      final sellerName =
+          _sellerData?['name'] ?? _sellerData?['businessName'] ?? 'Seller';
+
+      // Create notification data
+      final notificationData = {
+        'userId': widget.userId,
+        'title': status == 'approved'
+            ? 'Seller Application Approved'
+            : 'Seller Application Rejected',
+        'body': status == 'approved'
+            ? 'Congratulations! Your seller application has been approved by $coopName. You can now start selling your products.'
+            : 'Your seller application has been reviewed by $coopName. Please contact the cooperative for more information.',
+        'payload': 'seller_status_update',
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'seller_status',
+        'status': status,
+        'cooperativeId': currentUser.uid,
+        'cooperativeName': coopName,
+        'priority': 'high',
+      };
+
+      // Add notification to 'notifications' collection
+      await _firestore.collection('notifications').add(notificationData);
+
+      print('✅ Notification sent to seller: $sellerName (Status: $status)');
+    } catch (e) {
+      print('❌ Error sending notification to seller: $e');
+      // Don't throw - notification failure shouldn't block the status update
     }
   }
 

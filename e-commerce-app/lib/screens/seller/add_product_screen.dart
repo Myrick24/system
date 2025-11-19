@@ -119,11 +119,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
             final coopsSnapshot = await _firestore
                 .collection('users')
                 .where('role', isEqualTo: 'cooperative')
-                .where('status', isEqualTo: 'active')
                 .get();
 
+            // Filter for active or approved cooperatives in-memory
+            final filteredCoops = coopsSnapshot.docs.where((doc) {
+              final data = doc.data();
+              final status = data['status'] as String?;
+              return status == 'active' ||
+                  status == 'approved' ||
+                  status == null ||
+                  status.isEmpty;
+            }).toList();
+
             setState(() {
-              _cooperatives = coopsSnapshot.docs.map((doc) {
+              _cooperatives = filteredCoops.map((doc) {
                 final data = doc.data();
                 return {
                   'id': doc.id,

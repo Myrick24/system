@@ -13,10 +13,15 @@ class BuyerHomeContent extends StatefulWidget {
   State<BuyerHomeContent> createState() => _BuyerHomeContentState();
 }
 
-class _BuyerHomeContentState extends State<BuyerHomeContent> {
+class _BuyerHomeContentState extends State<BuyerHomeContent>
+    with AutomaticKeepAliveClientMixin {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
   String? _selectedCategory; // Track currently selected category filter
+
+  // Add caching for better performance
+  @override
+  bool get wantKeepAlive => true;
 
   // Calculate remaining time from when product was approved
   String _calculateRemainingTime(Map<String, dynamic> product) {
@@ -177,8 +182,10 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return SafeArea(
       child: CustomScrollView(
+        cacheExtent: 1000, // Pre-cache items for smoother scrolling
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.all(16.0),
@@ -444,6 +451,22 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                 }
 
                 List<QueryDocumentSnapshot> products = snapshot.data!.docs;
+
+                // Sort products: non-expired first, expired last
+                products.sort((a, b) {
+                  var productA = a.data() as Map<String, dynamic>;
+                  var productB = b.data() as Map<String, dynamic>;
+
+                  bool isExpiredA = _isProductExpired(productA);
+                  bool isExpiredB = _isProductExpired(productB);
+
+                  // If one is expired and the other is not, non-expired comes first
+                  if (isExpiredA && !isExpiredB) return 1;
+                  if (!isExpiredA && isExpiredB) return -1;
+
+                  // If both have the same expiry status, maintain original order
+                  return 0;
+                });
 
                 return SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -827,20 +850,28 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                       // Price with unit
                       Row(
                         children: [
-                          Text(
-                            price,
-                            style: const TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                          Flexible(
+                            child: Text(
+                              price,
+                              style: const TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 2),
-                          Text(
-                            '/${unit ?? 'pcs'}',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 10,
+                          Flexible(
+                            child: Text(
+                              '/${unit ?? 'pcs'}',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -880,8 +911,7 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                               if (hasStock) ...[
                                 const SizedBox(width: 2),
                                 Icon(Icons.star,
-                                    color: Colors.grey.shade400,
-                                    size: 9),
+                                    color: Colors.grey.shade400, size: 9),
                                 const SizedBox(width: 1),
                                 Text(
                                   '0.0',
@@ -914,9 +944,11 @@ class _BuyerHomeContentState extends State<BuyerHomeContent> {
                                 }
                               : isOwnProduct
                                   ? () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
                                         const SnackBar(
-                                          content: Text('This is your own product'),
+                                          content:
+                                              Text('This is your own product'),
                                           backgroundColor: Colors.orange,
                                           duration: Duration(seconds: 2),
                                         ),

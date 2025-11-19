@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../services/cart_service.dart';
 import '../widgets/address_selector.dart';
-import 'checkout_screen.dart';
+import 'buyer/buyer_main_dashboard.dart';
 import 'paymongo_gcash_screen.dart';
 
 class CartCheckoutScreen extends StatefulWidget {
@@ -53,37 +53,33 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
       final selectedItems = cartService.cartItems
           .where((item) => widget.selectedItemIds.contains(item.id))
           .toList();
-      
+
       // Try to get pickup location from the first product's seller's cooperative
       if (selectedItems.isNotEmpty) {
         final firstProductId = selectedItems.first.productId;
-        final productDoc = await _firestore
-            .collection('products')
-            .doc(firstProductId)
-            .get();
-        
+        final productDoc =
+            await _firestore.collection('products').doc(firstProductId).get();
+
         if (productDoc.exists) {
           final productData = productDoc.data() as Map<String, dynamic>;
           final sellerId = productData['sellerId'] as String?;
-          
+
           if (sellerId != null) {
             // Get the seller document to find their cooperative ID
-            final sellerDoc = await _firestore
-                .collection('users')
-                .doc(sellerId)
-                .get();
-            
+            final sellerDoc =
+                await _firestore.collection('users').doc(sellerId).get();
+
             if (sellerDoc.exists) {
               final sellerData = sellerDoc.data() as Map<String, dynamic>;
               final cooperativeId = sellerData['cooperativeId'] as String?;
-              
+
               if (cooperativeId != null) {
                 // Get the cooperative document to retrieve the location
                 final coopDoc = await _firestore
                     .collection('users')
                     .doc(cooperativeId)
                     .get();
-                
+
                 if (coopDoc.exists) {
                   final coopData = coopDoc.data() as Map<String, dynamic>;
                   final location = coopData['location'] as String?;
@@ -98,7 +94,7 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
           }
         }
       }
-      
+
       // Last resort: Query for any cooperative
       final coopQuery = await _firestore
           .collection('users')
@@ -129,7 +125,8 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
     return total;
   }
 
-  Future<void> _placeOrder(CartService cartService, List<CartItem> selectedItems) async {
+  Future<void> _placeOrder(
+      CartService cartService, List<CartItem> selectedItems) async {
     // Validate delivery address if Cooperative Delivery is selected
     if (_selectedDeliveryOption == 'Cooperative Delivery') {
       if (_deliveryAddress.isEmpty ||
@@ -198,7 +195,8 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const CheckoutScreen(),
+                  builder: (context) =>
+                      const BuyerOrdersScreen(showBackButton: true),
                 ),
               );
             }
@@ -228,7 +226,8 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const CheckoutScreen(),
+                builder: (context) =>
+                    const BuyerOrdersScreen(showBackButton: true),
               ),
             );
           }
@@ -327,20 +326,21 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
                       itemBuilder: (context, index) {
                         final item = selectedItems[index];
                         return ListTile(
-                          leading: item.imageUrl != null &&
-                                  item.imageUrl!.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Image.network(
-                                    item.imageUrl!,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        Icon(Icons.image_not_supported),
-                                  ),
-                                )
-                              : Icon(Icons.shopping_basket),
+                          leading:
+                              item.imageUrl != null && item.imageUrl!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Image.network(
+                                        item.imageUrl!,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Icon(Icons.image_not_supported),
+                                      ),
+                                    )
+                                  : Icon(Icons.shopping_basket),
                           title: Text(
                             item.productName,
                             style: const TextStyle(
