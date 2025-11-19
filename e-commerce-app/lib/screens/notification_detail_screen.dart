@@ -2381,6 +2381,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
       print('Order ID: $orderId');
       print('Reason: $selectedReason');
       
+      // Get order data to ensure we have all fields
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+      final orderData = orderDoc.data();
+      
       await _firestore.collection('orders').doc(orderId).update({
         'status': 'cancelled',
         'declinedAt': FieldValue.serverTimestamp(),
@@ -2390,6 +2394,52 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
       });
 
       print('✅ Order status updated to cancelled');
+      
+      // Ensure buyerId field is set (critical for buyer to see it)
+      if (orderData != null) {
+        if (orderData['buyerId'] == null && orderData['userId'] != null) {
+          print('⚠️ Adding buyerId field to order...');
+          await _firestore.collection('orders').doc(orderId).update({
+            'buyerId': orderData['userId'],
+          });
+          print('✅ Added buyerId field to order');
+        }
+        
+        // Send notification to buyer
+        final buyerId = orderData['buyerId'] ?? orderData['userId'];
+        print('📧 Sending notification to buyerId: $buyerId');
+        
+        if (buyerId != null) {
+          await _firestore.collection('notifications').add({
+            'userId': buyerId,
+            'orderId': orderId,
+            'type': 'order_status',
+            'status': 'cancelled',
+            'message': 'Your order for ${orderData['productName'] ?? 'product'} was declined: $selectedReason',
+            'productName': orderData['productName'] ?? 'Product',
+            'timestamp': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
+          print('✅ Notification sent to buyer');
+        }
+        
+        // Return stock to product inventory
+        final productId = orderData['productId'];
+        final quantity = orderData['quantity'] ?? 0;
+
+        if (productId != null && quantity > 0) {
+          try {
+            await _firestore.collection('products').doc(productId).update({
+              'currentStock': FieldValue.increment(quantity),
+            });
+            print('Stock restored: +$quantity to product $productId');
+          } catch (e) {
+            print('Error restoring stock: $e');
+            // Continue even if stock restoration fails
+          }
+        }
+      }
+      
       print('=== DECLINE COMPLETE ===');
 
       if (mounted) {

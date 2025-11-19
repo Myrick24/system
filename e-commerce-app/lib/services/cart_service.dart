@@ -475,6 +475,7 @@ class CartService extends ChangeNotifier {
           final orderData = {
             'id': orderId,
             'buyerId': userId,
+            'userId': userId, // Add userId for backward compatibility and rule matching
             'totalAmount': item.price * item.quantity,
             'status': 'pending',
             'paymentMethod': paymentMethod,

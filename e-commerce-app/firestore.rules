@@ -388,18 +388,21 @@ service cloud.firestore {
         return product.data.sellerId == request.auth.uid;
       }
       
-      // Allow updates from buyer, seller, cooperative, or admin
-      allow update: if request.auth != null && 
-        ((resource.data.buyerId == request.auth.uid || 
-         resource.data.userId == request.auth.uid ||
-         resource.data.sellerId == request.auth.uid ||
-         isProductSeller()) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates'])) ||
-        (isCoop() && 
-         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt'])) ||
-        isAdmin();
+      // Allow updates from buyer, seller, cooperative, or admin (for status changes like decline/cancel)
+      allow update: if request.auth != null && (
+        (
+          resource.data.buyerId == request.auth.uid ||
+          resource.data.userId == request.auth.uid ||
+          resource.data.sellerId == request.auth.uid ||
+          isProductSeller()
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'declinedAt', 'declineReason'
+        ])
+      ) || (
+        isCoop() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt', 'declinedAt', 'declineReason'
+        ])
+      ) || isAdmin();
       
       // Allow delete only for admins
       allow delete: if request.auth != null && isAdmin();

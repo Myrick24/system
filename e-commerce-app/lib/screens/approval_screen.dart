@@ -315,12 +315,22 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       
       // 1. Update order status
       final orderRef = _firestore.collection('orders').doc(widget.orderId);
-      batch.update(orderRef, {
+      
+      // Ensure buyerId field is set (critical for buyer to see it)
+      Map<String, dynamic> orderUpdate = {
         'status': 'cancelled',
         'declinedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'notes': 'Declined by seller',
-      });
+      };
+      
+      // Add buyerId if not present
+      if (_orderData!['buyerId'] == null && _orderData!['userId'] != null) {
+        orderUpdate['buyerId'] = _orderData!['userId'];
+        print('⚠️ Adding buyerId field to order');
+      }
+      
+      batch.update(orderRef, orderUpdate);
 
       print('✅ Order status will be updated to cancelled');
 
@@ -341,9 +351,10 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       }
 
       // 3. Create notification for the buyer
+      final buyerId = _orderData!['buyerId'] ?? _orderData!['userId'];
       final notificationRef = _firestore.collection('notifications').doc();
       batch.set(notificationRef, {
-        'userId': _orderData!['userId'],
+        'userId': buyerId,
         'orderId': widget.orderId,
         'type': 'order_status',
         'status': 'cancelled',
@@ -352,6 +363,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         'timestamp': FieldValue.serverTimestamp(),
         'isRead': false,
       });
+      print('📧 Creating buyer notification for userId: $buyerId');
 
       // 4. Create a confirmation notification for the seller
       try {
