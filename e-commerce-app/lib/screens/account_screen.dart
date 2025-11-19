@@ -505,12 +505,15 @@ class _AccountScreenState extends State<AccountScreen>
 
     // User is logged in, show account info
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Account'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
+      appBar: (!_isRegisteredSeller && !_isCooperative)
+          ? null
+          : AppBar(
+              title: const Text('Account'),
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              // Remove notification icon from actions
+            ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
