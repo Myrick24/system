@@ -2,51 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/icon.png" type="image/png" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="E-commerce Admin Dashboard"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <title>E-commerce Admin Dashboard</title>
+    <meta name="description" content="Admin Dashboard" />
+    <title>Admin Dashboard</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    
-    <!-- Fix for "Cannot redefine property: ethereum" error caused by browser extensions -->
-    <script>
-      // This script prevents browser extensions (like MetaMask) from causing conflicts
-      // with the React development server by handling the ethereum property gracefully
-      (function() {
-        try {
-          // If ethereum is already defined by an extension, preserve it
-          if (typeof window.ethereum !== 'undefined') {
-            const originalEthereum = window.ethereum;
-            
-            // Create a safe property descriptor that won't cause conflicts
-            Object.defineProperty(window, 'ethereum', {
-              get: function() {
-                return originalEthereum;
-              },
-              set: function(value) {
-                // Allow setting but don't cause conflicts
-                if (value !== originalEthereum) {
-                  console.warn('Ethereum property conflict resolved by admin dashboard');
-                }
-              },
-              configurable: true,
-              enumerable: true
-            });
-          }
-        } catch (error) {
-          // Silently handle any property definition errors
-          console.warn('Browser extension property conflict handled:', error.message);
-        }
-      })();
-    </script>
   </body>
 </html>
