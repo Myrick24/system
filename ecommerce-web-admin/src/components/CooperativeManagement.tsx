@@ -134,19 +134,11 @@ export const CooperativeManagement: React.FC = () => {
       form.resetFields();
       loadCooperativeUsers();
 
-      // Sign out the newly created cooperative user and restore admin session
-      // by keeping the admin UID in context
-      setTimeout(async () => {
-        try {
-          // Sign out to clear the newly created cooperative user
-          await auth.signOut();
-          // The AuthContext will detect the logout and show login page
-          // Admin needs to re-login, but we can show a helpful message
-          message.info('Cooperative account created! Please log back in to continue managing the system.');
-        } catch (signOutError) {
-          console.error('Error during sign out:', signOutError);
-        }
-      }, 1000);
+      // Instead of signing out, just refresh the cooperative users and stay on the page
+      // The admin session remains active
+      // Optionally, you can show a message that the account was created
+      // Already handled above with message.success
+      // No redirect or sign out
 
     } catch (error: any) {
       console.error('Error creating cooperative account:', error);
