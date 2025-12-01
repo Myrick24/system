@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'coop_payment_management.dart';
 import 'seller_review_screen.dart';
 import 'cooperative_notification_screen.dart';
@@ -7973,50 +7974,39 @@ class _CooperativeReportsViewState extends State<_CooperativeReportsView> {
         ),
       );
 
-      // Save PDF to Downloads folder
+      // Save PDF directly to Downloads
       final pdfBytes = await pdf.save();
       final fileName =
           'Cooperative_Report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
 
-      // Try to save to Downloads directory
-      Directory? downloadsDirectory;
+      // Save to Downloads directory
       if (Platform.isAndroid) {
-        downloadsDirectory = Directory('/storage/emulated/0/Download');
-      } else if (Platform.isIOS) {
-        downloadsDirectory = await getApplicationDocumentsDirectory();
-      } else {
-        downloadsDirectory = await getDownloadsDirectory();
-      }
-
-      if (downloadsDirectory != null) {
-        final filePath = '${downloadsDirectory.path}/$fileName';
-        final file = File(filePath);
+        final directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        final file = File('${directory.path}/$fileName');
         await file.writeAsBytes(pdfBytes);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('PDF saved to Downloads: $fileName'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'OPEN',
-              textColor: Colors.white,
-              onPressed: () async {
-                await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
-              },
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('PDF saved to Downloads/$fileName'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'OPEN',
+                textColor: Colors.white,
+                onPressed: () async {
+                  await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+                },
+              ),
             ),
-          ),
-        );
+          );
+        }
       } else {
-        // Fallback to share if can't save to downloads
+        // For iOS or other platforms, use share
         await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF ready to share or save!'),
-            backgroundColor: Colors.green,
-          ),
-        );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
