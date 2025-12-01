@@ -401,17 +401,6 @@ class _ComprehensiveSellerDashboardState
               ),
             ),
             _buildActionCard(
-              'Analytics',
-              'View sales and performance',
-              Icons.analytics,
-              Colors.purple,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => const SellerAnalytics()),
-              ),
-            ),
-            _buildActionCard(
               'Account',
               'Manage account settings',
               Icons.person,

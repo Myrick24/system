@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'coop_payment_management.dart';
 import 'seller_review_screen.dart';
 import 'cooperative_notification_screen.dart';
@@ -62,7 +68,7 @@ class _CoopDashboardState extends State<CoopDashboard>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _checkAccess();
     _setupNotificationListener();
     _setupCooperativeNotificationListener();
@@ -1222,6 +1228,1275 @@ class _CoopDashboardState extends State<CoopDashboard>
     }
   }
 
+  void _showSalesReportDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.9,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.assessment,
+                        color: Colors.green.shade700,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Generate Report',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Select report type',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildReportOptionCard(
+                  context,
+                  icon: Icons.today,
+                  title: 'Today\'s Report',
+                  description: 'Sales and earnings for today',
+                  color: Colors.blue,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _generateSalesReport('today');
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildReportOptionCard(
+                  context,
+                  icon: Icons.date_range,
+                  title: 'This Week',
+                  description: 'Last 7 days sales report',
+                  color: Colors.orange,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _generateSalesReport('week');
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildReportOptionCard(
+                  context,
+                  icon: Icons.calendar_month,
+                  title: 'This Month',
+                  description: 'Current month sales report',
+                  color: Colors.purple,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _generateSalesReport('month');
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildReportOptionCard(
+                  context,
+                  icon: Icons.bar_chart,
+                  title: 'All Time Report',
+                  description: 'Complete sales history',
+                  color: Colors.green,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _generateSalesReport('all');
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReportOptionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String description,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: color, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateSalesReport(String period) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      DateTime now = DateTime.now();
+      DateTime startDate;
+
+      switch (period) {
+        case 'today':
+          startDate = DateTime(now.year, now.month, now.day);
+          break;
+        case 'week':
+          startDate = now.subtract(const Duration(days: 7));
+          break;
+        case 'month':
+          startDate = DateTime(now.year, now.month, 1);
+          break;
+        case 'all':
+        default:
+          startDate = DateTime(2020, 1, 1); // Get all orders
+          break;
+      }
+
+      // Fetch all delivered orders first (no composite index needed)
+      final ordersSnapshot = await _firestore
+          .collection('orders')
+          .where('status', isEqualTo: 'delivered')
+          .get();
+
+      // Enhanced statistics tracking
+      double totalRevenue = 0;
+      double totalDeliveryFees = 0;
+      double totalProductRevenue = 0;
+      int totalOrders = 0;
+      int totalUnits = 0;
+
+      Map<String, int> productSales = {};
+      Map<String, double> productRevenue = {};
+      Map<String, double> productUnitPrice = {};
+
+      // Delivery method tracking
+      int cooperativeDeliveryOrders = 0;
+      int pickupOrders = 0;
+      double cooperativeDeliveryRevenue = 0;
+      double pickupRevenue = 0;
+
+      // Daily tracking for trend analysis
+      Map<String, int> dailyOrders = {};
+      Map<String, double> dailyRevenue = {};
+
+      // Payment method tracking
+      Map<String, int> paymentMethods = {};
+      Map<String, double> paymentMethodRevenue = {};
+
+      // Filter by date in app and calculate comprehensive statistics
+      for (var doc in ordersSnapshot.docs) {
+        final data = doc.data();
+
+        // Check if order is within date range
+        final timestamp = data['timestamp'] as Timestamp?;
+        if (timestamp != null) {
+          final orderDate = timestamp.toDate();
+          if (orderDate.isBefore(startDate)) {
+            continue; // Skip orders before start date
+          }
+
+          // Track daily statistics
+          final dateKey =
+              '${orderDate.year}-${orderDate.month.toString().padLeft(2, '0')}-${orderDate.day.toString().padLeft(2, '0')}';
+          dailyOrders[dateKey] = (dailyOrders[dateKey] ?? 0) + 1;
+          dailyRevenue[dateKey] = (dailyRevenue[dateKey] ?? 0) +
+              (data['totalAmount'] ?? 0).toDouble();
+        }
+
+        final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+        final deliveryFee = (data['deliveryFee'] ?? 0).toDouble();
+        final subtotal =
+            (data['subtotal'] ?? (totalAmount - deliveryFee)).toDouble();
+        final productName = data['productName'] ?? 'Unknown';
+        final quantity = (data['quantity'] ?? 0) as int;
+        final unitPrice = (data['price'] ?? 0).toDouble();
+        final deliveryMethod = data['deliveryMethod'] ?? '';
+        final paymentMethod = data['paymentMethod'] ?? 'Not specified';
+
+        totalOrders++;
+        totalRevenue += totalAmount;
+        totalDeliveryFees += deliveryFee;
+        totalProductRevenue += subtotal;
+        totalUnits += quantity;
+
+        // Product statistics
+        productSales[productName] = (productSales[productName] ?? 0) + quantity;
+        productRevenue[productName] =
+            (productRevenue[productName] ?? 0) + subtotal;
+        productUnitPrice[productName] = unitPrice;
+
+        // Delivery method statistics
+        if (deliveryMethod == 'Cooperative Delivery') {
+          cooperativeDeliveryOrders++;
+          cooperativeDeliveryRevenue += totalAmount;
+        } else if (deliveryMethod == 'Pickup at Coop') {
+          pickupOrders++;
+          pickupRevenue += totalAmount;
+        }
+
+        // Payment method statistics
+        paymentMethods[paymentMethod] =
+            (paymentMethods[paymentMethod] ?? 0) + 1;
+        paymentMethodRevenue[paymentMethod] =
+            (paymentMethodRevenue[paymentMethod] ?? 0) + totalAmount;
+      }
+
+      // Sort products by revenue
+      final sortedProducts = productRevenue.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      // Calculate averages
+      final averageOrderValue =
+          totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      final averageUnitsPerOrder =
+          totalOrders > 0 ? totalUnits / totalOrders : 0;
+
+      // Calculate days in period
+      final daysDifference = now.difference(startDate).inDays + 1;
+
+      Navigator.pop(context); // Close loading dialog
+
+      // Show enhanced report dialog
+      _showReportDetailsDialog(
+        period: period,
+        startDate: startDate,
+        endDate: now,
+        totalOrders: totalOrders,
+        totalRevenue: totalRevenue,
+        totalDeliveryFees: totalDeliveryFees,
+        totalProductRevenue: totalProductRevenue,
+        totalUnits: totalUnits,
+        sortedProducts: sortedProducts,
+        productSales: productSales,
+        productUnitPrice: productUnitPrice,
+        cooperativeDeliveryOrders: cooperativeDeliveryOrders,
+        pickupOrders: pickupOrders,
+        cooperativeDeliveryRevenue: cooperativeDeliveryRevenue,
+        pickupRevenue: pickupRevenue,
+        paymentMethods: paymentMethods,
+        paymentMethodRevenue: paymentMethodRevenue,
+        averageOrderValue: averageOrderValue.toDouble(),
+        averageUnitsPerOrder: averageUnitsPerOrder.toDouble(),
+        daysDifference: daysDifference,
+      );
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating report: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showReportDetailsDialog({
+    required String period,
+    required DateTime startDate,
+    required DateTime endDate,
+    required int totalOrders,
+    required double totalRevenue,
+    required double totalDeliveryFees,
+    required double totalProductRevenue,
+    required int totalUnits,
+    required List<MapEntry<String, double>> sortedProducts,
+    required Map<String, int> productSales,
+    required Map<String, double> productUnitPrice,
+    required int cooperativeDeliveryOrders,
+    required int pickupOrders,
+    required double cooperativeDeliveryRevenue,
+    required double pickupRevenue,
+    required Map<String, int> paymentMethods,
+    required Map<String, double> paymentMethodRevenue,
+    required double averageOrderValue,
+    required double averageUnitsPerOrder,
+    required int daysDifference,
+  }) {
+    String periodTitle;
+    switch (period) {
+      case 'today':
+        periodTitle = 'Today\'s Report';
+        break;
+      case 'week':
+        periodTitle = 'Last 7 Days Report';
+        break;
+      case 'month':
+        periodTitle = 'This Month\'s Report';
+        break;
+      case 'all':
+      default:
+        periodTitle = 'All Time Report';
+        break;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.95,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.green.shade600, Colors.green.shade800],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.assessment,
+                          color: Colors.white, size: 32),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              periodTitle,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${_formatDate(startDate)} - ${_formatDate(endDate)}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.picture_as_pdf,
+                            color: Colors.white),
+                        tooltip: 'Download PDF',
+                        onPressed: () => _generatePdfReport(
+                          periodTitle: periodTitle,
+                          startDate: startDate,
+                          endDate: endDate,
+                          totalOrders: totalOrders,
+                          totalRevenue: totalRevenue,
+                          totalDeliveryFees: totalDeliveryFees,
+                          totalProductRevenue: totalProductRevenue,
+                          totalUnits: totalUnits,
+                          averageOrderValue: averageOrderValue,
+                          averageUnitsPerOrder: averageUnitsPerOrder,
+                          cooperativeDeliveryOrders: cooperativeDeliveryOrders,
+                          pickupOrders: pickupOrders,
+                          cooperativeDeliveryRevenue:
+                              cooperativeDeliveryRevenue,
+                          pickupRevenue: pickupRevenue,
+                          paymentMethods: paymentMethods,
+                          paymentMethodRevenue: paymentMethodRevenue,
+                          sortedProducts: sortedProducts,
+                          productSales: productSales,
+                          productUnitPrice: productUnitPrice,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                // Content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Executive Summary Section
+                        _buildSectionHeader(
+                            'Executive Summary', Icons.assessment),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.shopping_cart,
+                                title: 'Total Orders',
+                                value: '$totalOrders',
+                                subtitle:
+                                    '${(totalOrders / daysDifference).toStringAsFixed(1)}/day',
+                                color: Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.inventory_2,
+                                title: 'Total Units',
+                                value: '$totalUnits',
+                                subtitle:
+                                    '${averageUnitsPerOrder.toStringAsFixed(1)}/order',
+                                color: Colors.purple,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.attach_money,
+                                title: 'Gross Revenue',
+                                value: '₱${totalRevenue.toStringAsFixed(2)}',
+                                subtitle:
+                                    '₱${(totalRevenue / daysDifference).toStringAsFixed(2)}/day',
+                                color: Colors.green,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.trending_up,
+                                title: 'Avg Order Value',
+                                value:
+                                    '₱${averageOrderValue.toStringAsFixed(2)}',
+                                subtitle: 'Per transaction',
+                                color: Colors.teal,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.shopping_bag,
+                                title: 'Product Revenue',
+                                value:
+                                    '₱${totalProductRevenue.toStringAsFixed(2)}',
+                                subtitle:
+                                    '${((totalProductRevenue / totalRevenue) * 100).toStringAsFixed(1)}% of total',
+                                color: Colors.indigo,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSummaryCard(
+                                icon: Icons.local_shipping,
+                                title: 'Delivery Fees',
+                                value:
+                                    '₱${totalDeliveryFees.toStringAsFixed(2)}',
+                                subtitle:
+                                    '${((totalDeliveryFees / totalRevenue) * 100).toStringAsFixed(1)}% of total',
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Delivery Method Analysis
+                        _buildSectionHeader(
+                            'Delivery Method Analysis', Icons.local_shipping),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildDetailCard(
+                                title: 'Cooperative Delivery',
+                                orders: cooperativeDeliveryOrders,
+                                revenue: cooperativeDeliveryRevenue,
+                                color: Colors.purple,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildDetailCard(
+                                title: 'Pickup at Coop',
+                                orders: pickupOrders,
+                                revenue: pickupRevenue,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Payment Method Analysis
+                        if (paymentMethods.isNotEmpty) ...[
+                          _buildSectionHeader(
+                              'Payment Method Analysis', Icons.payment),
+                          const SizedBox(height: 12),
+                          ...paymentMethods.entries.map((entry) {
+                            final method = entry.key;
+                            final count = entry.value;
+                            final revenue = paymentMethodRevenue[method] ?? 0;
+                            final percentage =
+                                (count / totalOrders * 100).toStringAsFixed(1);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.payment,
+                                      color: Colors.blue.shade700, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          method,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$count orders ($percentage%)',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    '₱${revenue.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          const SizedBox(height: 24),
+                        ],
+                        // Top Products Section
+                        _buildSectionHeader('Top Selling Products', Icons.star),
+                        const SizedBox(height: 12),
+                        if (sortedProducts.isEmpty)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.inbox_outlined,
+                                    size: 64,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No sales data available',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          ...sortedProducts.take(10).map((entry) {
+                            final productName = entry.key;
+                            final revenue = entry.value;
+                            final quantity = productSales[productName] ?? 0;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.shopping_bag,
+                                      color: Colors.green.shade700,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          productName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$quantity units sold',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    '₱${revenue.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.green.shade700, size: 24),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.green.shade900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required Color color,
+    String? subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailCard({
+    required String title,
+    required int orders,
+    required double revenue,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Orders',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  Text(
+                    '$orders',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'Revenue',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  Text(
+                    '₱${revenue.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _generatePdfReport({
+    required String periodTitle,
+    required DateTime startDate,
+    required DateTime endDate,
+    required int totalOrders,
+    required double totalRevenue,
+    required double totalDeliveryFees,
+    required double totalProductRevenue,
+    required int totalUnits,
+    required double averageOrderValue,
+    required double averageUnitsPerOrder,
+    required int cooperativeDeliveryOrders,
+    required int pickupOrders,
+    required double cooperativeDeliveryRevenue,
+    required double pickupRevenue,
+    required Map<String, int> paymentMethods,
+    required Map<String, double> paymentMethodRevenue,
+    required List<MapEntry<String, double>> sortedProducts,
+    required Map<String, int> productSales,
+    required Map<String, double> productUnitPrice,
+  }) async {
+    final pdf = pw.Document();
+
+    // Add page to PDF
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return [
+            // Header
+            pw.Container(
+              padding: const pw.EdgeInsets.all(20),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.green700,
+                borderRadius: pw.BorderRadius.circular(10),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Cooperative Sales Report',
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    periodTitle,
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Period: ${_formatDate(startDate)} - ${_formatDate(endDate)}',
+                    style: const pw.TextStyle(
+                      fontSize: 12,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Generated: ${DateFormat('MMM dd, yyyy hh:mm a').format(DateTime.now())}',
+                    style: const pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 24),
+
+            // Executive Summary Section
+            pw.Text(
+              'Executive Summary',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.green900,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                children: [
+                  _buildPdfRow('Total Orders:', '$totalOrders'),
+                  pw.Divider(),
+                  _buildPdfRow('Total Units Sold:', '$totalUnits'),
+                  pw.Divider(),
+                  _buildPdfRow(
+                      'Total Revenue:', '₱${totalRevenue.toStringAsFixed(2)}'),
+                  pw.Divider(),
+                  _buildPdfRow('Average Order Value:',
+                      '₱${averageOrderValue.toStringAsFixed(2)}'),
+                  pw.Divider(),
+                  _buildPdfRow('Product Revenue:',
+                      '₱${totalProductRevenue.toStringAsFixed(2)}'),
+                  pw.Divider(),
+                  _buildPdfRow('Delivery Fees:',
+                      '₱${totalDeliveryFees.toStringAsFixed(2)}'),
+                  pw.Divider(),
+                  _buildPdfRow('Average Units per Order:',
+                      '${averageUnitsPerOrder.toStringAsFixed(1)}'),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 24),
+
+            // Delivery Method Analysis
+            pw.Text(
+              'Delivery Method Analysis',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.green900,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Row(
+              children: [
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.blue300),
+                      borderRadius: pw.BorderRadius.circular(8),
+                      color: PdfColors.blue50,
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Cooperative Delivery',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                        _buildPdfRow('Orders:', '$cooperativeDeliveryOrders',
+                            fontSize: 12),
+                        pw.SizedBox(height: 4),
+                        _buildPdfRow('Revenue:',
+                            '₱${cooperativeDeliveryRevenue.toStringAsFixed(2)}',
+                            fontSize: 12),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 12),
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.orange300),
+                      borderRadius: pw.BorderRadius.circular(8),
+                      color: PdfColors.orange50,
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Pickup',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.orange900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                        _buildPdfRow('Orders:', '$pickupOrders', fontSize: 12),
+                        pw.SizedBox(height: 4),
+                        _buildPdfRow(
+                            'Revenue:', '₱${pickupRevenue.toStringAsFixed(2)}',
+                            fontSize: 12),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 24),
+
+            // Payment Method Analysis
+            pw.Text(
+              'Payment Method Analysis',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.green900,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            if (paymentMethods.isEmpty)
+              pw.Text('No payment data available',
+                  style: const pw.TextStyle(
+                      fontSize: 12, color: PdfColors.grey600))
+            else
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  children: paymentMethods.entries.map((entry) {
+                    final method = entry.key;
+                    final count = entry.value;
+                    final revenue = paymentMethodRevenue[method] ?? 0.0;
+                    return pw.Column(
+                      children: [
+                        _buildPdfRow(
+                          method,
+                          '$count orders • ₱${revenue.toStringAsFixed(2)}',
+                        ),
+                        if (entry != paymentMethods.entries.last) pw.Divider(),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            pw.SizedBox(height: 24),
+
+            // Top Products Section
+            pw.Text(
+              'Top Products',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.green900,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+
+            if (sortedProducts.isEmpty)
+              pw.Center(
+                child: pw.Padding(
+                  padding: const pw.EdgeInsets.all(32),
+                  child: pw.Text(
+                    'No sales data available for this period',
+                    style: const pw.TextStyle(
+                      fontSize: 14,
+                      color: PdfColors.grey600,
+                    ),
+                  ),
+                ),
+              )
+            else
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                children: [
+                  // Header row
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.green100,
+                    ),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Product Name',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Units Sold',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(
+                          'Revenue',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Data rows
+                  ...sortedProducts.take(20).map((entry) {
+                    final productName = entry.key;
+                    final revenue = entry.value;
+                    final quantity = productSales[productName] ?? 0;
+
+                    return pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(productName),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '$quantity',
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                            '₱${revenue.toStringAsFixed(2)}',
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ],
+              ),
+
+            pw.SizedBox(height: 24),
+
+            // Footer
+            pw.Divider(),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'This report was automatically generated by the Cooperative Management System',
+              style: const pw.TextStyle(
+                fontSize: 10,
+                color: PdfColors.grey600,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ];
+        },
+      ),
+    );
+
+    // Show PDF preview and allow saving/printing
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+      name:
+          'Cooperative_Sales_Report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+    );
+  }
+
+  pw.Widget _buildPdfRow(String label, String value,
+      {bool isBold = false, double fontSize = 14}) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: isBold ? PdfColors.green900 : PdfColors.black,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     // Show loading indicator while checking access
@@ -1330,53 +2605,6 @@ class _CoopDashboardState extends State<CoopDashboard>
         title: const Text('Cooperative Dashboard'),
         backgroundColor: Colors.green,
         elevation: 0,
-        actions: [
-          // Notification Bell Icon with Badge
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          const CooperativeNotificationScreen(),
-                    ),
-                  );
-                },
-              ),
-              if (_unreadNotificationCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      _unreadNotificationCount > 99
-                          ? '99+'
-                          : '$_unreadNotificationCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -1402,6 +2630,7 @@ class _CoopDashboardState extends State<CoopDashboard>
             Tab(icon: Icon(Icons.local_shipping), text: 'Delivery'),
             Tab(icon: Icon(Icons.payments), text: 'Payments'),
             Tab(icon: Icon(Icons.chat), text: 'Messages'),
+            Tab(icon: Icon(Icons.assessment), text: 'Reports'),
           ],
         ),
       ),
@@ -1414,6 +2643,7 @@ class _CoopDashboardState extends State<CoopDashboard>
           _buildDeliveryTab(),
           _buildPaymentsTab(),
           const CooperativeMessagesScreen(),
+          _buildReportsTab(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -4215,6 +5445,16 @@ class _CoopDashboardState extends State<CoopDashboard>
     return CoopPaymentManagement();
   }
 
+  // ========== PAYOUTS TAB ==========
+  Widget _buildPayoutsTab() {
+    return _CooperativePayoutsView(firestore: _firestore);
+  }
+
+  // ========== REPORTS TAB ==========
+  Widget _buildReportsTab() {
+    return _CooperativeReportsView(firestore: _firestore);
+  }
+
   // ========== ORDER CARD WIDGET ==========
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final status = order['status'] ?? 'pending';
@@ -4227,19 +5467,49 @@ class _CoopDashboardState extends State<CoopDashboard>
     final unitPrice = (order['price'] ?? 0.0).toDouble();
     final deliveryFee = (order['deliveryFee'] ?? 0.0).toDouble();
     final totalAmount = (order['totalAmount'] ?? 0.0).toDouble();
-    final buyerAddress = order['customerAddress'] ?? 'N/A';
-    final buyerContact = order['customerContact'] ?? 'N/A';
+    final coopStatus = order['coopStatus'];
+
+    // Handle customerAddress - it might be a String or Map
+    String buyerAddress = 'N/A';
+    final customerAddr = order['customerAddress'];
+    if (customerAddr is String) {
+      buyerAddress = customerAddr;
+    } else if (customerAddr is Map) {
+      buyerAddress = customerAddr['fullAddress']?.toString() ??
+          customerAddr['address']?.toString() ??
+          'N/A';
+    }
+
+    // Handle customerContact - it might be a String or Map
+    String buyerContact = 'N/A';
+    final customerCont = order['customerContact'];
+    if (customerCont is String) {
+      buyerContact = customerCont;
+    } else if (customerCont is Map) {
+      buyerContact = customerCont['phone']?.toString() ??
+          customerCont['contact']?.toString() ??
+          'N/A';
+    }
+
+    final String? buyerId =
+        order['buyerId'] ?? order['userId'] ?? order['customerId'];
     final sellerId = order['sellerId'] ?? '';
 
     Color statusColor = _getStatusColor(status);
     IconData statusIcon = _getStatusIcon(status);
 
-    // Simplified status text
-    String statusText =
-        status == 'shipped' ? 'Ready for Pickup' : status.toUpperCase();
-
     bool isExpanded = _expandedOrders.contains(orderId);
     bool isCoopDelivery = deliveryMethod == 'Cooperative Delivery';
+
+    // Simplified status text - different for Pickup vs Delivery
+    String statusText;
+    if (status == 'shipped') {
+      statusText = isCoopDelivery ? 'OUT FOR DELIVERY' : 'READY FOR PICKUP';
+    } else if (status == 'ready_for_pickup') {
+      statusText = isCoopDelivery ? 'READY FOR DELIVERY' : 'READY FOR PICKUP';
+    } else {
+      statusText = status.toUpperCase();
+    }
 
     // Fetch seller information from users collection
     return FutureBuilder<DocumentSnapshot>(
@@ -4256,8 +5526,14 @@ class _CoopDashboardState extends State<CoopDashboard>
             sellerName = sellerData['name'] ??
                 sellerData['fullName'] ??
                 'Unknown Seller';
-            sellerContact =
-                sellerData['phone'] ?? sellerData['contact'] ?? 'N/A';
+            // Try multiple possible field names for contact
+            sellerContact = sellerData['phone'] ??
+                sellerData['phoneNumber'] ??
+                sellerData['mobile'] ??
+                sellerData['contact'] ??
+                sellerData['mobileNumber'] ??
+                sellerData['contactNumber'] ??
+                'N/A';
             sellerLocation =
                 sellerData['location'] ?? sellerData['address'] ?? 'N/A';
           }
@@ -4722,11 +5998,10 @@ class _CoopDashboardState extends State<CoopDashboard>
                             _buildExpandedDetailRow('Unit Price',
                                 '₱${unitPrice.toStringAsFixed(2)}'),
                             _buildExpandedDetailRow('Subtotal',
-                                '₱${(unitPrice * quantity).toStringAsFixed(2)}',
+                                '₱${(order['subtotal'] ?? (unitPrice * quantity)).toStringAsFixed(2)}',
                                 isBold: true),
-                            if (deliveryFee > 0)
-                              _buildExpandedDetailRow('Delivery Fee',
-                                  '₱${deliveryFee.toStringAsFixed(2)}'),
+                            _buildExpandedDetailRow('Delivery Fee',
+                                '₱${(order['deliveryFee'] ?? deliveryFee).toStringAsFixed(2)}'),
                             _buildExpandedDetailRow('Total Amount',
                                 '₱${totalAmount.toStringAsFixed(2)}',
                                 isBold: true, isHighlight: true),
@@ -4736,31 +6011,195 @@ class _CoopDashboardState extends State<CoopDashboard>
                         const SizedBox(height: 16),
 
                         // Buyer Information Section
-                        _buildDetailSection(
-                          title: 'Buyer Information',
-                          icon: Icons.person,
-                          color: Colors.blue,
-                          children: [
-                            _buildExpandedDetailRow('Name', buyerName),
-                            _buildExpandedDetailRow('Address', buyerAddress),
-                            _buildExpandedDetailRow('Contact', buyerContact),
-                          ],
+                        FutureBuilder<DocumentSnapshot?>(
+                          future: buyerId != null && buyerId.isNotEmpty
+                              ? _firestore
+                                  .collection('users')
+                                  .doc(buyerId)
+                                  .get()
+                              : Future.value(null),
+                          builder: (context, buyerSnapshot) {
+                            String addressToShow = buyerAddress;
+                            String contactToShow = buyerContact;
+
+                            // Try to get address from user profile if missing or is placeholder
+                            bool addressIsMissing = addressToShow == 'N/A' ||
+                                addressToShow.isEmpty ||
+                                addressToShow
+                                    .toLowerCase()
+                                    .contains('no address');
+
+                            if (addressIsMissing &&
+                                buyerSnapshot.hasData &&
+                                buyerSnapshot.data != null &&
+                                buyerSnapshot.data!.exists) {
+                              final buyerData = buyerSnapshot.data!.data()
+                                  as Map<String, dynamic>?;
+                              if (buyerData != null) {
+                                // Try multiple address fields and handle both String and Map types
+                                final addressFields = [
+                                  'address',
+                                  'location',
+                                  'city',
+                                  'fullAddress'
+                                ];
+                                for (final field in addressFields) {
+                                  final value = buyerData[field];
+                                  if (value != null) {
+                                    if (value is String && value.isNotEmpty) {
+                                      addressToShow = value;
+                                      break;
+                                    } else if (value is Map) {
+                                      final extracted =
+                                          value['fullAddress']?.toString() ??
+                                              value['address']?.toString();
+                                      if (extracted != null &&
+                                          extracted.isNotEmpty) {
+                                        addressToShow = extracted;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+
+                            // Try to get contact from user profile if missing or is placeholder
+                            bool contactIsMissing = contactToShow == 'N/A' ||
+                                contactToShow.isEmpty ||
+                                contactToShow
+                                    .toLowerCase()
+                                    .contains('no contact');
+
+                            if (contactIsMissing &&
+                                buyerSnapshot.hasData &&
+                                buyerSnapshot.data != null &&
+                                buyerSnapshot.data!.exists) {
+                              final buyerData = buyerSnapshot.data!.data()
+                                  as Map<String, dynamic>?;
+                              if (buyerData != null) {
+                                // Try multiple possible field names for contact and handle types
+                                final contactFields = [
+                                  'phone',
+                                  'phoneNumber',
+                                  'mobile',
+                                  'contact',
+                                  'mobileNumber'
+                                ];
+                                for (final field in contactFields) {
+                                  final value = buyerData[field];
+                                  if (value != null) {
+                                    if (value is String && value.isNotEmpty) {
+                                      contactToShow = value;
+                                      break;
+                                    } else if (value is Map) {
+                                      final extracted =
+                                          value['phone']?.toString() ??
+                                              value['number']?.toString() ??
+                                              value['contact']?.toString();
+                                      if (extracted != null &&
+                                          extracted.isNotEmpty) {
+                                        contactToShow = extracted;
+                                        break;
+                                      }
+                                    } else {
+                                      // Handle other types by converting to string
+                                      final strValue = value.toString();
+                                      if (strValue.isNotEmpty &&
+                                          strValue != 'null') {
+                                        contactToShow = strValue;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+
+                            // Final fallback for address: use deliveryAddress from order
+                            if ((addressToShow == 'N/A' ||
+                                    addressToShow.isEmpty) &&
+                                order['deliveryAddress'] != null) {
+                              // Handle both String and Map types for deliveryAddress
+                              final deliveryAddr = order['deliveryAddress'];
+                              if (deliveryAddr is String &&
+                                  deliveryAddr.isNotEmpty) {
+                                addressToShow = deliveryAddr;
+                              } else if (deliveryAddr is Map) {
+                                // If it's a Map, try to extract fullAddress or combine parts
+                                addressToShow =
+                                    deliveryAddr['fullAddress']?.toString() ??
+                                        deliveryAddr['address']?.toString() ??
+                                        addressToShow;
+                              }
+                            }
+
+                            return _buildDetailSection(
+                              title: 'Buyer Information',
+                              icon: Icons.person,
+                              color: Colors.blue,
+                              children: [
+                                _buildExpandedDetailRow('Name', buyerName),
+                                _buildExpandedDetailRow(
+                                    'Address', addressToShow),
+                                _buildExpandedDetailRow(
+                                    'Contact', contactToShow),
+                              ],
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 16),
 
                         // Seller Information Section
-                        _buildDetailSection(
-                          title: 'Seller Information',
-                          icon: Icons.store,
-                          color: Colors.green,
-                          children: [
-                            _buildExpandedDetailRow('Name', sellerName),
-                            _buildExpandedDetailRow('Contact', sellerContact),
-                            if (sellerLocation != 'N/A')
-                              _buildExpandedDetailRow(
-                                  'Location', sellerLocation),
-                          ],
+                        FutureBuilder<QuerySnapshot?>(
+                          future: (sellerContact == 'N/A' ||
+                                      sellerContact.isEmpty) &&
+                                  sellerId != null &&
+                                  sellerId.isNotEmpty
+                              ? _firestore
+                                  .collection('sellers')
+                                  .where('userId', isEqualTo: sellerId)
+                                  .limit(1)
+                                  .get()
+                              : Future.value(null),
+                          builder: (context, sellerProfileSnapshot) {
+                            String contactToShow = sellerContact;
+
+                            // Try to get contact from sellers collection if missing
+                            if ((contactToShow == 'N/A' ||
+                                    contactToShow.isEmpty) &&
+                                sellerProfileSnapshot.hasData &&
+                                sellerProfileSnapshot.data != null &&
+                                sellerProfileSnapshot.data!.docs.isNotEmpty) {
+                              final sellerProfile =
+                                  sellerProfileSnapshot.data!.docs.first.data()
+                                      as Map<String, dynamic>;
+
+                              // Try multiple possible field names for contact
+                              contactToShow = sellerProfile['phone'] ??
+                                  sellerProfile['phoneNumber'] ??
+                                  sellerProfile['mobile'] ??
+                                  sellerProfile['contact'] ??
+                                  sellerProfile['mobileNumber'] ??
+                                  sellerProfile['contactNumber'] ??
+                                  contactToShow;
+                            }
+
+                            return _buildDetailSection(
+                              title: 'Seller Information',
+                              icon: Icons.store,
+                              color: Colors.green,
+                              children: [
+                                _buildExpandedDetailRow('Name', sellerName),
+                                _buildExpandedDetailRow(
+                                    'Contact', contactToShow),
+                                if (sellerLocation != 'N/A')
+                                  _buildExpandedDetailRow(
+                                      'Location', sellerLocation),
+                              ],
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 16),
@@ -4896,8 +6335,8 @@ class _CoopDashboardState extends State<CoopDashboard>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        _buildActionButtons(
-                            orderId, status, deliveryMethod, isCoopDelivery),
+                        _buildActionButtons(orderId, status, deliveryMethod,
+                            isCoopDelivery, coopStatus),
                       ],
                     ),
                   ),
@@ -5028,14 +6467,32 @@ class _CoopDashboardState extends State<CoopDashboard>
 
   // Helper method to build action buttons based on status and delivery method
   Widget _buildActionButtons(String orderId, String status,
-      String deliveryMethod, bool isCoopDelivery) {
+      String deliveryMethod, bool isCoopDelivery, String? coopStatus) {
     List<Widget> buttons = [];
 
-    // FOR PICKUP AT COOP: Show only "Mark Delivered" button
+    // FOR PICKUP AT COOP: Show "Picked Up" button first, then "Mark Delivered"
     if (deliveryMethod == 'Pickup at Coop') {
-      if (status != 'delivered' &&
-          status != 'completed' &&
-          status != 'cancelled') {
+      if (coopStatus == 'ready_for_pickup' && status == 'processing') {
+        // Show "Picked Up" button when seller marked it ready (coopStatus)
+        buttons.add(
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _markAsPickedUp(orderId),
+              icon: const Icon(Icons.check_circle, size: 18),
+              label: const Text('Picked Up'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        );
+      } else if (status == 'ready_for_pickup') {
+        // Show "Mark as Delivered" after picked up
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
@@ -5190,6 +6647,82 @@ class _CoopDashboardState extends State<CoopDashboard>
         return Icons.cancel;
       default:
         return Icons.help;
+    }
+  }
+
+  Future<void> _markAsPickedUp(String orderId) async {
+    try {
+      // Get order details first
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+
+      if (!orderDoc.exists) {
+        throw Exception('Order not found');
+      }
+
+      final orderData = orderDoc.data()!;
+      final buyerId = orderData['buyerId'] ?? orderData['userId'];
+      final productName = orderData['productName'] ?? 'Product';
+
+      // Update both status and coopStatus to indicate item has been picked up by cooperative
+      await _firestore.collection('orders').doc(orderId).update({
+        'status': 'ready_for_pickup',
+        'coopStatus': 'picked_up',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Send notification to buyer that order is now ready for pickup
+      if (buyerId != null) {
+        await _firestore.collection('notifications').add({
+          'userId': buyerId,
+          'orderId': orderId,
+          'type': 'order_status',
+          'status': 'ready_for_pickup',
+          'title': '✅ Order Ready for Pickup!',
+          'body':
+              'Your order for $productName is ready for pickup at the cooperative!',
+          'message': 'Your order for $productName is ready for pickup!',
+          'productName': productName,
+          'productId': orderData['productId'],
+          'productImage': orderData['productImage'] ?? '',
+          'timestamp': FieldValue.serverTimestamp(),
+          'read': false,
+          'isRead': false,
+        });
+
+        // Send PUSH NOTIFICATION
+        try {
+          await RealtimeNotificationService.sendTestNotification(
+            title: '✅ Order Ready for Pickup!',
+            body:
+                'Your order for $productName is ready for pickup at the cooperative!',
+            payload:
+                'order_status|$orderId|${orderData['productId']}|$productName',
+          );
+          print('✅ Push notification sent to buyer about ready for pickup');
+        } catch (e) {
+          print('⚠️ Error sending push notification: $e');
+        }
+      }
+
+      // Refresh the dashboard stats
+      _loadDashboardStats();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order marked as picked up and buyer notified!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('Error marking as picked up: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -5966,6 +7499,2153 @@ class _CoopFullScreenImageViewerState
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ========== COOPERATIVE REPORTS VIEW WIDGET ==========
+class _CooperativeReportsView extends StatefulWidget {
+  final FirebaseFirestore firestore;
+
+  const _CooperativeReportsView({required this.firestore});
+
+  @override
+  _CooperativeReportsViewState createState() => _CooperativeReportsViewState();
+}
+
+class _CooperativeReportsViewState extends State<_CooperativeReportsView> {
+  DateTime? _startDate;
+  DateTime? _endDate;
+  String? _selectedSellerId;
+  String? _selectedStatus;
+  bool _isLoading = false;
+
+  // Report data
+  List<Map<String, dynamic>> _transactions = [];
+  double _totalSales = 0;
+  double _totalDeliveryFees = 0;
+  double _totalPayoutToSellers = 0;
+  int _totalOrders = 0;
+  double _cooperativeEarnings = 0;
+
+  List<Map<String, dynamic>> _sellers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Set default date range to current month
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, 1, 0, 0, 0);
+    _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    _loadSellers();
+    _generateReport();
+  }
+
+  /// Generate a clean order number from the order ID
+  String _getOrderNumber(String orderId) {
+    // Handle timestamp-based order IDs: order_1234567890123_productId
+    if (orderId.startsWith('order_') && orderId.contains('_')) {
+      final parts = orderId.split('_');
+      if (parts.length >= 3) {
+        // Extract timestamp
+        final timestamp = int.tryParse(parts[1]);
+        if (timestamp != null) {
+          final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+          final dateStr =
+              '${date.day.toString().padLeft(2, '0')}${date.month.toString().padLeft(2, '0')}${date.year.toString().substring(2)}';
+          // Format: DDMMYY-XXXX (last 4 of timestamp)
+          return '$dateStr-${parts[1].substring(parts[1].length - 4)}';
+        }
+      }
+    }
+
+    // For Firebase auto-generated IDs, use first 4 + last 4
+    if (orderId.length > 12) {
+      return '${orderId.substring(0, 4)}-${orderId.substring(orderId.length - 4)}'
+          .toUpperCase();
+    }
+
+    return orderId.toUpperCase();
+  }
+
+  Future<void> _loadSellers() async {
+    try {
+      final sellersSnapshot = await widget.firestore
+          .collection('users')
+          .where('role', isEqualTo: 'seller')
+          .get();
+
+      setState(() {
+        _sellers = sellersSnapshot.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'name': data['name'] ?? data['fullName'] ?? 'Unknown Seller',
+          };
+        }).toList();
+      });
+    } catch (e) {
+      print('Error loading sellers: $e');
+    }
+  }
+
+  Future<void> _generateReport() async {
+    if (_startDate == null || _endDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select date range')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      Query query = widget.firestore.collection('orders');
+
+      // Apply status filter
+      if (_selectedStatus != null && _selectedStatus!.isNotEmpty) {
+        query = query.where('status', isEqualTo: _selectedStatus);
+      } else {
+        // Default to delivered orders
+        query = query.where('status', isEqualTo: 'delivered');
+      }
+
+      // Apply seller filter
+      if (_selectedSellerId != null && _selectedSellerId!.isNotEmpty) {
+        query = query.where('sellerId', isEqualTo: _selectedSellerId);
+      }
+
+      final ordersSnapshot = await query.get();
+
+      // Filter by date range and calculate totals
+      List<Map<String, dynamic>> transactions = [];
+      double totalSales = 0;
+      double totalDeliveryFees = 0;
+      double totalPayoutToSellers = 0;
+      int totalOrders = 0;
+
+      for (var doc in ordersSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final timestamp = data['timestamp'] as Timestamp?;
+
+        if (timestamp != null) {
+          final orderDate = timestamp.toDate();
+          // Normalize dates for comparison (ignore time component)
+          final orderDateOnly =
+              DateTime(orderDate.year, orderDate.month, orderDate.day);
+          final startDateOnly =
+              DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+          final endDateOnly =
+              DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+
+          if ((orderDateOnly.isAfter(startDateOnly) ||
+                  orderDateOnly.isAtSameMomentAs(startDateOnly)) &&
+              (orderDateOnly.isBefore(endDateOnly) ||
+                  orderDateOnly.isAtSameMomentAs(endDateOnly))) {
+            final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+            final deliveryFee = (data['deliveryFee'] ?? 0).toDouble();
+            final subtotal =
+                (data['subtotal'] ?? (totalAmount - deliveryFee)).toDouble();
+
+            // Fetch seller name
+            final sellerId = data['sellerId'];
+
+            String buyerName = data['customerName'] ?? 'Unknown';
+            String sellerName = 'Unknown';
+
+            // Fetch seller name
+            if (sellerId != null) {
+              try {
+                final sellerDoc = await widget.firestore
+                    .collection('users')
+                    .doc(sellerId)
+                    .get();
+                if (sellerDoc.exists) {
+                  final sellerData = sellerDoc.data();
+                  sellerName = sellerData?['name'] ??
+                      sellerData?['fullName'] ??
+                      'Unknown';
+                }
+              } catch (e) {
+                print('Error fetching seller: $e');
+              }
+            }
+
+            transactions.add({
+              'orderId': doc.id,
+              'buyerName': buyerName,
+              'sellerName': sellerName,
+              'productName': data['productName'] ?? 'Unknown',
+              'quantity': data['quantity'] ?? 1,
+              'totalPrice': totalAmount,
+              'deliveryFee': deliveryFee,
+              'amountToSeller': subtotal,
+              'dateCompleted': timestamp.toDate(),
+              'status': data['status'] ?? 'unknown',
+            });
+
+            totalSales += totalAmount;
+            totalDeliveryFees += deliveryFee;
+            totalPayoutToSellers += subtotal;
+            totalOrders++;
+          }
+        }
+      }
+
+      // Sort transactions by date (newest first)
+      transactions
+          .sort((a, b) => b['dateCompleted'].compareTo(a['dateCompleted']));
+
+      setState(() {
+        _transactions = transactions;
+        _totalSales = totalSales;
+        _totalDeliveryFees = totalDeliveryFees;
+        _totalPayoutToSellers = totalPayoutToSellers;
+        _totalOrders = totalOrders;
+        _cooperativeEarnings =
+            totalDeliveryFees; // Cooperative earns from delivery fees
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating report: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _selectStartDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.green.shade700,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = DateTime(picked.year, picked.month, picked.day, 0, 0, 0);
+        // If end date is before start date, adjust it
+        if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+          _endDate =
+              DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
+        }
+      });
+      _generateReport();
+    }
+  }
+
+  Future<void> _selectEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? DateTime.now(),
+      firstDate: _startDate ?? DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.green.shade700,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
+      });
+      _generateReport();
+    }
+  }
+
+  Future<void> _exportToPDF() async {
+    try {
+      final pdf = pw.Document();
+
+      // Load a font that supports peso symbol
+      final font = await PdfGoogleFonts.notoSansRegular();
+      final fontBold = await PdfGoogleFonts.notoSansBold();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a3.landscape,
+          margin: const pw.EdgeInsets.all(40),
+          theme: pw.ThemeData.withFont(
+            base: font,
+            bold: fontBold,
+          ),
+          build: (pw.Context context) {
+            return [
+              // Header
+              pw.Container(
+                padding: const pw.EdgeInsets.all(20),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.green700,
+                  borderRadius: pw.BorderRadius.circular(10),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Cooperative Transaction Report',
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      'Period: ${DateFormat('MMM dd, yyyy').format(_startDate!)} - ${DateFormat('MMM dd, yyyy').format(_endDate!)}',
+                      style: const pw.TextStyle(
+                        fontSize: 14,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Generated: ${DateFormat('MMM dd, yyyy hh:mm a').format(DateTime.now())}',
+                      style: const pw.TextStyle(
+                        fontSize: 12,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Summary Cards
+              pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: _buildPdfSummaryCard(
+                        'Total Sales', '₱${_totalSales.toStringAsFixed(2)}'),
+                  ),
+                  pw.SizedBox(width: 10),
+                  pw.Expanded(
+                    child: _buildPdfSummaryCard('Delivery Fees',
+                        '₱${_totalDeliveryFees.toStringAsFixed(2)}'),
+                  ),
+                  pw.SizedBox(width: 10),
+                  pw.Expanded(
+                    child: _buildPdfSummaryCard('Payout to Sellers',
+                        '₱${_totalPayoutToSellers.toStringAsFixed(2)}'),
+                  ),
+                  pw.SizedBox(width: 10),
+                  pw.Expanded(
+                    child:
+                        _buildPdfSummaryCard('Total Orders', '$_totalOrders'),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 20),
+
+              // Transactions Table
+              pw.Text(
+                'Transaction Details',
+                style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.green900),
+              ),
+              pw.SizedBox(height: 12),
+
+              if (_transactions.isEmpty)
+                pw.Center(
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.all(20),
+                    child: pw.Text('No transactions found for this period.',
+                        style: const pw.TextStyle(
+                            fontSize: 12, color: PdfColors.grey600)),
+                  ),
+                )
+              else
+                pw.Table(
+                  border:
+                      pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(3),
+                    1: const pw.FlexColumnWidth(2),
+                    2: const pw.FlexColumnWidth(2),
+                    3: const pw.FlexColumnWidth(2.5),
+                    4: const pw.FlexColumnWidth(1),
+                    5: const pw.FlexColumnWidth(1.8),
+                    6: const pw.FlexColumnWidth(1.5),
+                    7: const pw.FlexColumnWidth(1.8),
+                    8: const pw.FlexColumnWidth(1.5),
+                  },
+                  children: [
+                    // Header
+                    pw.TableRow(
+                      decoration:
+                          const pw.BoxDecoration(color: PdfColors.green100),
+                      children: [
+                        _buildPdfTableCell('Order ID', isHeader: true),
+                        _buildPdfTableCell('Buyer', isHeader: true),
+                        _buildPdfTableCell('Seller', isHeader: true),
+                        _buildPdfTableCell('Product', isHeader: true),
+                        _buildPdfTableCell('Qty', isHeader: true),
+                        _buildPdfTableCell('Total', isHeader: true),
+                        _buildPdfTableCell('Delivery', isHeader: true),
+                        _buildPdfTableCell('To Seller', isHeader: true),
+                        _buildPdfTableCell('Date', isHeader: true),
+                      ],
+                    ),
+                    // Data rows
+                    ..._transactions.map((tx) {
+                      return pw.TableRow(
+                        children: [
+                          _buildPdfTableCell(
+                              _getOrderNumber(tx['orderId'].toString())),
+                          _buildPdfTableCell(tx['buyerName']),
+                          _buildPdfTableCell(tx['sellerName']),
+                          _buildPdfTableCell(tx['productName']),
+                          _buildPdfTableCell('${tx['quantity']}'),
+                          _buildPdfTableCell(
+                              '₱${tx['totalPrice'].toStringAsFixed(2)}'),
+                          _buildPdfTableCell(
+                              '₱${tx['deliveryFee'].toStringAsFixed(2)}'),
+                          _buildPdfTableCell(
+                              '₱${tx['amountToSeller'].toStringAsFixed(2)}'),
+                          _buildPdfTableCell(DateFormat('MM/dd/yy')
+                              .format(tx['dateCompleted'])),
+                        ],
+                      );
+                    }).toList(),
+                  ],
+                ),
+
+              pw.SizedBox(height: 20),
+
+              // Totals
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.green700, width: 2),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  children: [
+                    _buildPdfRow(
+                        'Total Sales:', '₱${_totalSales.toStringAsFixed(2)}'),
+                    pw.Divider(),
+                    _buildPdfRow('Total Delivery Fees:',
+                        '₱${_totalDeliveryFees.toStringAsFixed(2)}'),
+                    pw.Divider(),
+                    _buildPdfRow('Total Payout to Sellers:',
+                        '₱${_totalPayoutToSellers.toStringAsFixed(2)}'),
+                    pw.Divider(),
+                    _buildPdfRow('Cooperative Earnings:',
+                        '₱${_cooperativeEarnings.toStringAsFixed(2)}',
+                        isBold: true),
+                  ],
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+
+      // Save PDF to Downloads folder
+      final pdfBytes = await pdf.save();
+      final fileName =
+          'Cooperative_Report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+
+      // Try to save to Downloads directory
+      Directory? downloadsDirectory;
+      if (Platform.isAndroid) {
+        downloadsDirectory = Directory('/storage/emulated/0/Download');
+      } else if (Platform.isIOS) {
+        downloadsDirectory = await getApplicationDocumentsDirectory();
+      } else {
+        downloadsDirectory = await getDownloadsDirectory();
+      }
+
+      if (downloadsDirectory != null) {
+        final filePath = '${downloadsDirectory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(pdfBytes);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF saved to Downloads: $fileName'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'OPEN',
+              textColor: Colors.white,
+              onPressed: () async {
+                await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+              },
+            ),
+          ),
+        );
+      } else {
+        // Fallback to share if can't save to downloads
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF ready to share or save!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating PDF: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  pw.Widget _buildPdfSummaryCard(String title, String value) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(16),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.green50,
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        children: [
+          pw.Text(
+            title,
+            style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+            textAlign: pw.TextAlign.center,
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.green900),
+            textAlign: pw.TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildPdfTableCell(String text, {bool isHeader = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(8),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: isHeader ? 10 : 9,
+          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+          color: isHeader ? PdfColors.green900 : PdfColors.black,
+        ),
+        overflow: pw.TextOverflow.clip,
+        maxLines: 2,
+      ),
+    );
+  }
+
+  pw.Widget _buildPdfRow(String label, String value,
+      {bool isBold = false, double fontSize = 14}) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: isBold ? PdfColors.green900 : PdfColors.black,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.green.shade50, Colors.white],
+        ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Header
+          Card(
+            elevation: 4,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade600, Colors.green.shade800],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.assessment, color: Colors.white, size: 40),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Transaction Reports',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Track sales, delivery fees, and seller payouts',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Summary Cards
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryCard(
+                  'Total Sales',
+                  '₱${_totalSales.toStringAsFixed(2)}',
+                  Icons.attach_money,
+                  Colors.blue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSummaryCard(
+                  'Delivery Fees',
+                  '₱${_totalDeliveryFees.toStringAsFixed(2)}',
+                  Icons.local_shipping,
+                  Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryCard(
+                  'Payout to Sellers',
+                  '₱${_totalPayoutToSellers.toStringAsFixed(2)}',
+                  Icons.account_balance_wallet,
+                  Colors.green,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSummaryCard(
+                  'Total Orders',
+                  '$_totalOrders',
+                  Icons.shopping_bag,
+                  Colors.purple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Filters Card
+          Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.filter_list,
+                          color: Colors.green.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Filters',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Date Range Picker
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      border:
+                          Border.all(color: Colors.green.shade300, width: 1.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today,
+                                color: Colors.green.shade700, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Report Period',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            // From Date
+                            Expanded(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _selectStartDate,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Ink(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.green.shade300),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'From',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Icon(Icons.edit_calendar,
+                                                color: Colors.green.shade600,
+                                                size: 14),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _startDate != null
+                                              ? DateFormat('MMM dd, yyyy')
+                                                  .format(_startDate!)
+                                              : 'Select date',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: _startDate != null
+                                                ? Colors.green.shade900
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(Icons.arrow_forward,
+                                  color: Colors.green.shade400, size: 20),
+                            ),
+                            // To Date
+                            Expanded(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _selectEndDate,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Ink(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.green.shade300),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'To',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Icon(Icons.edit_calendar,
+                                                color: Colors.green.shade600,
+                                                size: 14),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _endDate != null
+                                              ? DateFormat('MMM dd, yyyy')
+                                                  .format(_endDate!)
+                                              : 'Select date',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: _endDate != null
+                                                ? Colors.green.shade900
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_startDate != null && _endDate != null) ...[
+                          const SizedBox(height: 10),
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_endDate!.difference(_startDate!).inDays + 1} days selected',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.green.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Quick Date Presets
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildDatePresetChip('Today', () {
+                        final now = DateTime.now();
+                        setState(() {
+                          _startDate = DateTime(now.year, now.month, now.day);
+                          _endDate = DateTime(
+                              now.year, now.month, now.day, 23, 59, 59);
+                        });
+                        _generateReport();
+                      }),
+                      _buildDatePresetChip('Last 7 Days', () {
+                        final now = DateTime.now();
+                        setState(() {
+                          _startDate = DateTime(now.year, now.month, now.day)
+                              .subtract(const Duration(days: 6));
+                          _endDate = DateTime(
+                              now.year, now.month, now.day, 23, 59, 59);
+                        });
+                        _generateReport();
+                      }),
+                      _buildDatePresetChip('This Month', () {
+                        final now = DateTime.now();
+                        setState(() {
+                          _startDate = DateTime(now.year, now.month, 1);
+                          _endDate = DateTime(
+                              now.year, now.month, now.day, 23, 59, 59);
+                        });
+                        _generateReport();
+                      }),
+                      _buildDatePresetChip('Last 30 Days', () {
+                        final now = DateTime.now();
+                        setState(() {
+                          _startDate = DateTime(now.year, now.month, now.day)
+                              .subtract(const Duration(days: 29));
+                          _endDate = DateTime(
+                              now.year, now.month, now.day, 23, 59, 59);
+                        });
+                        _generateReport();
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Seller Filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedSellerId,
+                    decoration: InputDecoration(
+                      labelText: 'Filter by Seller (Optional)',
+                      prefixIcon:
+                          Icon(Icons.person, color: Colors.green.shade700),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                          value: null, child: Text('All Sellers')),
+                      ..._sellers.map((seller) {
+                        return DropdownMenuItem<String>(
+                          value: seller['id'] as String?,
+                          child: Text(seller['name'] as String),
+                        );
+                      }).toList(),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedSellerId = value;
+                      });
+                      _generateReport();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Status Filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedStatus,
+                    decoration: InputDecoration(
+                      labelText: 'Filter by Status (Optional)',
+                      prefixIcon: Icon(Icons.check_circle,
+                          color: Colors.green.shade700),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: null, child: Text('Delivered Only')),
+                      DropdownMenuItem(
+                          value: 'delivered', child: Text('Delivered')),
+                      DropdownMenuItem(
+                          value: 'shipped', child: Text('Shipped')),
+                      DropdownMenuItem(
+                          value: 'processing', child: Text('Processing')),
+                      DropdownMenuItem(
+                          value: 'cancelled', child: Text('Cancelled')),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedStatus = value;
+                      });
+                      _generateReport();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Generate Report Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _generateReport,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.refresh),
+                      label:
+                          Text(_isLoading ? 'Generating...' : 'Refresh Report'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Transactions Table
+          Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.list_alt,
+                              color: Colors.green.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Transaction Details',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _transactions.isEmpty ? null : _exportToPDF,
+                        icon: const Icon(Icons.picture_as_pdf, size: 18),
+                        label: const Text('Export PDF'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                if (_isLoading)
+                  const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_transactions.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.inbox,
+                              size: 64, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No transactions found',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Try adjusting your filters',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor:
+                          MaterialStateProperty.all(Colors.green.shade50),
+                      columns: const [
+                        DataColumn(
+                            label: Text('Order ID',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Buyer',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Seller',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Product',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Qty',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Total Price',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Delivery Fee',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('To Seller',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                        DataColumn(
+                            label: Text('Date',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12))),
+                      ],
+                      rows: _transactions.map((tx) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(
+                                tx['orderId'].toString().length > 12
+                                    ? tx['orderId']
+                                            .toString()
+                                            .substring(0, 12) +
+                                        '...'
+                                    : tx['orderId'].toString(),
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(tx['buyerName'],
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(tx['sellerName'],
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(
+                              ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 150),
+                                child: Text(
+                                  tx['productName'],
+                                  style: const TextStyle(fontSize: 11),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            DataCell(Text('${tx['quantity']}',
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(
+                                '₱${tx['totalPrice'].toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(
+                                '₱${tx['deliveryFee'].toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(
+                                '₱${tx['amountToSeller'].toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11))),
+                            DataCell(Text(
+                                DateFormat('MMM dd, yyyy')
+                                    .format(tx['dateCompleted']),
+                                style: const TextStyle(fontSize: 11))),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                if (_transactions.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.green.shade50,
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Sales:',
+                                style: TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.bold)),
+                            Text('₱${_totalSales.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Delivery Fees:',
+                                style: TextStyle(fontSize: 14)),
+                            Text('₱${_totalDeliveryFees.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Payout to Sellers:',
+                                style: TextStyle(fontSize: 14)),
+                            Text('₱${_totalPayoutToSellers.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Cooperative Earnings:',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade900)),
+                            Text('₱${_cooperativeEarnings.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade900)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(
+      String title, String value, IconData icon, Color color) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDatePresetChip(String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.green.shade300),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.schedule, size: 14, color: Colors.green.shade700),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.green.shade900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ========== COOPERATIVE PAYOUTS VIEW ==========
+class _CooperativePayoutsView extends StatefulWidget {
+  final FirebaseFirestore firestore;
+
+  const _CooperativePayoutsView({required this.firestore});
+
+  @override
+  _CooperativePayoutsViewState createState() => _CooperativePayoutsViewState();
+}
+
+class _CooperativePayoutsViewState extends State<_CooperativePayoutsView> {
+  bool _isLoading = false;
+  List<Map<String, dynamic>> _sellers = [];
+  Map<String, Map<String, dynamic>> _sellerEarnings = {};
+  List<Map<String, dynamic>> _payoutHistory = [];
+  String? _selectedSellerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSellers();
+    _loadPayoutHistory();
+  }
+
+  Future<void> _loadSellers() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Load all sellers (approved or with status 'approved')
+      final sellersSnapshot = await widget.firestore
+          .collection('users')
+          .where('role', isEqualTo: 'seller')
+          .get();
+
+      final sellers = <Map<String, dynamic>>[];
+      final earnings = <String, Map<String, dynamic>>{};
+
+      for (var doc in sellersSnapshot.docs) {
+        final sellerData = doc.data();
+        final sellerId = doc.id;
+
+        // Check if seller is approved (either isApproved field or status field)
+        final isApproved = sellerData['isApproved'] == true ||
+            sellerData['status'] == 'approved';
+
+        // Only include approved sellers
+        if (!isApproved) continue;
+
+        final sellerName =
+            sellerData['name'] ?? sellerData['fullName'] ?? 'Unknown';
+
+        sellers.add({
+          'id': sellerId,
+          'name': sellerName,
+          'email': sellerData['email'] ?? '',
+          'phone': sellerData['phone'] ?? '',
+        });
+
+        // Calculate earnings for each seller
+        final earningsData = await _calculateSellerEarnings(sellerId);
+        earnings[sellerId] = earningsData;
+      }
+
+      setState(() {
+        _sellers = sellers;
+        _sellerEarnings = earnings;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading sellers: $e');
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Show error to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading sellers: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _calculateSellerEarnings(String sellerId) async {
+    try {
+      // Get all delivered/completed orders for this seller
+      final ordersSnapshot = await widget.firestore
+          .collection('orders')
+          .where('sellerId', isEqualTo: sellerId)
+          .where('status', whereIn: ['delivered', 'completed']).get();
+
+      double totalEarnings = 0;
+      double paidAmount = 0;
+      double pendingAmount = 0;
+      int totalOrders = 0;
+      int paidOrders = 0;
+      int pendingOrders = 0;
+      List<Map<String, dynamic>> pendingPayouts = [];
+
+      for (var doc in ordersSnapshot.docs) {
+        final data = doc.data();
+        final orderId = doc.id;
+        final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+        final deliveryFee = (data['deliveryFee'] ?? 0).toDouble();
+        final subtotal =
+            (data['subtotal'] ?? (totalAmount - deliveryFee)).toDouble();
+        final payoutStatus = data['payoutStatus'] ?? 'pending';
+
+        totalEarnings += subtotal;
+        totalOrders++;
+
+        if (payoutStatus == 'paid') {
+          paidAmount += subtotal;
+          paidOrders++;
+        } else {
+          pendingAmount += subtotal;
+          pendingOrders++;
+
+          // Add to pending payouts list
+          pendingPayouts.add({
+            'orderId': orderId,
+            'productName': data['productName'] ?? 'Unknown',
+            'buyerName': data['customerName'] ?? 'Unknown',
+            'amount': subtotal,
+            'orderDate': data['createdAt'],
+            'quantity': data['quantity'] ?? 1,
+          });
+        }
+      }
+
+      return {
+        'totalEarnings': totalEarnings,
+        'paidAmount': paidAmount,
+        'pendingAmount': pendingAmount,
+        'totalOrders': totalOrders,
+        'paidOrders': paidOrders,
+        'pendingOrders': pendingOrders,
+        'pendingPayouts': pendingPayouts,
+      };
+    } catch (e) {
+      print('Error calculating earnings for $sellerId: $e');
+      return {
+        'totalEarnings': 0.0,
+        'paidAmount': 0.0,
+        'pendingAmount': 0.0,
+        'totalOrders': 0,
+        'paidOrders': 0,
+        'pendingOrders': 0,
+        'pendingPayouts': [],
+      };
+    }
+  }
+
+  String _getOrderNumber(String orderId) {
+    if (orderId.startsWith('order_') && orderId.contains('_')) {
+      final parts = orderId.split('_');
+      if (parts.length >= 3) {
+        final timestamp = int.tryParse(parts[1]);
+        if (timestamp != null) {
+          final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+          final dateStr =
+              '${date.day.toString().padLeft(2, '0')}${date.month.toString().padLeft(2, '0')}${date.year.toString().substring(2)}';
+          return '$dateStr-${parts[1].substring(parts[1].length - 4)}';
+        }
+      }
+    }
+    if (orderId.length > 12) {
+      return '${orderId.substring(0, 4)}-${orderId.substring(orderId.length - 4)}'
+          .toUpperCase();
+    }
+    return orderId.toUpperCase();
+  }
+
+  Future<void> _loadPayoutHistory() async {
+    try {
+      print('========================================');
+      print('COOP: Loading payout history...');
+
+      final payoutsSnapshot = await widget.firestore
+          .collection('seller_payouts')
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .get();
+
+      print(
+          'COOP: Found ${payoutsSnapshot.docs.length} payout records in database');
+
+      List<Map<String, dynamic>> validPayouts = [];
+      List<String> invalidPayoutIds = [];
+      Set<String> seenReferences =
+          {}; // Track reference numbers to detect duplicates
+
+      for (var doc in payoutsSnapshot.docs) {
+        final data = doc.data();
+
+        print('COOP: Processing payout ${doc.id}');
+        print('  Seller: ${data['sellerName']}');
+        print('  Amount: ${data['totalAmount']}');
+        print('  Orders: ${data['orderCount']}');
+        print('  Reference: ${data['referenceNumber']}');
+
+        // Check for duplicate reference numbers
+        final refNumber = data['referenceNumber']?.toString() ?? '';
+        if (refNumber.isNotEmpty && seenReferences.contains(refNumber)) {
+          print('  -> DUPLICATE detected! Will delete.');
+          invalidPayoutIds.add(doc.id);
+          continue;
+        }
+        if (refNumber.isNotEmpty) {
+          seenReferences.add(refNumber);
+        }
+
+        // Keep all payout records - they are historical records of payments made
+        print('  -> Valid payout, adding to list');
+        validPayouts.add({
+          'id': doc.id,
+          ...data,
+        });
+      }
+
+      // Delete invalid payout records
+      if (invalidPayoutIds.isNotEmpty) {
+        print(
+            'COOP: Deleting ${invalidPayoutIds.length} duplicate payout records...');
+        for (var payoutId in invalidPayoutIds) {
+          await widget.firestore
+              .collection('seller_payouts')
+              .doc(payoutId)
+              .delete();
+          print('COOP: Deleted payout record: $payoutId');
+        }
+      }
+
+      setState(() {
+        _payoutHistory = validPayouts;
+      });
+
+      print('COOP: Final payout history count: ${validPayouts.length}');
+      print('========================================');
+    } catch (e) {
+      print('COOP: Error loading payout history: $e');
+      print('COOP: Stack trace: ${StackTrace.current}');
+    }
+  }
+
+  Future<void> _processPayouts(
+      String sellerId,
+      List<Map<String, dynamic>> payouts,
+      String paymentMethod,
+      String reference,
+      String notes) async {
+    try {
+      final batch = widget.firestore.batch();
+      final sellerData = _sellers.firstWhere((s) => s['id'] == sellerId);
+      final sellerName = sellerData['name'];
+
+      // Calculate total amount and collect order IDs
+      double totalAmount = 0.0;
+      List<String> orderIds = [];
+
+      for (var payout in payouts) {
+        final orderId = payout['orderId'];
+        orderIds.add(orderId);
+        totalAmount += payout['amount'];
+
+        final orderRef = widget.firestore.collection('orders').doc(orderId);
+
+        // Update order with payout info
+        batch.update(orderRef, {
+          'payoutStatus': 'paid',
+          'payoutDate': FieldValue.serverTimestamp(),
+          'payoutMethod': paymentMethod,
+          'payoutReference': reference,
+          'payoutNotes': notes,
+          'payoutBy': 'cooperative',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Check for existing payout with same reference number to prevent duplicates
+      final existingPayout = await widget.firestore
+          .collection('seller_payouts')
+          .where('referenceNumber', isEqualTo: reference)
+          .where('sellerId', isEqualTo: sellerId)
+          .limit(1)
+          .get();
+
+      if (existingPayout.docs.isNotEmpty) {
+        print('Payout with reference $reference already exists. Skipping.');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This payment has already been processed'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Create a single combined payout record
+      final payoutRef = widget.firestore.collection('seller_payouts').doc();
+
+      print('Creating payout record for seller: $sellerId');
+      print('Total amount: $totalAmount');
+      print('Order count: ${orderIds.length}');
+
+      batch.set(payoutRef, {
+        'orderIds': orderIds,
+        'orderCount': orderIds.length,
+        'sellerId': sellerId,
+        'sellerName': sellerName,
+        'totalAmount': totalAmount,
+        'paymentMethod': paymentMethod,
+        'referenceNumber': reference,
+        'notes': notes,
+        'payoutDate': FieldValue.serverTimestamp(),
+        'processedBy': 'cooperative',
+        'status': 'completed',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      print('Committing batch write...');
+      await batch.commit();
+      print('Batch committed successfully');
+      await _loadSellers();
+      await _loadPayoutHistory();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Successfully paid ${payouts.length} orders to $sellerName'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error processing payouts: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error processing payouts: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.green.shade50, Colors.white],
+        ),
+      ),
+      child: RefreshIndicator(
+        onRefresh: _loadSellers,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Header Card
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.green.shade600, Colors.green.shade800],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance_wallet,
+                        color: Colors.white, size: 40),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'Seller Payouts',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Manage and process seller earnings',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        _loadSellers();
+                        _loadPayoutHistory();
+                      },
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      tooltip: 'Refresh',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_sellers.isEmpty)
+              Center(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 40),
+                    Icon(Icons.people_outline,
+                        size: 64, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No sellers found',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...(_sellers.map((seller) {
+                final sellerId = seller['id'];
+                final earnings = _sellerEarnings[sellerId];
+
+                // Add null check and default values
+                if (earnings == null) return const SizedBox.shrink();
+
+                final hasPending = (earnings['pendingAmount'] ?? 0.0) > 0;
+
+                return Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: hasPending
+                          ? Colors.orange.shade200
+                          : Colors.grey.shade200,
+                      width: hasPending ? 2 : 1,
+                    ),
+                  ),
+                  child: ExpansionTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.green.shade100,
+                      child: Icon(Icons.person, color: Colors.green.shade700),
+                    ),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            seller['name'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        if (hasPending)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Pending',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '${earnings['totalOrders']} orders • ₱${earnings['totalEarnings'].toStringAsFixed(2)} total',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildEarningsCard(
+                                    'Total Earnings',
+                                    '₱${earnings['totalEarnings'].toStringAsFixed(2)}',
+                                    Icons.attach_money,
+                                    Colors.blue,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildEarningsCard(
+                                    'Paid',
+                                    '₱${earnings['paidAmount'].toStringAsFixed(2)}',
+                                    Icons.check_circle,
+                                    Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildEarningsCard(
+                                    'Pending',
+                                    '₱${earnings['pendingAmount'].toStringAsFixed(2)}',
+                                    Icons.pending_actions,
+                                    Colors.orange,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildEarningsCard(
+                                    'Orders',
+                                    '${earnings['pendingOrders']}/${earnings['totalOrders']}',
+                                    Icons.shopping_bag,
+                                    Colors.purple,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: hasPending
+                                    ? () async {
+                                        // Pay immediately without confirmation
+                                        final pendingPayouts =
+                                            List<Map<String, dynamic>>.from(
+                                                earnings['pendingPayouts'] ??
+                                                    []);
+
+                                        if (pendingPayouts.isEmpty) return;
+
+                                        // Show processing indicator
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Row(
+                                              children: [
+                                                SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                SizedBox(width: 12),
+                                                Text('Processing payout...'),
+                                              ],
+                                            ),
+                                            duration: Duration(seconds: 2),
+                                          ),
+                                        );
+
+                                        await _processPayouts(
+                                          sellerId,
+                                          pendingPayouts,
+                                          'GCash', // Default payment method
+                                          'AUTO-${DateTime.now().millisecondsSinceEpoch}', // Auto-generated reference
+                                          'Automatic payout by cooperative',
+                                        );
+                                      }
+                                    : null,
+                                icon: const Icon(Icons.payments, size: 18),
+                                label: Text(
+                                  hasPending
+                                      ? 'Pay ₱${(earnings['pendingAmount'] ?? 0.0).toStringAsFixed(2)}'
+                                      : 'No Pending Payouts',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade700,
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  disabledBackgroundColor: Colors.grey.shade300,
+                                  disabledForegroundColor: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList()),
+
+            // Payout History Section
+            const SizedBox(height: 24),
+            const Divider(thickness: 2),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.history, color: Colors.green.shade700, size: 24),
+                const SizedBox(width: 12),
+                const Text(
+                  'Payout History',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            if (_payoutHistory.isEmpty)
+              Card(
+                elevation: 1,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.history,
+                            size: 48, color: Colors.grey.shade400),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No payout history yet',
+                          style: TextStyle(
+                              fontSize: 14, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              ...(_payoutHistory.map((payout) {
+                final payoutDate = payout['createdAt'] != null
+                    ? (payout['createdAt'] as Timestamp).toDate()
+                    : DateTime.now();
+                final formattedDate =
+                    '${payoutDate.day}/${payoutDate.month}/${payoutDate.year} ${payoutDate.hour}:${payoutDate.minute.toString().padLeft(2, '0')}';
+
+                // Get order count and total amount (new combined format)
+                final orderCount = payout['orderCount'] ?? 1;
+                final totalAmount =
+                    payout['totalAmount'] ?? payout['amount'] ?? 0.0;
+
+                return Card(
+                  elevation: 1,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.green.shade100,
+                      child: Icon(Icons.check_circle,
+                          color: Colors.green.shade700, size: 20),
+                    ),
+                    title: Text(
+                      payout['sellerName'] ?? 'Unknown Seller',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(
+                          '$orderCount ${orderCount == 1 ? 'order' : 'orders'} paid',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          formattedDate,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                        if (payout['paymentMethod'] != null)
+                          Text(
+                            'Method: ${payout['paymentMethod']}',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade600),
+                          ),
+                        if (payout['referenceNumber'] != null)
+                          Text(
+                            'Ref: ${payout['referenceNumber']}',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade600),
+                          ),
+                      ],
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '₱${totalAmount.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'PAID',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEarningsCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: color.withOpacity(0.9),
+            ),
+          ),
         ],
       ),
     );

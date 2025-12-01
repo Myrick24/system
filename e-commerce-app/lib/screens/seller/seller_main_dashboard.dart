@@ -5,6 +5,7 @@ import 'seller_product_dashboard.dart';
 import 'seller_order_management.dart';
 import 'seller_inventory_management.dart';
 import 'seller_profile_management.dart';
+import 'seller_analytics.dart';
 import 'add_product_screen.dart';
 import 'notifications_screen.dart';
 import '../../theme/app_theme.dart';

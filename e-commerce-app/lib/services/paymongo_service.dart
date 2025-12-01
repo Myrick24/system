@@ -166,12 +166,41 @@ class PayMongoService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final status = data['data']['attributes']['status'];
+        final amount = data['data']['attributes']['amount'];
 
         // Update Firestore record
         await _firestore.collection('paymongo_payments').doc(sourceId).update({
           'status': status,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+
+        // 🔥 CRITICAL FIX: If source is chargeable, create a Payment to record in PayMongo dashboard
+        if (status == 'chargeable') {
+          print(
+              '🔥 Source is chargeable - creating Payment to record transaction');
+          print('📊 Amount in centavos: $amount');
+
+          final paymentResult = await createPaymentFromSource(
+            sourceId: sourceId,
+            amountInCentavos: amount, // Already in centavos from API
+          );
+
+          if (paymentResult['success'] == true) {
+            print('✅ Payment created successfully in PayMongo dashboard');
+            print('💳 Payment ID: ${paymentResult['paymentId']}');
+            // Update status to 'paid' after successful payment creation
+            await _firestore
+                .collection('paymongo_payments')
+                .doc(sourceId)
+                .update({
+              'status': 'paid',
+              'paymentId': paymentResult['paymentId'],
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          } else {
+            print('❌ Failed to create payment: ${paymentResult['error']}');
+          }
+        }
 
         return {
           'success': true,
@@ -186,6 +215,90 @@ class PayMongoService {
       }
     } catch (e) {
       print('Error checking payment status: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Create a Payment from a chargeable Source
+  /// THIS is what makes the transaction appear in PayMongo dashboard!
+  Future<Map<String, dynamic>> createPaymentFromSource({
+    required String sourceId,
+    required int
+        amountInCentavos, // Amount already in centavos from PayMongo API
+  }) async {
+    try {
+      print('💰 Creating Payment from source: $sourceId');
+      print(
+          '💵 Amount: $amountInCentavos centavos (₱${amountInCentavos / 100})');
+
+      final requestBody = {
+        'data': {
+          'attributes': {
+            'amount': amountInCentavos,
+            'source': {
+              'id': sourceId,
+              'type': 'source',
+            },
+            'currency': 'PHP',
+            'description': 'GCash Payment',
+          }
+        }
+      };
+
+      print('📤 Payment request: ${jsonEncode(requestBody)}');
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/payments'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': _authHeader,
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      print('📥 Payment creation response: ${response.statusCode}');
+      print('📄 Response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        final paymentId = data['data']['id'];
+        final status = data['data']['attributes']['status'];
+
+        print('✅ SUCCESS! Payment created in PayMongo dashboard');
+        print('🆔 Payment ID: $paymentId');
+        print('📊 Status: $status');
+
+        return {
+          'success': true,
+          'paymentId': paymentId,
+          'status': status,
+          'data': data['data'],
+        };
+      } else {
+        print('❌ Payment creation FAILED with status: ${response.statusCode}');
+        print('❌ Error response: ${response.body}');
+
+        try {
+          final errorData = jsonDecode(response.body);
+          final errorMessage =
+              errorData['errors']?[0]?['detail'] ?? 'Failed to create payment';
+          print('❌ Error detail: $errorMessage');
+          return {
+            'success': false,
+            'error': errorMessage,
+          };
+        } catch (e) {
+          return {
+            'success': false,
+            'error': 'Failed to create payment: ${response.body}',
+          };
+        }
+      }
+    } catch (e) {
+      print('❌ EXCEPTION creating payment from source: $e');
       return {
         'success': false,
         'error': e.toString(),

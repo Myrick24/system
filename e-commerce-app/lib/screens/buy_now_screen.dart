@@ -221,11 +221,20 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
     return '';
   }
 
-  double _calculateTotal() {
+  double _calculateSubtotal() {
     double price = widget.product['price'] is int
         ? (widget.product['price'] as int).toDouble()
         : widget.product['price'] as double;
     return price * _quantity;
+  }
+
+  double _getDeliveryFee() {
+    // Delivery fee only applies to Cooperative Delivery
+    return _selectedDeliveryOption == 'Cooperative Delivery' ? 50.0 : 0.0;
+  }
+
+  double _calculateTotal() {
+    return _calculateSubtotal() + _getDeliveryFee();
   }
 
   void _showLoginPrompt() {
@@ -379,16 +388,15 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
               context,
               MaterialPageRoute(
                 builder: (context) => PayMongoGCashScreen(
-                  amount: (widget.product['price'] is int
-                          ? (widget.product['price'] as int).toDouble()
-                          : widget.product['price'] as double) *
-                      _quantity,
+                  amount: _calculateTotal(), // Use total including delivery fee
                   orderId: orderId,
                   userId: _auth.currentUser!.uid,
                   orderDetails: {
                     'productName': widget.product['name'],
                     'quantity': _quantity,
                     'unit': widget.product['unit'] ?? 'pc',
+                    'subtotal': _calculateSubtotal(),
+                    'deliveryFee': _getDeliveryFee(),
                     'deliveryMethod': _selectedDeliveryOption,
                     'deliveryAddress':
                         _selectedDeliveryOption == 'Cooperative Delivery'
@@ -519,8 +527,11 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
               SizedBox(height: 8),
               Text('Product: ${widget.product['name']}'),
               Text('Quantity: $_quantity ${widget.product['unit'] ?? 'pc'}'),
+              Text('Subtotal: ₱${_calculateSubtotal().toStringAsFixed(2)}'),
+              if (_selectedDeliveryOption == 'Cooperative Delivery')
+                Text('Delivery Fee: ₱${_getDeliveryFee().toStringAsFixed(2)}'),
               Text(
-                'Total: ₱${((widget.product['price'] is int ? (widget.product['price'] as int).toDouble() : widget.product['price'] as double) * _quantity).toStringAsFixed(2)}',
+                'Total: ₱${_calculateTotal().toStringAsFixed(2)}',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.green,
@@ -1123,6 +1134,29 @@ class _BuyNowScreenState extends State<BuyNowScreen> {
                       Text('$_quantity'),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Subtotal:'),
+                      Text('₱${_calculateSubtotal().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  if (_selectedDeliveryOption == 'Cooperative Delivery') ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Delivery Fee:'),
+                        Text(
+                          '₱${_getDeliveryFee().toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

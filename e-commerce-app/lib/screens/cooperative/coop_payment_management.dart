@@ -261,16 +261,23 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
     Color statusColor = Colors.orange;
 
     if (paymentMethod == 'GCash') {
+      // GCash is always paid upfront
       isPaid = true;
       paymentStatus = 'Paid';
       statusColor = Colors.green;
-    } else if (paymentMethod == 'Cash on Delivery') {
-      if (status == 'delivered' || status == 'completed') {
+    } else if (paymentMethod == 'Cash on Delivery' || paymentMethod == 'Cash') {
+      // For COD/Cash: Check if explicitly marked as collected, or if order is delivered/completed
+      final paymentCollected = order['paymentCollected'] ?? false;
+
+      if (paymentCollected || status == 'delivered' || status == 'completed') {
         isPaid = true;
-        paymentStatus = 'Paid';
+        paymentStatus = 'Collected';
         statusColor = Colors.green;
+      } else if (status == 'cancelled') {
+        paymentStatus = 'Cancelled';
+        statusColor = Colors.red;
       } else {
-        paymentStatus = 'Unpaid';
+        paymentStatus = 'Pending Collection';
         statusColor = Colors.orange;
       }
     }
@@ -528,8 +535,10 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
               ),
             ),
 
-            // Action button for unpaid COD
-            if (paymentMethod == 'Cash on Delivery' && !isPaid) ...[
+            // Action button for unpaid COD/Cash
+            if ((paymentMethod == 'Cash on Delivery' ||
+                    paymentMethod == 'Cash') &&
+                !isPaid) ...[
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -537,7 +546,7 @@ class _CoopPaymentManagementState extends State<CoopPaymentManagement> {
                   onPressed: () => _markAsPaid(orderId),
                   icon: const Icon(Icons.check_circle, size: 20),
                   label: const Text(
-                    'Mark as Paid (COD Collected)',
+                    'Mark as Paid (Cash Collected)',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(

@@ -333,6 +333,30 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Subtotal:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text(
+                              '₱${widget.order['subtotal'] ?? (totalAmount ?? 0)}',
+                              style: TextStyle(color: Colors.grey.shade800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Delivery Fee:',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text(
+                              '₱${widget.order['deliveryFee']?.toStringAsFixed(2) ?? '50.00'}',
+                              style: TextStyle(color: Colors.grey.shade800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
                         Divider(color: Colors.green.shade200),
                         const SizedBox(height: 10),
                         Row(
@@ -784,31 +808,32 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     try {
       final now = DateTime.now();
 
+      // Update coopStatus only, keep buyer-facing status as 'processing'
       await _firestore.collection('orders').doc(orderId).update({
-        'status': 'ready_for_pickup',
+        'coopStatus': 'ready_for_pickup',
         'updatedAt': FieldValue.serverTimestamp(),
         'statusUpdates': FieldValue.arrayUnion([
           {
-            'status': 'ready_for_pickup',
+            'coopStatus': 'ready_for_pickup',
             'timestamp': Timestamp.fromDate(now),
           }
         ]),
       });
 
-      // Send notification to buyer
-      final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
-      if (buyerId != null) {
+      // Send notification to cooperative only (not to buyer yet)
+      final cooperativeId = widget.order['cooperativeId'];
+      if (cooperativeId != null) {
         final productName = widget.order['productName'] ?? 'Product';
 
         await _firestore.collection('notifications').add({
-          'userId': buyerId,
+          'userId': cooperativeId,
           'orderId': orderId,
-          'type': 'order_status',
+          'type': 'order_ready',
           'status': 'ready_for_pickup',
-          'title': '✅ Order Ready for Pickup!',
+          'title': '📦 Order Ready for Pickup',
           'body':
-              'Your order for $productName is ready for pickup at the cooperative!',
-          'message': 'Your order for $productName is ready for pickup!',
+              'Order for $productName is ready and waiting at seller location',
+          'message': 'Order for $productName is ready for cooperative pickup',
           'productName': productName,
           'productId': widget.order['productId'],
           'productImage': widget.order['productImage'] ?? '',
@@ -817,16 +842,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           'isRead': false,
         });
 
-        // Send PUSH NOTIFICATION
+        // Send PUSH NOTIFICATION to cooperative
         try {
           await RealtimeNotificationService.sendTestNotification(
-            title: '✅ Order Ready for Pickup!',
+            title: '📦 Order Ready for Pickup',
             body:
-                'Your order for $productName is ready for pickup at the cooperative!',
+                'Order for $productName is ready and waiting at seller location',
             payload:
-                'order_status|$orderId|${widget.order['productId']}|$productName',
+                'order_ready|$orderId|${widget.order['productId']}|$productName',
           );
-          print('✅ Push notification sent to buyer about ready for pickup');
+          print('✅ Push notification sent to cooperative about ready order');
         } catch (e) {
           print('⚠️ Error sending push notification: $e');
         }

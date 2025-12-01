@@ -309,10 +309,17 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
       switch (tabIndex) {
         case 0: // Active
-          statuses = ['pending', 'processing', 'shipped'];
+          statuses = [
+            'pending',
+            'processing',
+            'ready',
+            'ready_for_pickup',
+            'ready_for_shipping',
+            'shipped'
+          ];
           break;
         case 1: // Completed
-          statuses = ['delivered'];
+          statuses = ['delivered', 'completed'];
           break;
         case 2: // Cancelled
           statuses = ['cancelled', 'rejected'];
@@ -402,7 +409,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       print('');
 
       // Apply sorting
-      _sortOrders(orders);
+      _sortOrders(orders, tabIndex);
 
       switch (tabIndex) {
         case 0:
@@ -424,13 +431,19 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
     }
   }
 
-  void _sortOrders(List<Map<String, dynamic>> orders) {
+  void _sortOrders(List<Map<String, dynamic>> orders, int tabIndex) {
     switch (_sortBy) {
       case 'date_newest':
         // Newest first (default)
         orders.sort((a, b) {
-          final aTime = a['timestamp'] as Timestamp?;
-          final bTime = b['timestamp'] as Timestamp?;
+          // For cancelled orders (tab 2), sort by updatedAt (cancellation time)
+          // For other tabs, sort by timestamp (order creation time)
+          final aTime = (tabIndex == 2 && a['updatedAt'] != null)
+              ? a['updatedAt'] as Timestamp?
+              : a['timestamp'] as Timestamp?;
+          final bTime = (tabIndex == 2 && b['updatedAt'] != null)
+              ? b['updatedAt'] as Timestamp?
+              : b['timestamp'] as Timestamp?;
           if (aTime == null || bTime == null) return 0;
           return bTime.compareTo(aTime);
         });
@@ -438,8 +451,14 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
       case 'date_oldest':
         // Oldest first
         orders.sort((a, b) {
-          final aTime = a['timestamp'] as Timestamp?;
-          final bTime = b['timestamp'] as Timestamp?;
+          // For cancelled orders (tab 2), sort by updatedAt (cancellation time)
+          // For other tabs, sort by timestamp (order creation time)
+          final aTime = (tabIndex == 2 && a['updatedAt'] != null)
+              ? a['updatedAt'] as Timestamp?
+              : a['timestamp'] as Timestamp?;
+          final bTime = (tabIndex == 2 && b['updatedAt'] != null)
+              ? b['updatedAt'] as Timestamp?
+              : b['timestamp'] as Timestamp?;
           if (aTime == null || bTime == null) return 0;
           return aTime.compareTo(bTime);
         });
@@ -481,10 +500,32 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
 
   Future<void> _cancelOrder(String orderId) async {
     try {
+      // Get order details to restore stock
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+      final orderData = orderDoc.data();
+
       await _firestore.collection('orders').doc(orderId).update({
         'status': 'cancelled',
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Return stock to product inventory
+      if (orderData != null) {
+        final productId = orderData['productId'];
+        final quantity = orderData['quantity'] ?? 0;
+
+        if (productId != null && quantity > 0) {
+          try {
+            await _firestore.collection('products').doc(productId).update({
+              'currentStock': FieldValue.increment(quantity),
+            });
+            print('Stock restored: +$quantity to product $productId');
+          } catch (e) {
+            print('Error restoring stock: $e');
+            // Continue even if stock restoration fails
+          }
+        }
+      }
 
       _loadOrdersByTab(_tabController.index);
 
@@ -725,41 +766,89 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.green.withOpacity(0.15),
-                                  Colors.green.withOpacity(0.05),
-                                ],
-                              ),
+                              color: Colors.grey[50],
                               borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[200]!),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            child: Column(
                               children: [
-                                const Row(
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Icon(
-                                      Icons.account_balance_wallet,
-                                      color: Colors.green,
-                                      size: 20,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Total Amount',
+                                    const Text(
+                                      'Subtotal',
                                       style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    Text(
+                                      '₱${(order['subtotal'] ?? (order['price'] ?? 0) * (order['quantity'] ?? 1)).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black87,
                                       ),
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
+                                if ((order['deliveryFee'] != null &&
+                                        order['deliveryFee'] > 0) ||
+                                    order['deliveryMethod'] ==
+                                        'Cooperative Delivery') ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Delivery Fee',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      Text(
+                                        '₱${((order['deliveryFee'] != null && order['deliveryFee'] > 0) ? order['deliveryFee'] : 50.0).toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ],
+                                const Divider(height: 24),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.account_balance_wallet,
+                                          color: Colors.green,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Total Amount',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -1543,24 +1632,75 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
                                     width: 1,
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                child: Column(
                                   children: [
-                                    const Text(
-                                      'Total Amount',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Subtotal',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₱${(order['subtotal'] ?? (order['price'] ?? 0) * (order['quantity'] ?? 1)).toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    Text(
-                                      '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.green,
+                                    if ((order['deliveryFee'] != null &&
+                                            order['deliveryFee'] > 0) ||
+                                        order['deliveryMethod'] ==
+                                            'Cooperative Delivery') ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            'Delivery Fee',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                          Text(
+                                            '₱${((order['deliveryFee'] != null && order['deliveryFee'] > 0) ? order['deliveryFee'] : 50.0).toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                    ],
+                                    const Divider(height: 16),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Total Amount',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),

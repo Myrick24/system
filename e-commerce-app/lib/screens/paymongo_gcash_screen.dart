@@ -3,8 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'dart:async';
 import '../services/paymongo_service.dart';
-import 'checkout_screen.dart';
 import 'unified_main_dashboard.dart';
+import 'buyer/buyer_main_dashboard.dart' as buyer;
 
 /// PayMongo GCash Payment Screen with Deep Linking
 ///
@@ -333,28 +333,34 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen>
     if (_sourceId == null) return;
 
     try {
-      print('Checking payment status for source: $_sourceId');
+      print('🔍 Checking payment status for source: $_sourceId');
 
       final statusResult =
           await _payMongoService.checkPaymentStatus(_sourceId!);
 
       if (statusResult['success'] == true) {
         final status = statusResult['status'];
-        print('Payment status: $status');
+        print('💳 Payment status: $status');
 
-        if (status == 'chargeable') {
-          // Payment successful!
+        if (status == 'chargeable' || status == 'paid') {
+          // Payment successful! (chargeable means user paid, paid means we created the Payment)
+          print('✅ Payment successful! Status: $status');
           _statusCheckTimer?.cancel();
           _handlePaymentSuccess();
         } else if (status == 'cancelled' || status == 'failed') {
           // Payment failed
+          print('❌ Payment failed with status: $status');
           _statusCheckTimer?.cancel();
           _handlePaymentFailed(status);
+        } else {
+          print('⏳ Payment still pending, will check again...');
         }
         // If status is still 'pending', keep checking
+      } else {
+        print('⚠️ Failed to check payment status: ${statusResult['error']}');
       }
     } catch (e) {
-      print('Error checking payment status: $e');
+      print('❌ Error checking payment status: $e');
     }
   }
 
@@ -473,7 +479,8 @@ class _PayMongoGCashScreenState extends State<PayMongoGCashScreen>
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const CheckoutScreen(),
+                  builder: (context) =>
+                      const buyer.BuyerOrdersScreen(showBackButton: true),
                 ),
               );
             },

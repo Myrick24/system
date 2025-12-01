@@ -79,8 +79,49 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // Handle app lifecycle changes to manage Firestore connections
+    switch (state) {
+      case AppLifecycleState.resumed:
+        print('App resumed - Firestore should reconnect automatically');
+        break;
+      case AppLifecycleState.inactive:
+        print('App inactive');
+        break;
+      case AppLifecycleState.paused:
+        print('App paused');
+        break;
+      case AppLifecycleState.detached:
+        print('App detached');
+        break;
+      case AppLifecycleState.hidden:
+        print('App hidden');
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +169,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   static bool _hasInitialized = false;
+  bool _isNavigating = false;
 
   @override
   void initState() {
@@ -141,17 +183,22 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initializeApp() async {
-    // Reduced splash time for faster reopening
-    final splashDuration = _hasInitialized ? 200 : 500;
-    await Future.delayed(Duration(milliseconds: splashDuration));
-    _hasInitialized = true;
-
-    if (!mounted) return;
+    if (_isNavigating) return; // Prevent multiple navigations
 
     try {
+      // Reduced splash time for faster reopening
+      final splashDuration = _hasInitialized ? 200 : 500;
+      await Future.delayed(Duration(milliseconds: splashDuration));
+      _hasInitialized = true;
+
+      if (!mounted || _isNavigating) return;
+      _isNavigating = true;
+
       // Check if user is logged in and get appropriate route
       if (AuthService.isLoggedIn) {
         final homeRoute = await AuthService.getHomeRoute();
+
+        if (!mounted) return;
 
         switch (homeRoute) {
           case '/admin':
@@ -168,12 +215,17 @@ class _SplashScreenState extends State<SplashScreen> {
         }
       } else {
         // User not logged in, go to guest screen
-        Navigator.pushReplacementNamed(context, '/guest');
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/guest');
+        }
       }
     } catch (e) {
       print('Error during app initialization: $e');
       // Fallback to guest screen on error
-      Navigator.pushReplacementNamed(context, '/guest');
+      if (mounted && !_isNavigating) {
+        _isNavigating = true;
+        Navigator.pushReplacementNamed(context, '/guest');
+      }
     }
   }
 

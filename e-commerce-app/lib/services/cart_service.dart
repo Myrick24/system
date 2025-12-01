@@ -471,12 +471,26 @@ class CartService extends ChangeNotifier {
             }
           }
 
+          // Calculate delivery fee (50 pesos only for Cooperative Delivery)
+          final double deliveryFee =
+              deliveryMethod == 'Cooperative Delivery' ? 50.0 : 0.0;
+          final double subtotal = item.price * item.quantity;
+          final double totalWithDelivery = subtotal + deliveryFee;
+
+          print('DEBUG: Delivery Method: $deliveryMethod');
+          print('DEBUG: Delivery Fee: $deliveryFee');
+          print('DEBUG: Subtotal: $subtotal');
+          print('DEBUG: Total: $totalWithDelivery');
+
           final orderRef = _firestore.collection('orders').doc(orderId);
           final orderData = {
             'id': orderId,
             'buyerId': userId,
-            'userId': userId, // Add userId for backward compatibility and rule matching
-            'totalAmount': item.price * item.quantity,
+            'userId':
+                userId, // Add userId for backward compatibility and rule matching
+            'subtotal': subtotal,
+            'deliveryFee': deliveryFee,
+            'totalAmount': totalWithDelivery,
             'status': 'pending',
             'paymentMethod': paymentMethod,
             'deliveryMethod': deliveryMethod,

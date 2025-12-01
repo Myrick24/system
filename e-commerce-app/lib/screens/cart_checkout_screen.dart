@@ -117,12 +117,21 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
     }
   }
 
-  double _calculateTotal(List<CartItem> selectedItems) {
-    double total = 0;
+  double _calculateSubtotal(List<CartItem> selectedItems) {
+    double subtotal = 0;
     for (var item in selectedItems) {
-      total += item.price * item.quantity;
+      subtotal += item.price * item.quantity;
     }
-    return total;
+    return subtotal;
+  }
+
+  double _getDeliveryFee() {
+    // Delivery fee only applies to Cooperative Delivery
+    return _selectedDeliveryOption == 'Cooperative Delivery' ? 50.0 : 0.0;
+  }
+
+  double _calculateTotal(List<CartItem> selectedItems) {
+    return _calculateSubtotal(selectedItems) + _getDeliveryFee();
   }
 
   Future<void> _placeOrder(
@@ -170,6 +179,8 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
         if (_selectedPaymentOption == 'GCash') {
           if (mounted) {
             final orderId = 'order_${DateTime.now().millisecondsSinceEpoch}';
+            final subtotal = _calculateSubtotal(selectedItems);
+            final deliveryFee = _getDeliveryFee();
             final totalAmount = _calculateTotal(selectedItems);
 
             final paymentCompleted = await Navigator.push(
@@ -181,6 +192,8 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
                   userId: _auth.currentUser!.uid,
                   orderDetails: {
                     'itemCount': selectedItems.length,
+                    'subtotal': subtotal,
+                    'deliveryFee': deliveryFee,
                     'deliveryMethod': _selectedDeliveryOption,
                     'deliveryAddress':
                         _selectedDeliveryOption == 'Cooperative Delivery'
@@ -517,6 +530,30 @@ class _CartCheckoutScreenState extends State<CartCheckoutScreen> {
                       Text(_selectedPaymentOption ?? ''),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Subtotal:'),
+                      Text(
+                          '₱${_calculateSubtotal(selectedItems).toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  if (_selectedDeliveryOption == 'Cooperative Delivery') ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Delivery Fee:'),
+                        Text(
+                          '₱${_getDeliveryFee().toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

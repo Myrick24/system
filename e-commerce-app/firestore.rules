@@ -396,11 +396,12 @@ service cloud.firestore {
           resource.data.sellerId == request.auth.uid ||
           isProductSeller()
         ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'declinedAt', 'declineReason'
+          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'declinedAt', 'declineReason', 'coopStatus'
         ])
       ) || (
         isCoop() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt', 'declinedAt', 'declineReason'
+          'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt', 'declinedAt', 'declineReason',
+          'payoutStatus', 'payoutDate', 'payoutMethod', 'payoutReference', 'payoutNotes', 'payoutBy'
         ])
       ) || isAdmin();
       
@@ -506,6 +507,28 @@ service cloud.firestore {
         // Admins can manage all messages
         allow read, write: if request.auth != null && isAdmin();
       }
+    }
+    
+    // Seller Payouts collection
+    match /seller_payouts/{payoutId} {
+      // Cooperatives can create and read payout records
+      allow create: if request.auth != null && isCoop();
+      
+      // Cooperatives can read all payout records
+      allow read, list: if request.auth != null && isCoop();
+      
+      // Sellers can read their own payout records
+      allow read: if request.auth != null && 
+        resource.data.sellerId == request.auth.uid;
+      
+      // Sellers can list/query their own payouts
+      allow list: if request.auth != null;
+      
+      // Cooperatives can update payout records
+      allow update: if request.auth != null && isCoop();
+      
+      // Admins can manage all payouts
+      allow read, write: if request.auth != null && isAdmin();
     }
     
     match /{document=**} {

@@ -648,13 +648,35 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                                   ),
                                 ),
                                 const Spacer(),
-                                Text(
-                                  '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                    fontSize: 14,
-                                  ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (order['subtotal'] != null)
+                                      Text(
+                                        'Subtotal: ₱${(order['subtotal'] ?? 0).toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    if (order['deliveryFee'] != null &&
+                                        order['deliveryFee'] > 0)
+                                      Text(
+                                        'Delivery: ₱${(order['deliveryFee'] ?? 0).toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    Text(
+                                      '₱${(order['totalAmount'] ?? 0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -786,8 +808,11 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                           ),
                         ),
                       ),
-                      if (order['status'] == 'pending' ||
-                          order['status'] == 'processing') ...[
+                      // Show Mark Ready button only after seller accepts the order (processing status)
+                      // and before marking as ready (coopStatus not yet set)
+                      if (order['status'] == 'processing' &&
+                          order['coopStatus'] != 'ready_for_pickup' &&
+                          order['coopStatus'] != 'picked_up') ...[
                         const SizedBox(width: 8),
                         Expanded(
                           child: ElevatedButton.icon(
@@ -932,29 +957,39 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
     try {
       final now = DateTime.now();
 
+      // Update coopStatus only, keep buyer-facing status as 'processing'
       await _firestore.collection('orders').doc(order['id']).update({
-        'status': 'ready_for_pickup',
+        'coopStatus': 'ready_for_pickup',
         'updatedAt': FieldValue.serverTimestamp(),
         'statusUpdates': FieldValue.arrayUnion([
           {
-            'status': 'ready_for_pickup',
+            'coopStatus': 'ready_for_pickup',
             'timestamp': Timestamp.fromDate(now),
           }
         ]),
       });
 
-      // Send notification to customer
-      await _firestore.collection('notifications').add({
-        'userId': order['userId'],
-        'orderId': order['id'],
-        'type': 'order_status',
-        'status': 'ready_for_pickup',
-        'message':
-            'Your order for ${order['productName']} is ready for pickup!',
-        'productName': order['productName'],
-        'timestamp': FieldValue.serverTimestamp(),
-        'isRead': false,
-      });
+      // Send notification to cooperative only (not to buyer yet)
+      final cooperativeId = order['cooperativeId'];
+      if (cooperativeId != null) {
+        await _firestore.collection('notifications').add({
+          'userId': cooperativeId,
+          'orderId': order['id'],
+          'type': 'order_ready',
+          'status': 'ready_for_pickup',
+          'title': '📦 Order Ready for Pickup',
+          'body':
+              'Order for ${order['productName']} is ready and waiting at seller location',
+          'message':
+              'Order for ${order['productName']} is ready for cooperative pickup',
+          'productName': order['productName'],
+          'productId': order['productId'],
+          'productImage': order['productImage'] ?? '',
+          'timestamp': FieldValue.serverTimestamp(),
+          'read': false,
+          'isRead': false,
+        });
+      }
 
       // Refresh the order list
       _loadOrders();
