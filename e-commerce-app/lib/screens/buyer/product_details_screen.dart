@@ -1362,55 +1362,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: 32),
-
-                  // Quantity Selector
-                  Row(
-                    children: [
-                      const Text(
-                        'Quantity:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              onPressed: _quantity > 1
-                                  ? () => setState(() => _quantity--)
-                                  : null,
-                              icon: const Icon(Icons.remove),
-                              iconSize: 20,
-                            ),
-                            Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                _quantity.toString(),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => setState(() => _quantity++),
-                              icon: const Icon(Icons.add),
-                              iconSize: 20,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -1435,11 +1386,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: (_auth.currentUser?.uid == widget.product['sellerId']) 
-                      ? null 
-                      : _addToCart,
+                  onPressed:
+                      (_auth.currentUser?.uid == widget.product['sellerId'])
+                          ? null
+                          : _addToCart,
                   icon: const Icon(Icons.add_shopping_cart, size: 18),
-                  label: const Text('Add to Cart', style: TextStyle(fontSize: 14)),
+                  label:
+                      const Text('Add to Cart', style: TextStyle(fontSize: 14)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.green,
                     side: const BorderSide(color: Colors.green),
@@ -1450,36 +1403,39 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: (_auth.currentUser?.uid == widget.product['sellerId'])
-                      ? null
-                      : () {
-                          if (_auth.currentUser == null) {
-                            _showLoginPrompt();
-                            return;
-                          }
+                  onPressed:
+                      (_auth.currentUser?.uid == widget.product['sellerId'])
+                          ? null
+                          : () {
+                              if (_auth.currentUser == null) {
+                                _showLoginPrompt();
+                                return;
+                              }
 
-                          // Double check if user is the seller
-                          if (_auth.currentUser!.uid == widget.product['sellerId']) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('You cannot buy your own product'),
-                                backgroundColor: Colors.orange,
-                                duration: Duration(seconds: 3),
-                              ),
-                            );
-                            return;
-                          }
+                              // Double check if user is the seller
+                              if (_auth.currentUser!.uid ==
+                                  widget.product['sellerId']) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content:
+                                        Text('You cannot buy your own product'),
+                                    backgroundColor: Colors.orange,
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                                return;
+                              }
 
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => BuyNowScreen(
-                                product: widget.product,
-                                productId: widget.productId,
-                              ),
-                            ),
-                          );
-                        },
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => BuyNowScreen(
+                                    product: widget.product,
+                                    productId: widget.productId,
+                                  ),
+                                ),
+                              );
+                            },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
