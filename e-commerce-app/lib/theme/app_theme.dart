@@ -66,7 +66,7 @@ class AppTheme {
       ),
 
       // Card Theme
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -111,12 +111,10 @@ class AppTheme {
         secondary: accentBlue,
         secondaryContainer: Color(0xFFE3F2FD),
         surface: surfaceColor,
-        background: backgroundColor,
         error: errorColor,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onSurface: onSurfaceColor,
-        onBackground: onSurfaceColor,
         onError: Colors.white,
       ),
 
@@ -187,54 +185,30 @@ class AppTheme {
   }
 
   // Gradient styles for cards and containers
-  static BoxDecoration primaryGradientDecoration = BoxDecoration(
-    borderRadius: BorderRadius.circular(12),
-    gradient: const LinearGradient(
+  static const BoxDecoration primaryGradientDecoration = BoxDecoration(
+    borderRadius: BorderRadius.all(Radius.circular(12)),
+    gradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [primaryGreenLight, primaryGreenDark],
     ),
-    boxShadow: [
-      BoxShadow(
-        color: primaryGreen.withOpacity(0.3),
-        spreadRadius: 2,
-        blurRadius: 8,
-        offset: const Offset(0, 4),
-      ),
-    ],
   );
 
-  static BoxDecoration successGradientDecoration = BoxDecoration(
-    borderRadius: BorderRadius.circular(12),
+  static const BoxDecoration successGradientDecoration = BoxDecoration(
+    borderRadius: BorderRadius.all(Radius.circular(12)),
     gradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
-      colors: [primaryGreen.withOpacity(0.8), primaryGreen],
+      colors: [primaryGreen, primaryGreen],
     ),
-    boxShadow: [
-      BoxShadow(
-        color: primaryGreen.withOpacity(0.3),
-        spreadRadius: 2,
-        blurRadius: 8,
-        offset: const Offset(0, 4),
-      ),
-    ],
   );
 
-  static BoxDecoration warningGradientDecoration = BoxDecoration(
-    borderRadius: BorderRadius.circular(12),
+  static const BoxDecoration warningGradientDecoration = BoxDecoration(
+    borderRadius: BorderRadius.all(Radius.circular(12)),
     gradient: LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
-      colors: [accentOrange.withOpacity(0.8), accentOrange],
+      colors: [accentOrange, accentOrange],
     ),
-    boxShadow: [
-      BoxShadow(
-        color: accentOrange.withOpacity(0.3),
-        spreadRadius: 2,
-        blurRadius: 8,
-        offset: const Offset(0, 4),
-      ),
-    ],
   );
 }
