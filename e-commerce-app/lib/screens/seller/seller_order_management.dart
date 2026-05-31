@@ -557,7 +557,7 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          (order['status'] ?? 'PENDING').toUpperCase(),
+                          _formatStatusText(order['status']),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -1062,6 +1062,35 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
           ),
         );
       }
+    }
+  }
+
+  String _formatStatusText(String? status) {
+    if (status == null) return 'PENDING';
+
+    // Provide seller-friendly status display (consistent with buyer display)
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'AWAITING APPROVAL';
+      case 'processing':
+        return 'BEING PREPARED';
+      case 'ready_for_shipping':
+        return 'READY FOR PICKUP';
+      case 'ready_for_pickup':
+        return 'READY FOR PICKUP';
+      case 'shipped':
+        return 'OUT FOR DELIVERY';
+      case 'delivered':
+        return 'DELIVERED';
+      case 'completed':
+        return 'COMPLETED';
+      case 'cancelled':
+        return 'CANCELLED';
+      case 'rejected':
+        return 'REJECTED';
+      default:
+        // Fallback: replace underscores with spaces and uppercase
+        return status.replaceAll('_', ' ').toUpperCase();
     }
   }
 }
