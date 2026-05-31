@@ -1150,8 +1150,30 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
   String _formatStatusText(String? status) {
     if (status == null) return 'PENDING';
 
-    // Replace underscores with spaces and convert to uppercase
-    return status.replaceAll('_', ' ').toUpperCase();
+    // Provide buyer-friendly status display
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'AWAITING SELLER APPROVAL';
+      case 'processing':
+        return 'BEING PREPARED';
+      case 'ready_for_shipping':
+        return 'READY FOR PICKUP & DELIVERY';
+      case 'ready_for_pickup':
+        return 'READY FOR PICKUP';
+      case 'shipped':
+        return 'OUT FOR DELIVERY';
+      case 'delivered':
+        return 'DELIVERED';
+      case 'completed':
+        return 'COMPLETED';
+      case 'cancelled':
+        return 'CANCELLED';
+      case 'rejected':
+        return 'REJECTED';
+      default:
+        // Fallback: replace underscores with spaces and uppercase
+        return status.replaceAll('_', ' ').toUpperCase();
+    }
   }
 
   @override
