@@ -1163,31 +1163,40 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen>
         '_activeOrders: ${_activeOrders.length}, _completedOrders: ${_completedOrders.length}, _cancelledOrders: ${_cancelledOrders.length}');
     print('_isLoading: $_isLoading');
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Orders'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false, // Remove back button for bottom nav
-        bottom: TabBar(
+    return WillPopScope(
+      onWillPop: () async {
+        if (!widget.showBackButton) {
+          // When used as a tab, prevent back navigation to avoid popping BuyerMainDashboard
+          return false;
+        }
+        return true; // Allow back navigation when shown as separate screen
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My Orders'),
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+          automaticallyImplyLeading: widget.showBackButton,
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            tabs: const [
+              Tab(text: 'Active'),
+              Tab(text: 'Completed'),
+              Tab(text: 'Cancelled'),
+            ],
+          ),
+        ),
+        body: TabBarView(
           controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Active'),
-            Tab(text: 'Completed'),
-            Tab(text: 'Cancelled'),
+          children: [
+            _buildOrderList(_activeOrders),
+            _buildOrderList(_completedOrders),
+            _buildOrderList(_cancelledOrders),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildOrderList(_activeOrders),
-          _buildOrderList(_completedOrders),
-          _buildOrderList(_cancelledOrders),
-        ],
       ),
     );
   }

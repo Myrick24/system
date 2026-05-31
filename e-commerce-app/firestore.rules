@@ -401,7 +401,7 @@ service cloud.firestore {
       ) || (
         isCoop() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'updatedAt', 'deliveryDate', 'notes', 'statusUpdates', 'paymentCollected', 'paymentCollectedAt', 'declinedAt', 'declineReason',
-          'payoutStatus', 'payoutDate', 'payoutMethod', 'payoutReference', 'payoutNotes', 'payoutBy'
+          'payoutStatus', 'payoutDate', 'payoutMethod', 'payoutReference', 'payoutNotes', 'payoutBy', 'coopStatus'
         ])
       ) || isAdmin();
       

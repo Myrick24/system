@@ -6135,6 +6135,17 @@ class _CoopDashboardState extends State<CoopDashboard>
                               }
                             }
 
+                            // Additional fallback for contact: try from order
+                            if ((contactToShow == 'N/A' ||
+                                    contactToShow.isEmpty) &&
+                                order['phone'] != null) {
+                              final orderPhone = order['phone'];
+                              if (orderPhone is String &&
+                                  orderPhone.isNotEmpty) {
+                                contactToShow = orderPhone;
+                              }
+                            }
+
                             return _buildDetailSection(
                               title: 'Buyer Information',
                               icon: Icons.person,
@@ -6142,9 +6153,17 @@ class _CoopDashboardState extends State<CoopDashboard>
                               children: [
                                 _buildExpandedDetailRow('Name', buyerName),
                                 _buildExpandedDetailRow(
-                                    'Address', addressToShow),
+                                    'Address',
+                                    addressToShow.isEmpty ||
+                                            addressToShow == 'N/A'
+                                        ? 'Address not available'
+                                        : addressToShow),
                                 _buildExpandedDetailRow(
-                                    'Contact', contactToShow),
+                                    'Contact',
+                                    contactToShow.isEmpty ||
+                                            contactToShow == 'N/A'
+                                        ? 'Contact not available'
+                                        : contactToShow),
                               ],
                             );
                           },
@@ -6515,23 +6534,29 @@ class _CoopDashboardState extends State<CoopDashboard>
     } else if (isCoopDelivery) {
       // FOR COOPERATIVE DELIVERY: Use normal flow
 
-      // For pending orders - show Approve button
+      // For pending orders - show status message (awaiting seller approval)
       if (status == 'pending') {
-        buttons.add(
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _updateOrderStatus(orderId, 'processing'),
-              icon: const Icon(Icons.check_circle, size: 18),
-              label: const Text('Approve Order'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.hourglass_empty, color: Colors.orange.shade700, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Awaiting Seller Approval',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade700,
                 ),
               ),
-            ),
+            ],
           ),
         );
       }
