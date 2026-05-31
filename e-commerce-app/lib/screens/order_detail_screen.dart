@@ -676,42 +676,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                 ),
               ] else if (status == 'processing') ...[
-                // Show appropriate button based on delivery method
-                if (deliveryMethod == 'Pickup at Coop') ...[
-                  // Pickup at Coop - Mark as Ready for Pickup
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isProcessing
-                          ? null
-                          : () => _markAsReadyForPickup(orderId!),
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('Mark as Ready for Pickup'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.all(16),
-                      ),
+                // Show button to mark as ready for pickup by coop
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isProcessing
+                        ? null
+                        : () => _markAsReadyForPickupByCoop(orderId!, deliveryMethod),
+                    icon: const Icon(Icons.check_circle),
+                    label: Text(
+                      deliveryMethod == 'Pickup at Coop'
+                          ? 'Mark as Ready for Pickup'
+                          : 'Ready to Pickup by Coop',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.all(16),
                     ),
                   ),
-                ] else ...[
-                  // Cooperative Delivery - Mark as Ready to Ship
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isProcessing
-                          ? null
-                          : () => _markAsReadyToShip(orderId!),
-                      icon: const Icon(Icons.local_shipping),
-                      label: const Text('Mark as Ready to Ship'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.all(16),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ] else ...[
                 // Show status indicator for other statuses
                 Container(
@@ -802,68 +786,134 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  Future<void> _markAsReadyForPickup(String orderId) async {
+  Future<void> _markAsReadyForPickupByCoop(
+      String orderId, String deliveryMethod) async {
     setState(() => _isProcessing = true);
 
     try {
       final now = DateTime.now();
 
-      // Update coopStatus only, keep buyer-facing status as 'processing'
-      await _firestore.collection('orders').doc(orderId).update({
-        'coopStatus': 'ready_for_pickup',
-        'updatedAt': FieldValue.serverTimestamp(),
-        'statusUpdates': FieldValue.arrayUnion([
-          {
-            'coopStatus': 'ready_for_pickup',
-            'timestamp': Timestamp.fromDate(now),
-          }
-        ]),
-      });
-
-      // Send notification to cooperative only (not to buyer yet)
-      final cooperativeId = widget.order['cooperativeId'];
-      if (cooperativeId != null) {
-        final productName = widget.order['productName'] ?? 'Product';
-
-        await _firestore.collection('notifications').add({
-          'userId': cooperativeId,
-          'orderId': orderId,
-          'type': 'order_ready',
-          'status': 'ready_for_pickup',
-          'title': '📦 Order Ready for Pickup',
-          'body':
-              'Order for $productName is ready and waiting at seller location',
-          'message': 'Order for $productName is ready for cooperative pickup',
-          'productName': productName,
-          'productId': widget.order['productId'],
-          'productImage': widget.order['productImage'] ?? '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'read': false,
-          'isRead': false,
+      if (deliveryMethod == 'Pickup at Coop') {
+        // For Pickup at Coop: Update coopStatus, notify cooperative
+        await _firestore.collection('orders').doc(orderId).update({
+          'coopStatus': 'ready_for_pickup',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'statusUpdates': FieldValue.arrayUnion([
+            {
+              'coopStatus': 'ready_for_pickup',
+              'timestamp': Timestamp.fromDate(now),
+            }
+          ]),
         });
 
-        // Send PUSH NOTIFICATION to cooperative
-        try {
-          await RealtimeNotificationService.sendTestNotification(
-            title: '📦 Order Ready for Pickup',
-            body:
-                'Order for $productName is ready and waiting at seller location',
-            payload:
-                'order_ready|$orderId|${widget.order['productId']}|$productName',
-          );
-          print('✅ Push notification sent to cooperative about ready order');
-        } catch (e) {
-          print('⚠️ Error sending push notification: $e');
-        }
-      }
+        // Send notification to cooperative only (not to buyer yet)
+        final cooperativeId = widget.order['cooperativeId'];
+        if (cooperativeId != null) {
+          final productName = widget.order['productName'] ?? 'Product';
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Order marked as ready for pickup!'),
-              backgroundColor: Colors.green),
-        );
-        Navigator.pop(context, true);
+          await _firestore.collection('notifications').add({
+            'userId': cooperativeId,
+            'orderId': orderId,
+            'type': 'order_ready',
+            'status': 'ready_for_pickup',
+            'title': '📦 Order Ready for Pickup',
+            'body':
+                'Order for $productName is ready and waiting at seller location',
+            'message':
+                'Order for $productName is ready for cooperative pickup',
+            'productName': productName,
+            'productId': widget.order['productId'],
+            'productImage': widget.order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          });
+
+          // Send PUSH NOTIFICATION to cooperative
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '📦 Order Ready for Pickup',
+              body:
+                  'Order for $productName is ready and waiting at seller location',
+              payload:
+                  'order_ready|$orderId|${widget.order['productId']}|$productName',
+            );
+            print('✅ Push notification sent to cooperative about ready order');
+          } catch (e) {
+            print('⚠️ Error sending push notification: $e');
+          }
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Order marked as ready for pickup!'),
+                backgroundColor: Colors.green),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        // For Cooperative Delivery: Update status, notify cooperative
+        await _firestore.collection('orders').doc(orderId).update({
+          'status': 'ready_for_shipping',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'statusUpdates': FieldValue.arrayUnion([
+            {
+              'status': 'ready_for_shipping',
+              'timestamp': Timestamp.fromDate(now),
+            }
+          ]),
+        });
+
+        // Send notification to cooperative (not to buyer)
+        final cooperativeId = widget.order['cooperativeId'];
+        if (cooperativeId != null) {
+          final productName = widget.order['productName'] ?? 'Product';
+
+          await _firestore.collection('notifications').add({
+            'userId': cooperativeId,
+            'orderId': orderId,
+            'type': 'order_ready',
+            'status': 'ready_for_shipping',
+            'title': '🚚 Order Ready for Pickup and Delivery',
+            'body':
+                'Order for $productName is ready for coop to pickup and deliver',
+            'message':
+                'Order for $productName is ready for pickup and delivery',
+            'productName': productName,
+            'productId': widget.order['productId'],
+            'productImage': widget.order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          });
+
+          // Send PUSH NOTIFICATION to cooperative
+          try {
+            await RealtimeNotificationService.sendTestNotification(
+              title: '🚚 Order Ready for Pickup and Delivery',
+              body:
+                  'Order for $productName is ready for coop to pickup and deliver',
+              payload:
+                  'order_ready|$orderId|${widget.order['productId']}|$productName',
+            );
+            print('✅ Push notification sent to cooperative');
+          } catch (e) {
+            print('⚠️ Error sending push notification: $e');
+          }
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Order marked ready for pickup by coop! Cooperative has been notified. 📦'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
       }
     } catch (e) {
       print('Error marking order as ready: $e');
@@ -983,87 +1033,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  Future<void> _markAsReadyToShip(String orderId) async {
-    setState(() => _isProcessing = true);
-
-    try {
-      final now = DateTime.now();
-
-      // Update order status to ready_for_shipping
-      await _firestore.collection('orders').doc(orderId).update({
-        'status': 'ready_for_shipping',
-        'updatedAt': FieldValue.serverTimestamp(),
-        'statusUpdates': FieldValue.arrayUnion([
-          {
-            'status': 'ready_for_shipping',
-            'timestamp': Timestamp.fromDate(now),
-          }
-        ]),
-      });
-
-      // Send push notification to buyer
-      final buyerId = widget.order['buyerId'] ?? widget.order['userId'];
-      if (buyerId != null) {
-        final productName = widget.order['productName'] ?? 'Product';
-
-        await _firestore.collection('notifications').add({
-          'userId': buyerId,
-          'orderId': orderId,
-          'type': 'order_status',
-          'status': 'ready_for_shipping',
-          'title': '📦 Order Ready to Ship!',
-          'body': 'Good news! Your order for $productName is ready to ship!',
-          'message':
-              'Good news! Your order for $productName is ready to ship! 📦',
-          'productName': productName,
-          'productId': widget.order['productId'],
-          'productImage': widget.order['productImage'] ?? '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'read': false,
-          'isRead': false,
-          'priority': 'high',
-        });
-
-        // Send PUSH NOTIFICATION
-        try {
-          await RealtimeNotificationService.sendTestNotification(
-            title: '📦 Order Ready to Ship!',
-            body: 'Good news! Your order for $productName is ready to ship!',
-            payload:
-                'order_status|$orderId|${widget.order['productId']}|$productName',
-          );
-          print('✅ Push notification sent to buyer about ready to ship');
-        } catch (e) {
-          print('⚠️ Error sending push notification: $e');
-        }
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Order marked as ready to ship! Buyer has been notified. 📦'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
-      print('Error marking order as ready to ship: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return 'N/A';

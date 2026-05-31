@@ -817,9 +817,13 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: () =>
-                                _markAsReadyForPickup(order, context),
+                                _markAsReadyForPickupByCoop(order, context),
                             icon: const Icon(Icons.check, size: 16),
-                            label: const Text('Mark Ready'),
+                            label: Text(
+                              order['deliveryMethod'] == 'Pickup at Coop'
+                                  ? 'Mark Ready'
+                                  : 'Ready for Coop',
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
@@ -952,56 +956,103 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
     );
   }
 
-  Future<void> _markAsReadyForPickup(
+  Future<void> _markAsReadyForPickupByCoop(
       Map<String, dynamic> order, BuildContext context) async {
     try {
       final now = DateTime.now();
+      final deliveryMethod = order['deliveryMethod'] ?? '';
 
-      // Update coopStatus only, keep buyer-facing status as 'processing'
-      await _firestore.collection('orders').doc(order['id']).update({
-        'coopStatus': 'ready_for_pickup',
-        'updatedAt': FieldValue.serverTimestamp(),
-        'statusUpdates': FieldValue.arrayUnion([
-          {
-            'coopStatus': 'ready_for_pickup',
-            'timestamp': Timestamp.fromDate(now),
-          }
-        ]),
-      });
-
-      // Send notification to cooperative only (not to buyer yet)
-      final cooperativeId = order['cooperativeId'];
-      if (cooperativeId != null) {
-        await _firestore.collection('notifications').add({
-          'userId': cooperativeId,
-          'orderId': order['id'],
-          'type': 'order_ready',
-          'status': 'ready_for_pickup',
-          'title': '📦 Order Ready for Pickup',
-          'body':
-              'Order for ${order['productName']} is ready and waiting at seller location',
-          'message':
-              'Order for ${order['productName']} is ready for cooperative pickup',
-          'productName': order['productName'],
-          'productId': order['productId'],
-          'productImage': order['productImage'] ?? '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'read': false,
-          'isRead': false,
+      if (deliveryMethod == 'Pickup at Coop') {
+        // For Pickup at Coop: Update coopStatus, notify cooperative
+        await _firestore.collection('orders').doc(order['id']).update({
+          'coopStatus': 'ready_for_pickup',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'statusUpdates': FieldValue.arrayUnion([
+            {
+              'coopStatus': 'ready_for_pickup',
+              'timestamp': Timestamp.fromDate(now),
+            }
+          ]),
         });
+
+        // Send notification to cooperative only (not to buyer yet)
+        final cooperativeId = order['cooperativeId'];
+        if (cooperativeId != null) {
+          await _firestore.collection('notifications').add({
+            'userId': cooperativeId,
+            'orderId': order['id'],
+            'type': 'order_ready',
+            'status': 'ready_for_pickup',
+            'title': '📦 Order Ready for Pickup',
+            'body':
+                'Order for ${order['productName']} is ready and waiting at seller location',
+            'message':
+                'Order for ${order['productName']} is ready for cooperative pickup',
+            'productName': order['productName'],
+            'productId': order['productId'],
+            'productImage': order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Order marked as ready for pickup!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // For Cooperative Delivery: Update status, notify cooperative
+        await _firestore.collection('orders').doc(order['id']).update({
+          'status': 'ready_for_shipping',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'statusUpdates': FieldValue.arrayUnion([
+            {
+              'status': 'ready_for_shipping',
+              'timestamp': Timestamp.fromDate(now),
+            }
+          ]),
+        });
+
+        // Send notification to cooperative (not to buyer)
+        final cooperativeId = order['cooperativeId'];
+        if (cooperativeId != null) {
+          await _firestore.collection('notifications').add({
+            'userId': cooperativeId,
+            'orderId': order['id'],
+            'type': 'order_ready',
+            'status': 'ready_for_shipping',
+            'title': '🚚 Order Ready for Pickup and Delivery',
+            'body':
+                'Order for ${order['productName']} is ready for coop to pickup and deliver',
+            'message':
+                'Order for ${order['productName']} is ready for pickup and delivery',
+            'productName': order['productName'],
+            'productId': order['productId'],
+            'productImage': order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Order marked ready for pickup by coop! Cooperative has been notified. 📦'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
 
       // Refresh the order list
       _loadOrders();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Order marked as ready for pickup!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
