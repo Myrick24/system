@@ -234,6 +234,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final timestamp = widget.order['timestamp'] ?? widget.order['createdAt'];
     final status =
         widget.order['status']?.toString().toLowerCase() ?? 'pending';
+    final coopStatus =
+        widget.order['coopStatus']?.toString().toLowerCase() ?? '';
 
     // Debug: Print available order data
     print('Order Debug - customerAddress: $customerAddress');
@@ -677,23 +679,79 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ] else if (status == 'processing') ...[
                 // Show button to mark as ready for pickup by coop
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing
-                        ? null
-                        : () => _markAsReadyForPickupByCoop(orderId!, deliveryMethod),
-                    icon: const Icon(Icons.check_circle),
-                    label: Text(
-                      deliveryMethod == 'Pickup at Coop'
-                          ? 'Mark as Ready for Pickup'
-                          : 'Ready to Pickup by Coop',
+                // BUT only if not already marked ready
+                if (deliveryMethod == 'Pickup at Coop'
+                    ? coopStatus != 'ready_for_pickup'
+                    : status == 'processing') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _markAsReadyForPickupByCoop(orderId!, deliveryMethod),
+                      icon: const Icon(Icons.check_circle),
+                      label: Text(
+                        deliveryMethod == 'Pickup at Coop'
+                            ? 'Mark as Ready for Pickup'
+                            : 'Ready to Pickup by Coop',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.all(16),
+                      ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade600,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.all(16),
+                  ),
+                ] else if (deliveryMethod == 'Pickup at Coop' &&
+                    coopStatus == 'ready_for_pickup') ...[
+                  // Show status for Pickup at Coop already marked ready
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
                     ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle,
+                            color: Colors.green.shade700, size: 24),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Ready for Pickup',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ]
+              ] else if (status == 'ready_for_shipping') ...[
+                // For Cooperative Delivery already marked ready
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle,
+                          color: Colors.green.shade700, size: 24),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Ready for Pickup & Delivery',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ] else ...[

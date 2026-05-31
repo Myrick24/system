@@ -6546,7 +6546,8 @@ class _CoopDashboardState extends State<CoopDashboard>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.hourglass_empty, color: Colors.orange.shade700, size: 20),
+              Icon(Icons.hourglass_empty,
+                  color: Colors.orange.shade700, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Awaiting Seller Approval',
@@ -6573,7 +6574,8 @@ class _CoopDashboardState extends State<CoopDashboard>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.pending_actions, color: Colors.blue.shade700, size: 20),
+              Icon(Icons.pending_actions,
+                  color: Colors.blue.shade700, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Waiting for Seller to Confirm Ready',
