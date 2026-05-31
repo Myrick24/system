@@ -959,96 +959,50 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
   Future<void> _markAsReadyForPickupByCoop(
       Map<String, dynamic> order, BuildContext context) async {
     try {
-      final now = DateTime.now();
+      final orderId = order['id'];
       final deliveryMethod = order['deliveryMethod'] ?? '';
+      final isPickupAtCoop = deliveryMethod == 'Pickup at Coop';
 
-      if (deliveryMethod == 'Pickup at Coop') {
-        // For Pickup at Coop: Update coopStatus, notify cooperative
-        await _firestore.collection('orders').doc(order['id']).update({
+      // Update Firestore based on delivery method
+      if (isPickupAtCoop) {
+        await _firestore.collection('orders').doc(orderId).update({
           'coopStatus': 'ready_for_pickup',
           'updatedAt': FieldValue.serverTimestamp(),
           'statusUpdates': FieldValue.arrayUnion([
             {
               'coopStatus': 'ready_for_pickup',
-              'timestamp': Timestamp.fromDate(now),
+              'timestamp': Timestamp.fromDate(DateTime.now()),
             }
           ]),
         });
-
-        // Send notification to cooperative only (not to buyer yet)
-        final cooperativeId = order['cooperativeId'];
-        if (cooperativeId != null) {
-          await _firestore.collection('notifications').add({
-            'userId': cooperativeId,
-            'orderId': order['id'],
-            'type': 'order_ready',
-            'status': 'ready_for_pickup',
-            'title': '📦 Order Ready for Pickup',
-            'body':
-                'Order for ${order['productName']} is ready and waiting at seller location',
-            'message':
-                'Order for ${order['productName']} is ready for cooperative pickup',
-            'productName': order['productName'],
-            'productId': order['productId'],
-            'productImage': order['productImage'] ?? '',
-            'timestamp': FieldValue.serverTimestamp(),
-            'read': false,
-            'isRead': false,
-          });
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Order marked as ready for pickup!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
       } else {
-        // For Cooperative Delivery: Update status, notify cooperative
-        await _firestore.collection('orders').doc(order['id']).update({
+        await _firestore.collection('orders').doc(orderId).update({
           'status': 'ready_for_shipping',
           'updatedAt': FieldValue.serverTimestamp(),
           'statusUpdates': FieldValue.arrayUnion([
             {
               'status': 'ready_for_shipping',
-              'timestamp': Timestamp.fromDate(now),
+              'timestamp': Timestamp.fromDate(DateTime.now()),
             }
           ]),
         });
+      }
 
-        // Send notification to cooperative (not to buyer)
-        final cooperativeId = order['cooperativeId'];
-        if (cooperativeId != null) {
-          await _firestore.collection('notifications').add({
-            'userId': cooperativeId,
-            'orderId': order['id'],
-            'type': 'order_ready',
-            'status': 'ready_for_shipping',
-            'title': '🚚 Order Ready for Pickup and Delivery',
-            'body':
-                'Order for ${order['productName']} is ready for coop to pickup and deliver',
-            'message':
-                'Order for ${order['productName']} is ready for pickup and delivery',
-            'productName': order['productName'],
-            'productId': order['productId'],
-            'productImage': order['productImage'] ?? '',
-            'timestamp': FieldValue.serverTimestamp(),
-            'read': false,
-            'isRead': false,
-          });
-        }
+      // Send notification to cooperative
+      await _sendReadyNotificationToCooperative(order, isPickupAtCoop);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Order marked ready for pickup by coop! Cooperative has been notified. 📦'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+      // Show success message
+      if (mounted) {
+        String message = isPickupAtCoop
+            ? 'Order marked as ready for pickup!'
+            : 'Order marked ready for pickup by coop! Cooperative has been notified. 📦';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
 
       // Refresh the order list
@@ -1063,6 +1017,54 @@ class _SellerOrderManagementState extends State<SellerOrderManagement> {
         );
       }
     }
+  }
+
+  Future<void> _sendReadyNotificationToCooperative(
+      Map<String, dynamic> order, bool isPickupAtCoop) async {
+    final cooperativeId = order['cooperativeId'];
+    if (cooperativeId == null) return;
+
+    final orderId = order['id'];
+    final productName = order['productName'] ?? 'Product';
+
+    // Prepare notification data based on delivery method
+    final notificationData = isPickupAtCoop
+        ? {
+            'userId': cooperativeId,
+            'orderId': orderId,
+            'type': 'order_ready',
+            'status': 'ready_for_pickup',
+            'title': '📦 Order Ready for Pickup',
+            'body':
+                'Order for $productName is ready and waiting at seller location',
+            'message':
+                'Order for $productName is ready for cooperative pickup',
+            'productName': productName,
+            'productId': order['productId'],
+            'productImage': order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          }
+        : {
+            'userId': cooperativeId,
+            'orderId': orderId,
+            'type': 'order_ready',
+            'status': 'ready_for_shipping',
+            'title': '🚚 Order Ready for Pickup and Delivery',
+            'body':
+                'Order for $productName is ready for coop to pickup and deliver',
+            'message':
+                'Order for $productName is ready for pickup and delivery',
+            'productName': productName,
+            'productId': order['productId'],
+            'productImage': order['productImage'] ?? '',
+            'timestamp': FieldValue.serverTimestamp(),
+            'read': false,
+            'isRead': false,
+          };
+
+    await _firestore.collection('notifications').add(notificationData);
   }
 
   String _formatStatusText(String? status) {
