@@ -6561,10 +6561,36 @@ class _CoopDashboardState extends State<CoopDashboard>
         );
       }
 
-      // For ready_for_shipping, ready_for_pickup, or processing orders - mark as out for delivery
-      else if (status == 'ready_for_shipping' ||
-          status == 'ready_for_pickup' ||
-          status == 'processing') {
+      // For processing orders - wait for seller to mark as ready
+      else if (status == 'processing') {
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.blue.shade200),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.pending_actions, color: Colors.blue.shade700, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Waiting for Seller to Confirm Ready',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      // For ready_for_shipping orders - mark as out for delivery
+      // (Seller must explicitly mark as ready_for_shipping before coop can proceed)
+      else if (status == 'ready_for_shipping') {
         buttons.add(
           Expanded(
             child: ElevatedButton.icon(
